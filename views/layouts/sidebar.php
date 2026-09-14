@@ -5,7 +5,7 @@
  */
 
 $isInventoryActive = in_array($activePage, [
-    'raw_materials', 'finished_goods', 'stock_in', 'stock_out', 
+    'raw_materials', 'finished_goods', 'items', 'stock_in', 'stock_out', 
     'stock_transfer', 'stock_adjustment', 'stock_card', 'movement'
 ], true);
 
@@ -68,6 +68,11 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
                 </svg>
             </button>
             <div class="nav-sub-list">
+                <!-- Items Catalog -->
+                <a href="<?= BASE_URL ?>views/items/index.php" class="nav-sub-link <?= $activePage === 'items' ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Item Catalog (SKUs)</span>
+                </a>
                 <!-- Raw Materials -->
                 <a href="<?= BASE_URL ?>views/inventory/raw_materials.php" class="nav-sub-link <?= $activePage === 'raw_materials' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>

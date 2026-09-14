@@ -28,7 +28,8 @@ ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `password` = VALUES(`password`)
 INSERT INTO `warehouses` (`warehouse_id`, `warehouse_code`, `warehouse_name`, `location`, `description`, `status`) VALUES
 (1, 'WH-MAIN', 'Main Warehouse (Laguna)', 'Laguna, Philippines', 'Central storage, raw ingredient staging, and distribution hub in Laguna', 'active'),
 (2, 'WH-BOND', 'Bonded Warehouse (Manila)', 'Port Area, Manila, Philippines', 'Customs-bonded warehouse facility for imported bulk spirits and tax-exempt storage in Manila', 'active'),
-(3, 'WH-BOTT', 'Bottling Area (Bulacan)', 'Bulacan, Philippines', 'Bottling, blending, and finished packaging facility in Bulacan', 'active')
+(3, 'WH-BOTT', 'Bottling Area (Bulacan)', 'Bulacan, Philippines', 'Bottling, blending, and finished packaging facility in Bulacan', 'active'),
+(4, 'WH-DELV', 'Delivery & Distribution Center (Cavite)', 'Cavite, Philippines', 'Dispatch, logistics staging, and customer delivery fulfillment center in Cavite', 'active')
 ON DUPLICATE KEY UPDATE `warehouse_name` = VALUES(`warehouse_name`), `warehouse_code` = VALUES(`warehouse_code`), `location` = VALUES(`location`), `description` = VALUES(`description`), `status` = VALUES(`status`);
 
 -- 3. Seed Categories
@@ -37,7 +38,9 @@ INSERT INTO `categories` (`category_id`, `category_code`, `category_name`, `desc
 (2, 'CAT-FG', 'Finished Goods', 'Completed products ready for customer delivery and sales distribution', 'active')
 ON DUPLICATE KEY UPDATE `category_name` = VALUES(`category_name`);
 
--- 4. Seed Items (15 Raw Materials + 5 Finished Goods)
+-- 4. Seed Items (Optional Sample Items - Commented out for clean manual testing)
+-- To reload sample distillery items, uncomment the INSERT statement below:
+/*
 INSERT INTO `items` (`item_id`, `item_code`, `item_name`, `description`, `item_type`, `category_id`, `unit`, `default_reorder_level`, `status`) VALUES
 (1, 'RM-WHISKEY-BASE', 'Bulk Aged Whiskey Base', 'Aged oak-matured distilled whiskey base spirit (65% ABV)', 'raw_material', 1, 'liter', 200.000, 'active'),
 (2, 'RM-VODKA-BASE', 'Neutral Vodka Grain Spirit', 'High-purity neutral grain spirit 96% ABV for vodka blending', 'raw_material', 1, 'liter', 200.000, 'active'),
@@ -60,5 +63,6 @@ INSERT INTO `items` (`item_id`, `item_code`, `item_name`, `description`, `item_t
 (19, 'FG-PARTY-PACK', 'Distillery Sampler Party Pack', 'Pack of 4 assorted 250ml tasting bottles (Whiskey, Gin, Rum, Lambanog)', 'finished_good', 2, 'box', 20.000, 'active'),
 (20, 'FG-GIFT-SET', 'Master Distillers Gift Set', 'House Reserve Whiskey 750ml bottle with 2 crystal rocks glasses', 'finished_good', 2, 'box', 15.000, 'active')
 ON DUPLICATE KEY UPDATE `item_name` = VALUES(`item_name`), `item_code` = VALUES(`item_code`), `unit` = VALUES(`unit`), `default_reorder_level` = VALUES(`default_reorder_level`);
+*/
 
 SET FOREIGN_KEY_CHECKS = 1;

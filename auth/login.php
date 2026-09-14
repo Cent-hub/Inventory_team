@@ -668,11 +668,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </form>
 
                     <!-- Helper Footer -->
-                    <p class="helper">
-                        <br />
-                        don't have acc yet?
-                        <br />
-                        <a href="register.php" class="link">Sign up with the form instead</a>.
+                    <p class="helper" style="margin-top: 24px; color: var(--gray); font-size: 12.5px;">
+                        Need account access? Contact your System Administrator.
                     </p>
                 </div>
             </div>

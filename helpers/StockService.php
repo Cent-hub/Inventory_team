@@ -38,6 +38,23 @@ class StockService {
 
         $this->pdo->beginTransaction();
         try {
+            // Duplicate Transaction Protection
+            if (!empty($sourceReferenceNo)) {
+                $stmtDup = $this->pdo->prepare("
+                    SELECT stock_in_id, transaction_number 
+                    FROM stock_ins 
+                    WHERE source_reference_no = ? AND source_type = ? AND status != 'cancelled'
+                    LIMIT 1
+                ");
+                $stmtDup->execute([$sourceReferenceNo, $sourceType]);
+                $existing = $stmtDup->fetch();
+                if ($existing) {
+                    throw new DomainException(
+                        "Duplicate transaction error: A completed Stock IN ({$existing['transaction_number']}) with reference '{$sourceReferenceNo}' has already been processed."
+                    );
+                }
+            }
+
             $txnNumber = 'IN-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
             // 1. Insert header
@@ -79,12 +96,12 @@ class StockService {
             ");
 
             $stmtCheckItem = $this->pdo->prepare("
-                SELECT item_id, item_code, item_name, unit, status
+                SELECT item_id, item_code, item_name, item_type, unit, status
                 FROM items WHERE item_id = ?
             ");
 
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? 0);
+                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
                 $qty = (float)($entry['quantity'] ?? 0);
 
                 if ($itemId <= 0 || $qty <= 0) {
@@ -95,6 +112,20 @@ class StockService {
                 $itemInfo = $stmtCheckItem->fetch();
                 if (!$itemInfo || $itemInfo['status'] !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
+                }
+
+                // ERP Business rule: Team 1 Procurement Purchase Orders can ONLY receive raw materials
+                if ($sourceType === 'PURCHASE_ORDER' && $itemInfo['item_type'] !== 'raw_material') {
+                    throw new InvalidArgumentException(
+                        "Procurement PO violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a finished good. Purchase orders from Procurement can only receive raw materials."
+                    );
+                }
+
+                // ERP Business rule: Team 3 Production Returns can ONLY receive finished goods
+                if ($sourceType === 'PRODUCTION_RETURN' && $itemInfo['item_type'] !== 'finished_good') {
+                    throw new InvalidArgumentException(
+                        "Production Receipt violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Production receipts can only receive finished goods."
+                    );
                 }
 
                 // Insert line item
@@ -165,6 +196,23 @@ class StockService {
 
         $this->pdo->beginTransaction();
         try {
+            // Duplicate Transaction Protection
+            if (!empty($sourceReferenceNo)) {
+                $stmtDup = $this->pdo->prepare("
+                    SELECT stock_out_id, transaction_number 
+                    FROM stock_outs 
+                    WHERE source_reference_no = ? AND source_type = ? AND status != 'cancelled'
+                    LIMIT 1
+                ");
+                $stmtDup->execute([$sourceReferenceNo, $sourceType]);
+                $existing = $stmtDup->fetch();
+                if ($existing) {
+                    throw new DomainException(
+                        "Duplicate transaction error: A completed Stock OUT ({$existing['transaction_number']}) with reference '{$sourceReferenceNo}' has already been processed."
+                    );
+                }
+            }
+
             $txnNumber = 'OUT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
             // 1. Pre-validation & Pessimistic Concurrency Locking
@@ -182,7 +230,7 @@ class StockService {
             $validatedEntries = [];
 
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? 0);
+                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
                 $qty = (float)($entry['quantity'] ?? 0);
 
                 if ($itemId <= 0 || $qty <= 0) {
@@ -313,7 +361,7 @@ class StockService {
     /**
      * Real-time Inventory Query
      */
-    public function getInventory(?int $itemId = null, ?string $itemCode = null, ?int $warehouseId = null): array {
+    public function getInventory(?int $itemId = null, ?string $itemCode = null, ?int $warehouseId = null, ?string $itemType = null): array {
         $sql = "
             SELECT 
                 inv.inventory_id,
@@ -348,6 +396,10 @@ class StockService {
         if ($warehouseId !== null) {
             $sql .= " AND w.warehouse_id = ?";
             $params[] = $warehouseId;
+        }
+        if ($itemType !== null && in_array($itemType, ['raw_material', 'finished_good'], true)) {
+            $sql .= " AND i.item_type = ?";
+            $params[] = $itemType;
         }
 
         $sql .= " ORDER BY i.item_name, w.warehouse_name";
@@ -659,7 +711,7 @@ class StockService {
             $validatedEntries = [];
 
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? 0);
+                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
                 $qty = (float)($entry['quantity'] ?? 0);
 
                 if ($itemId <= 0 || $qty <= 0) {

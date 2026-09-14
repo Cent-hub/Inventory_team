@@ -35,6 +35,30 @@ $sourceReferenceNo = trim($payload['source_reference_no'] ?? '');
 $items = $payload['items'] ?? [];
 $remarks = $payload['remarks'] ?? null;
 
+// Support single-item payload at root level (material_id, product_id, or item_id)
+if (empty($items) && (isset($payload['item_id']) || isset($payload['material_id']) || isset($payload['product_id']))) {
+    $items = [[
+        'item_id'  => $payload['item_id'] ?? $payload['material_id'] ?? $payload['product_id'],
+        'quantity' => $payload['quantity'] ?? 0
+    ]];
+}
+
+// Normalize items array to support material_id and product_id as aliases for item_id
+if (is_array($items)) {
+    foreach ($items as &$entry) {
+        if (is_array($entry)) {
+            if (!isset($entry['item_id'])) {
+                if (isset($entry['material_id'])) {
+                    $entry['item_id'] = $entry['material_id'];
+                } elseif (isset($entry['product_id'])) {
+                    $entry['item_id'] = $entry['product_id'];
+                }
+            }
+        }
+    }
+    unset($entry);
+}
+
 // Validation
 if ($warehouseId <= 0) {
     jsonResponse([
@@ -58,10 +82,27 @@ if (empty($sourceReferenceNo)) {
     ], 400);
 }
 
+// Team domain enforcement
+if ($sourceType === 'PURCHASE_ORDER' && !in_array($userId, [2, 5], true) && ($authUser['role'] ?? '') !== 'super_admin') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only Procurement Service API (or Admin) can submit Purchase Orders. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
+if ($sourceType === 'PRODUCTION_RETURN' && $userId !== 3 && ($authUser['role'] ?? '') !== 'super_admin') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only Production Service API (or Admin) can submit Production Receipts. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
 if (!is_array($items) || empty($items)) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Validation Error: items array is required and must contain at least one {item_id, quantity}.'
+        'error'   => 'Validation Error: items array is required and must contain at least one item ({item_id|material_id|product_id, quantity}).'
     ], 400);
 }
 
@@ -81,6 +122,12 @@ try {
         'message' => 'Stock IN recorded successfully. Inventory updated.',
         'data'    => $result
     ], 201);
+} catch (DomainException $e) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Conflict / Duplicate Transaction',
+        'detail'  => $e->getMessage()
+    ], 409);
 } catch (InvalidArgumentException $e) {
     jsonResponse([
         'success' => false,

@@ -18,8 +18,11 @@ $errorMessage   = null;
 
 // Handle New Transfer Initiation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_transfer') {
-    // Strictly enforce source warehouse as the admin's assigned warehouse
-    $sourceWhId = $currentWarehouseId;
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } else {
+        // Strictly enforce source warehouse as the admin's assigned warehouse
+        $sourceWhId = $currentWarehouseId;
     $destWhId   = isset($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : 0;
     $itemId     = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
     $quantity   = isset($_POST['quantity']) ? (float)$_POST['quantity'] : 0;
@@ -48,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } catch (Exception $e) {
             $errorMessage = "Transfer failed: " . $e->getMessage();
         }
+    }
     }
 }
 
@@ -359,6 +363,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
 <div id="newTransferModal" class="modal-backdrop" onclick="if(event.target === this) closeNewTransferModal()">
     <div class="modal-card" style="max-width: 540px;">
         <form method="POST" action="index.php">
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="create_transfer">
             <div class="modal-header">
                 <div>

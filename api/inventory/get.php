@@ -29,10 +29,11 @@ checkRateLimit('inventory_get', 60, 60, $authUser['api_token']);
 $itemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : null;
 $itemCode = isset($_GET['item_code']) ? trim($_GET['item_code']) : null;
 $warehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$itemType = isset($_GET['item_type']) ? trim($_GET['item_type']) : null;
 
 try {
     $service = new StockService();
-    $balances = $service->getInventory($itemId, $itemCode, $warehouseId);
+    $balances = $service->getInventory($itemId, $itemCode, $warehouseId, $itemType);
 
     jsonResponse([
         'success' => true,

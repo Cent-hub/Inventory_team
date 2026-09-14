@@ -11,6 +11,56 @@ $activeGroup = 'inventory';
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
+require_once __DIR__ . '/../../helpers/StockService.php';
+
+$successMessage = null;
+$errorMessage   = null;
+
+// Handle manual Stock In creation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_stock_in') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } else {
+        $sourceType        = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
+    $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
+    $itemId            = (int)($_POST['item_id'] ?? 0);
+    $quantity          = (float)($_POST['quantity'] ?? 0);
+    $remarks           = trim($_POST['remarks'] ?? '');
+    $targetWhId        = (int)($currentWarehouseId ?: 1);
+    $userId            = (int)($currentUser['id'] ?? 1);
+
+    if (empty($sourceReferenceNo)) {
+        $errorMessage = "Reference Number (PO # or Work Order #) is required.";
+    } elseif ($itemId <= 0) {
+        $errorMessage = "Please select an item to receive.";
+    } elseif ($quantity <= 0) {
+        $errorMessage = "Quantity received must be greater than zero.";
+    } else {
+        try {
+            $service = new StockService();
+            $res = $service->recordStockIn(
+                $targetWhId,
+                $sourceType,
+                $sourceReferenceNo,
+                [['item_id' => $itemId, 'quantity' => $quantity]],
+                $userId,
+                $remarks ?: null
+            );
+            $successMessage = "Inbound stock received successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
+        } catch (Exception $e) {
+            $errorMessage = "Stock In failed: " . $e->getMessage();
+        }
+    }
+    }
+}
+
+// Fetch all active items for receiving dropdown
+$allItems = $pdo->query("
+    SELECT item_id, item_code, item_name, item_type, unit 
+    FROM items 
+    WHERE status = 'active' 
+    ORDER BY item_type ASC, item_name ASC
+")->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch Stock In transactions strictly for assigned warehouse
 $stmt = $pdo->prepare("
@@ -89,8 +139,30 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
             </svg>
             <span>Print Ledger</span>
         </button>
+        <button type="button" class="btn btn-primary" onclick="openNewStockInModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>+ Receive Stock In</span>
+        </button>
     </div>
 </div>
+
+<!-- Flash Alerts -->
+<?php if ($successMessage): ?>
+    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span><?= htmlspecialchars($successMessage) ?></span>
+    </div>
+<?php endif; ?>
+
+<?php if ($errorMessage): ?>
+    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span><?= htmlspecialchars($errorMessage) ?></span>
+    </div>
+<?php endif; ?>
 
 <!-- KPI Cards -->
 <div class="stats-grid">
@@ -289,8 +361,149 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     </div>
 </div>
 
+<!-- Modal: New Stock In Receiving Form -->
+<div id="newStockInModal" class="modal-backdrop" onclick="if(event.target === this) closeNewStockInModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <form method="POST" action="index.php">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_stock_in">
+            <div class="modal-header">
+                <div>
+                    <h3 class="card-title">Receive Inbound Inventory</h3>
+                    <p class="card-desc">Record raw materials from Procurement or finished goods from Production</p>
+                </div>
+                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewStockInModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Target Warehouse (Locked to Current Warehouse) -->
+                <div>
+                    <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Receiving Warehouse Facility
+                    </label>
+                    <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-weight: 600; color: var(--panel-ink); font-size: 13px;">
+                            <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>
+                        </span>
+                        <span class="badge" style="background: #DCFCE7; color: #15803D; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Destination Locked</span>
+                    </div>
+                </div>
+
+                <!-- Inbound Source Type -->
+                <div>
+                    <label for="modalSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Inbound Source Type <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="source_type" id="modalSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="onInboundTypeChange(this.value)">
+                        <option value="PURCHASE_ORDER">Purchase Order &mdash; Procurement (Raw Materials Only)</option>
+                        <option value="PRODUCTION_RETURN">Production Receipt &mdash; Distilling/Packaging (Finished Goods Only)</option>
+                        <option value="MANUAL">Manual Inbound &mdash; Inventory Team Adjustment</option>
+                    </select>
+                </div>
+
+                <!-- Source Reference Number -->
+                <div>
+                    <label for="modalRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Source Reference / Tracking # <span style="color: #DC2626;">*</span>
+                    </label>
+                    <input type="text" name="source_reference_no" id="modalRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="e.g. PO-2026-001" required>
+                    <small style="color: var(--gray); font-size: 11px;">Unique identifier to prevent duplicate receiving.</small>
+                </div>
+
+                <!-- Item Selection -->
+                <div>
+                    <label for="modalInItem" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Item to Receive <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_id" id="modalInItem" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="updateInboundUnit(this)">
+                        <option value="">-- Select Item --</option>
+                        <?php foreach ($allItems as $it): ?>
+                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
+                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> [<?= $it['item_type'] === 'raw_material' ? 'Raw Material' : 'Finished Good' ?>]
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Quantity -->
+                <div>
+                    <label for="modalInQty" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Quantity Received <span style="color: #DC2626;">*</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" step="0.01" min="0.01" name="quantity" id="modalInQty" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0.00" required>
+                        <span id="inUnitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
+                    </div>
+                </div>
+
+                <!-- Remarks -->
+                <div>
+                    <label for="modalInRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Remarks / Delivery Notes
+                    </label>
+                    <textarea name="remarks" id="modalInRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px;" placeholder="Optional notes (carrier, batch quality, inspection notes)..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeNewStockInModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Confirm Receipt</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 const linesData = <?= json_encode($linesByStockIn) ?>;
+
+function openNewStockInModal() {
+    document.getElementById('newStockInModal').classList.add('open');
+    onInboundTypeChange(document.getElementById('modalSourceType').value);
+}
+
+function closeNewStockInModal() {
+    document.getElementById('newStockInModal').classList.remove('open');
+}
+
+function onInboundTypeChange(type) {
+    const itemSelect = document.getElementById('modalInItem');
+    const refInput   = document.getElementById('modalRefNo');
+    const options    = itemSelect.querySelectorAll('option');
+
+    if (type === 'PURCHASE_ORDER') {
+        refInput.placeholder = 'e.g. PO-2026-001';
+    } else if (type === 'PRODUCTION_RETURN') {
+        refInput.placeholder = 'e.g. WO-BATCH-2026-001';
+    } else {
+        refInput.placeholder = 'e.g. MAN-2026-001';
+    }
+
+    // Filter items according to business rules
+    options.forEach(opt => {
+        if (!opt.value) return;
+        const itType = opt.getAttribute('data-type');
+        if (type === 'PURCHASE_ORDER') {
+            opt.hidden = (itType !== 'raw_material');
+        } else if (type === 'PRODUCTION_RETURN') {
+            opt.hidden = (itType !== 'finished_good');
+        } else {
+            opt.hidden = false;
+        }
+    });
+
+    // Reset selection if currently selected option became hidden
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    if (selectedOpt && selectedOpt.hidden) {
+        itemSelect.value = '';
+        document.getElementById('inUnitIndicator').textContent = '—';
+    }
+}
+
+function updateInboundUnit(select) {
+    const opt = select.options[select.selectedIndex];
+    const unit = opt ? opt.getAttribute('data-unit') : '—';
+    document.getElementById('inUnitIndicator').textContent = unit ? unit.toUpperCase() : '—';
+}
 
 function openDetailModal(id, txnNo) {
     document.getElementById('modalTitle').textContent = 'Receipt ' + txnNo;
