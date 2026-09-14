@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Inventory & Warehouse Management - ERD Diagram</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .canvas-bg {
+      background-color: #0f172a;
+      background-image: 
+        radial-gradient(circle at 1px 1px, #334155 1px, transparent 0);
+      background-size: 24px 24px;
+    }
+    .table-card {
+      position: absolute;
+      cursor: grab;
+      transition: box-shadow 0.15s ease;
+    }
+    .table-card:active {
+      cursor: grabbing;
+    }
+    .table-card.selected {
+      outline: 2px solid #38bdf8;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.35);
+    }
+    .bezier-line {
+      fill: none;
+      stroke-width: 2;
+      transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s;
+    }
+    .bezier-line.dimmed {
+      opacity: 0.15;
+    }
+    .bezier-line.highlighted {
+      stroke: #38bdf8 !important;
+      stroke-width: 3.5 !important;
+      opacity: 1 !important;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="canvas-bg w-screen h-screen text-slate-200">
+
+  <!-- Top Navigation & Controls Bar -->
+  <header class="absolute top-4 left-4 right-4 z-50 flex items-center justify-between px-6 py-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl">
+    <div class="flex items-center space-x-4">
+      <div class="p-2 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7zm0 5h16M9 4v16" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg text-white flex items-center gap-2">
+          Team_Inventory <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Never Delete, Cancel Instead Policy</span>
+        </h1>
+        <p class="text-xs text-slate-400">15 Tables &bull; 5 Views &bull; 36 Foreign Keys &bull; 14 Check Constraints &bull; 28 Triggers</p>
+      </div>
+    </div>
+
+    <!-- Tier Filter Tabs -->
+    <div class="hidden lg:flex items-center space-x-1 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800/80 text-xs">
+      <button onclick="filterTier('all')" id="tab-all" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium transition">All Tiers</button>
+      <button onclick="filterTier('master')" id="tab-master" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Master Data</button>
+      <button onclick="filterTier('transactions')" id="tab-transactions" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Transactions</button>
+      <button onclick="filterTier('ledger')" id="tab-ledger" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Ledger & Snapshot</button>
+    </div>
+
+    <!-- Zoom & Alignment Controls -->
+    <div class="flex items-center space-x-2">
+      <button onclick="resetView()" title="Reset Alignment" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Reset Align
+      </button>
+      <div class="flex items-center bg-slate-800 rounded-xl border border-slate-700 text-xs">
+        <button onclick="zoomOut()" class="px-2.5 py-1.5 text-slate-300 hover:text-white border-r border-slate-700">&minus;</button>
+        <span id="zoom-label" class="px-3 py-1.5 font-mono text-slate-300">100%</span>
+        <button onclick="zoomIn()" class="px-2.5 py-1.5 text-slate-300 hover:text-white">&plus;</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Interactive Drag/Zoom World Container -->
+  <div id="world" class="w-full h-full origin-top-left">
+    <!-- SVG Canvas for Connector Lines -->
+    <svg id="svg-canvas" class="absolute top-0 left-0 w-[3500px] h-[3000px] pointer-events-none">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
+        </marker>
+        <marker id="arrow-highlight" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+        </marker>
+      </defs>
+      <g id="lines-layer"></g>
+    </svg>
+
+    <!-- Draggable Tables Container -->
+    <div id="tables-container" class="relative w-[3500px] h-[3000px]"></div>
+  </div>
+
+  <!-- Legend & Information Bar -->
+  <footer class="absolute bottom-4 left-4 right-4 z-50 flex flex-wrap items-center justify-between gap-4 px-6 py-2.5 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl text-xs text-slate-400">
+    <div class="flex items-center gap-4">
+      <span class="font-semibold text-slate-300">Tiers:</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-purple-500"></span> Master Data</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-500"></span> Transaction Headers</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-blue-500"></span> Line Items</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> Core Ledger</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-500"></span> Snapshot Inventory</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-rose-500"></span> Defect Registry</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="text-slate-400 font-medium">🛡️ Policy: <span class="text-amber-300 font-semibold">Never Delete, Cancel Instead</span> &bull; Click card to trace relations &bull; Drag to arrange &bull; Scroll to Zoom</span>
+    </div>
+  </footer>
+
+  <script>
+    // Schema Table Definitions
+    const SCHEMA = [
+      // ==========================================
+      // TIER 1: MASTER DATA
+      // ==========================================
+      {
+        id: "users",
+        name: "users",
+        tier: "master",
+        color: "purple",
+        x: 40,
+        y: 100,
+        badge: "Auth & Identity",
+        columns: [
+          { name: "user_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "name", type: "VARCHAR(100)", key: "" },
+          { name: "email", type: "VARCHAR(150)", key: "UQ" },
+          { name: "password", type: "VARCHAR(255)", key: "" },
+          { name: "role", type: "ENUM('super_admin','admin')", key: "" },
+          { name: "status", type: "ENUM('active','inactive')", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "warehouses",
+        name: "warehouses",
+        tier: "master",
+        color: "purple",
+        x: 400,
+        y: 100,
+        badge: "Facilities",
+        columns: [
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "warehouse_code", type: "VARCHAR(50)", key: "UQ" },
+          { name: "warehouse_name", type: "VARCHAR(150)", key: "" },
+          { name: "location", type: "VARCHAR(255)", key: "" },
+          { name: "description", type: "TEXT", key: "" },
+          { name: "status", type: "ENUM('active','inactive')", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "categories",
+        name: "categories",
+        tier: "master",
+        color: "purple",
+        x: 760,
+        y: 100,
+        badge: "Classification",
+        columns: [
+          { name: "category_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "category_code", type: "VARCHAR(50)", key: "UQ" },
+          { name: "category_name", type: "VARCHAR(100)", key: "" },
+          { name: "description", type: "TEXT", key: "" },
+          { name: "status", type: "ENUM('active','inactive')", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "items",
+        name: "items",
+        tier: "master",
+        color: "purple",
+        x: 1120,
+        y: 100,
+        badge: "Raw Mat & Finished",
+        columns: [
+          { name: "item_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "item_code", type: "VARCHAR(50)", key: "UQ" },
+          { name: "item_name", type: "VARCHAR(150)", key: "" },
+          { name: "description", type: "TEXT", key: "" },
+          { name: "item_type", type: "ENUM('raw_mat','finished')", key: "IDX" },
+          { name: "category_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "unit", type: "VARCHAR(20)", key: "" },
+          { name: "default_reorder_level", type: "DECIMAL(14,3)", key: "" },
+          { name: "status", type: "ENUM('active','inactive')", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+
+      // ==========================================
+      // TIER 2: TRANSACTION HEADERS ("Never Delete, Cancel Instead")
+      // ==========================================
+      {
+        id: "stock_ins",
+        name: "stock_ins",
+        tier: "transactions",
+        color: "amber",
+        x: 40,
+        y: 450,
+        badge: "Inbound Voucher",
+        columns: [
+          { name: "stock_in_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "transaction_date", type: "DATE", key: "" },
+          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
+          { name: "remarks", type: "TEXT", key: "" },
+          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancelled_at", type: "DATETIME", key: "" },
+          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "stock_outs",
+        name: "stock_outs",
+        tier: "transactions",
+        color: "amber",
+        x: 370,
+        y: 450,
+        badge: "Outbound Voucher",
+        columns: [
+          { name: "stock_out_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "transaction_date", type: "DATE", key: "" },
+          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
+          { name: "remarks", type: "TEXT", key: "" },
+          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancelled_at", type: "DATETIME", key: "" },
+          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "stock_transfers",
+        name: "stock_transfers",
+        tier: "transactions",
+        color: "amber",
+        x: 700,
+        y: 450,
+        badge: "Inter-WH Transfer",
+        columns: [
+          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
+          { name: "source_warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "destination_warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "transaction_date", type: "DATE", key: "" },
+          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
+          { name: "remarks", type: "TEXT", key: "" },
+          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancelled_at", type: "DATETIME", key: "" },
+          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "stock_adjustments",
+        name: "stock_adjustments",
+        tier: "transactions",
+        color: "amber",
+        x: 1040,
+        y: 450,
+        badge: "Maker-Checker Memo",
+        columns: [
+          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "adjustment_date", type: "DATE", key: "" },
+          { name: "reason", type: "VARCHAR(255)", key: "" },
+          { name: "status", type: "ENUM('pending','approved','rejected','cancelled')", key: "" },
+          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "approved_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "approved_at", type: "DATETIME", key: "" },
+          { name: "cancelled_at", type: "DATETIME", key: "" },
+          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+      {
+        id: "bad_products",
+        name: "bad_products",
+        tier: "transactions",
+        color: "rose",
+        x: 1380,
+        y: 450,
+        badge: "Defect Registry",
+        columns: [
+          { name: "bad_product_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "bad_product_number", type: "VARCHAR(50)", key: "UQ" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "condition_type", type: "ENUM(6 types)", key: "IDX" },
+          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" },
+          { name: "reason", type: "VARCHAR(255)", key: "" },
+          { name: "status", type: "ENUM('completed','cancelled')", key: "IDX" },
+          { name: "reported_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancelled_at", type: "DATETIME", key: "" },
+          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
+          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
+          { name: "created_at", type: "TIMESTAMP", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+
+      // ==========================================
+      // TIER 3: TRANSACTION LINE ITEMS (Immutable once completed/cancelled)
+      // ==========================================
+      {
+        id: "stock_in_items",
+        name: "stock_in_items",
+        tier: "transactions",
+        color: "blue",
+        x: 40,
+        y: 920,
+        badge: "Inbound Items",
+        columns: [
+          { name: "stock_in_item_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "stock_in_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
+        ]
+      },
+      {
+        id: "stock_out_items",
+        name: "stock_out_items",
+        tier: "transactions",
+        color: "blue",
+        x: 370,
+        y: 920,
+        badge: "Outbound Items",
+        columns: [
+          { name: "stock_out_item_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "stock_out_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
+        ]
+      },
+      {
+        id: "stock_transfer_items",
+        name: "stock_transfer_items",
+        tier: "transactions",
+        color: "blue",
+        x: 700,
+        y: 920,
+        badge: "Transfer Items",
+        columns: [
+          { name: "stock_transfer_item_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
+        ]
+      },
+      {
+        id: "stock_adjustment_items",
+        name: "stock_adjustment_items",
+        tier: "transactions",
+        color: "blue",
+        x: 1040,
+        y: 920,
+        badge: "Variance Details",
+        columns: [
+          { name: "stock_adjustment_item_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "previous_quantity", type: "DECIMAL(14,3)", key: "" },
+          { name: "adjusted_quantity", type: "DECIMAL(14,3)", key: "" },
+          { name: "difference", type: "DECIMAL(14,3)", key: "GEN" }
+        ]
+      },
+
+      // ==========================================
+      // TIER 4: CORE AUDIT LEDGER (Immutable Ledger)
+      // ==========================================
+      {
+        id: "stock_movements",
+        name: "stock_movements",
+        tier: "ledger",
+        color: "emerald",
+        x: 520,
+        y: 1170,
+        badge: "Immutable Ledger",
+        columns: [
+          { name: "movement_id", type: "BIGINT UNSIGNED", key: "PK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "movement_type", type: "ENUM(11 types)", key: "IDX" },
+          { name: "stock_in_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "stock_out_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "bad_product_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "reference_number", type: "VARCHAR(100)", key: "" },
+          { name: "quantity_in", type: "DECIMAL(14,3)", key: "" },
+          { name: "quantity_out", type: "DECIMAL(14,3)", key: "" },
+          { name: "balance_after", type: "DECIMAL(14,3)", key: "CHK" },
+          { name: "created_at", type: "TIMESTAMP", key: "" }
+        ]
+      },
+
+      // ==========================================
+      // TIER 5: REAL-TIME INVENTORY SNAPSHOT
+      // ==========================================
+      {
+        id: "inventory",
+        name: "inventory",
+        tier: "ledger",
+        color: "teal",
+        x: 520,
+        y: 1680,
+        badge: "Real-Time Snapshot",
+        columns: [
+          { name: "inventory_id", type: "INT UNSIGNED", key: "PK" },
+          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
+          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" },
+          { name: "reorder_level", type: "DECIMAL(14,3)", key: "" },
+          { name: "updated_at", type: "TIMESTAMP", key: "" }
+        ]
+      }
+    ];
+
+    // Referential Relationships
+    const RELATIONS = [
+      // Categories -> Items
+      { from: "categories", to: "items", label: "category_id" },
+
+      // Users -> Headers & Registries
+      { from: "users", to: "stock_ins", label: "created_by" },
+      { from: "users", to: "stock_ins", label: "cancelled_by" },
+      { from: "users", to: "stock_outs", label: "created_by" },
+      { from: "users", to: "stock_outs", label: "cancelled_by" },
+      { from: "users", to: "stock_transfers", label: "created_by" },
+      { from: "users", to: "stock_transfers", label: "cancelled_by" },
+      { from: "users", to: "stock_adjustments", label: "created_by" },
+      { from: "users", to: "stock_adjustments", label: "cancelled_by" },
+      { from: "users", to: "bad_products", label: "reported_by" },
+      { from: "users", to: "bad_products", label: "cancelled_by" },
+
+      // Warehouses -> Headers, Registries & Inventory
+      { from: "warehouses", to: "stock_ins", label: "warehouse_id" },
+      { from: "warehouses", to: "stock_outs", label: "warehouse_id" },
+      { from: "warehouses", to: "stock_transfers", label: "source_wh" },
+      { from: "warehouses", to: "stock_transfers", label: "dest_wh" },
+      { from: "warehouses", to: "stock_adjustments", label: "warehouse_id" },
+      { from: "warehouses", to: "bad_products", label: "warehouse_id" },
+      { from: "warehouses", to: "inventory", label: "warehouse_id" },
+
+      // Items -> Line Items, Registries & Inventory
+      { from: "items", to: "stock_in_items", label: "item_id" },
+      { from: "items", to: "stock_out_items", label: "item_id" },
+      { from: "items", to: "stock_transfer_items", label: "item_id" },
+      { from: "items", to: "stock_adjustment_items", label: "item_id" },
+      { from: "items", to: "bad_products", label: "item_id" },
+      { from: "items", to: "inventory", label: "item_id" },
+
+      // Header -> Line items (1:N)
+      { from: "stock_ins", to: "stock_in_items", label: "stock_in_id" },
+      { from: "stock_outs", to: "stock_out_items", label: "stock_out_id" },
+      { from: "stock_transfers", to: "stock_transfer_items", label: "stock_transfer_id" },
+      { from: "stock_adjustments", to: "stock_adjustment_items", label: "stock_adjustment_id" },
+
+      // Header & Registry -> Ledger Movements
+      { from: "stock_ins", to: "stock_movements", label: "stock_in_id" },
+      { from: "stock_outs", to: "stock_movements", label: "stock_out_id" },
+      { from: "stock_transfers", to: "stock_movements", label: "stock_transfer_id" },
+      { from: "stock_adjustments", to: "stock_movements", label: "stock_adjustment_id" },
+      { from: "bad_products", to: "stock_movements", label: "bad_product_id" },
+
+      // Ledger -> Snapshot Trigger Link
+      { from: "stock_movements", to: "inventory", label: "syncs (trigger)" }
+    ];
+
+    // State Variables
+    let zoom = 0.85;
+    let panX = 40;
+    let panY = 70;
+    let isPanning = false;
+    let startX, startY;
+    let selectedTable = null;
+
+    const world = document.getElementById("world");
+    const tablesContainer = document.getElementById("tables-container");
+    const linesLayer = document.getElementById("lines-layer");
+    const zoomLabel = document.getElementById("zoom-label");
+
+    // Color theme mappings
+    const THEME = {
+      purple: { border: "border-purple-500/40", header: "bg-purple-900/40 text-purple-300", badge: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+      amber: { border: "border-amber-500/40", header: "bg-amber-900/40 text-amber-300", badge: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+      blue: { border: "border-blue-500/40", header: "bg-blue-900/40 text-blue-300", badge: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+      emerald: { border: "border-emerald-500/40", header: "bg-emerald-900/40 text-emerald-300", badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+      teal: { border: "border-teal-500/40", header: "bg-teal-900/40 text-teal-300", badge: "bg-teal-500/20 text-teal-300 border-teal-500/30" },
+      rose: { border: "border-rose-500/40", header: "bg-rose-900/40 text-rose-300", badge: "bg-rose-500/20 text-rose-300 border-rose-500/30" }
+    };
+
+    function renderTables() {
+      tablesContainer.innerHTML = "";
+      SCHEMA.forEach(tbl => {
+        const card = document.createElement("div");
+        card.id = `card-${tbl.id}`;
+        card.className = `table-card w-[290px] bg-slate-900/95 border ${THEME[tbl.color].border} rounded-2xl shadow-xl backdrop-blur overflow-hidden`;
+        card.style.left = `${tbl.x}px`;
+        card.style.top = `${tbl.y}px`;
+
+        let colsHtml = tbl.columns.map(col => {
+          let badge = "";
+          if (col.key === "PK") badge = `<span class="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold rounded">PK</span>`;
+          else if (col.key === "FK") badge = `<span class="px-1.5 py-0.2 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded">FK</span>`;
+          else if (col.key === "UQ") badge = `<span class="px-1.5 py-0.2 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold rounded">UQ</span>`;
+          else if (col.key === "CHK") badge = `<span class="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-bold rounded">CHK</span>`;
+          else if (col.key === "GEN") badge = `<span class="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded">GEN</span>`;
+          else if (col.key === "IDX") badge = `<span class="px-1.5 py-0.2 bg-slate-500/20 text-slate-400 border border-slate-500/30 text-[10px] font-bold rounded">IDX</span>`;
+
+          return `
+            <div class="flex items-center justify-between px-3.5 py-1.5 border-b border-slate-800/60 hover:bg-slate-800/40 text-xs">
+              <div class="flex items-center gap-1.5 truncate">
+                ${badge}
+                <span class="font-mono text-slate-200 truncate ${col.key === 'PK' ? 'font-semibold text-amber-200' : ''}">${col.name}</span>
+              </div>
+              <span class="font-mono text-[11px] text-slate-500 truncate ml-2">${col.type}</span>
+            </div>
+          `;
+        }).join("");
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 ${THEME[tbl.color].header}">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm text-white">${tbl.name}</span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full border ${THEME[tbl.color].badge} font-medium">${tbl.badge}</span>
+          </div>
+          <div class="divide-y divide-slate-800/40">${colsHtml}</div>
+        `;
+
+        makeDraggable(card, tbl);
+        card.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectTable(tbl.id);
+        });
+
+        tablesContainer.appendChild(card);
+      });
+
+      renderLines();
+    }
+
+    function renderLines() {
+      linesLayer.innerHTML = "";
+      RELATIONS.forEach((rel, idx) => {
+        const fromEl = document.getElementById(`card-${rel.from}`);
+        const toEl = document.getElementById(`card-${rel.to}`);
+        if (!fromEl || !toEl) return;
+
+        const fRect = { x: parseFloat(fromEl.style.left), y: parseFloat(fromEl.style.top), w: fromEl.offsetWidth, h: fromEl.offsetHeight };
+        const tRect = { x: parseFloat(toEl.style.left), y: parseFloat(toEl.style.top), w: toEl.offsetWidth, h: toEl.offsetHeight };
+
+        let x1, y1, x2, y2;
+        if (fRect.y + fRect.h < tRect.y) {
+          x1 = fRect.x + fRect.w / 2;
+          y1 = fRect.y + fRect.h;
+          x2 = tRect.x + tRect.w / 2;
+          y2 = tRect.y;
+        } else if (fRect.y > tRect.y + tRect.h) {
+          x1 = fRect.x + fRect.w / 2;
+          y1 = fRect.y;
+          x2 = tRect.x + tRect.w / 2;
+          y2 = tRect.y + tRect.h;
+        } else if (fRect.x + fRect.w < tRect.x) {
+          x1 = fRect.x + fRect.w;
+          y1 = fRect.y + fRect.h / 2;
+          x2 = tRect.x;
+          y2 = tRect.y + tRect.h / 2;
+        } else {
+          x1 = fRect.x;
+          y1 = fRect.y + fRect.h / 2;
+          x2 = tRect.x + tRect.w;
+          y2 = tRect.y + tRect.h / 2;
+        }
+
+        const dx = Math.abs(x2 - x1) * 0.45;
+        const dy = Math.abs(y2 - y1) * 0.45;
+        let d = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+        if (Math.abs(x2 - x1) > Math.abs(y2 - y1)) {
+          d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+        }
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", d);
+        path.setAttribute("id", `line-${idx}`);
+        path.setAttribute("data-from", rel.from);
+        path.setAttribute("data-to", rel.to);
+        path.setAttribute("stroke", "#475569");
+        path.setAttribute("marker-end", "url(#arrow)");
+        path.classList.add("bezier-line");
+
+        linesLayer.appendChild(path);
+      });
+    }
+
+    function makeDraggable(el, tbl) {
+      let isDragging = false;
+      let offX, offY;
+
+      el.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        offX = (e.clientX / zoom) - tbl.x;
+        offY = (e.clientY / zoom) - tbl.y;
+        el.style.zIndex = 30;
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        tbl.x = (e.clientX / zoom) - offX;
+        tbl.y = (e.clientY / zoom) - offY;
+        el.style.left = `${tbl.x}px`;
+        el.style.top = `${tbl.y}px`;
+        renderLines();
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (isDragging) {
+          isDragging = false;
+          el.style.zIndex = 10;
+        }
+      });
+    }
+
+    function selectTable(id) {
+      selectedTable = (selectedTable === id) ? null : id;
+      document.querySelectorAll(".table-card").forEach(c => c.classList.remove("selected"));
+      document.querySelectorAll(".bezier-line").forEach(l => {
+        l.classList.remove("highlighted", "dimmed");
+      });
+
+      if (!selectedTable) return;
+
+      const card = document.getElementById(`card-${selectedTable}`);
+      if (card) card.classList.add("selected");
+
+      document.querySelectorAll(".bezier-line").forEach(l => {
+        const from = l.getAttribute("data-from");
+        const to = l.getAttribute("data-to");
+        if (from === selectedTable || to === selectedTable) {
+          l.classList.add("highlighted");
+          l.setAttribute("marker-end", "url(#arrow-highlight)");
+        } else {
+          l.classList.add("dimmed");
+          l.setAttribute("marker-end", "url(#arrow)");
+        }
+      });
+    }
+
+    document.body.addEventListener("click", () => selectTable(null));
+
+    // Pan and Zoom
+    window.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.06 : 0.06;
+      zoom = Math.min(Math.max(0.35, zoom + delta), 1.75);
+      updateTransform();
+    }, { passive: false });
+
+    window.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".table-card") || e.target.closest("header") || e.target.closest("footer")) return;
+      isPanning = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isPanning) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      updateTransform();
+    });
+
+    window.addEventListener("mouseup", () => { isPanning = false; });
+
+    function updateTransform() {
+      world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+    }
+
+    function zoomIn() { zoom = Math.min(1.75, zoom + 0.15); updateTransform(); }
+    function zoomOut() { zoom = Math.max(0.35, zoom - 0.15); updateTransform(); }
+
+    function resetView() {
+      zoom = 0.85;
+      panX = 40;
+      panY = 70;
+      updateTransform();
+      // Reset default positions
+      const defaultPositions = {
+        users: { x: 40, y: 100 },
+        warehouses: { x: 400, y: 100 },
+        categories: { x: 760, y: 100 },
+        items: { x: 1120, y: 100 },
+        stock_ins: { x: 40, y: 450 },
+        stock_outs: { x: 370, y: 450 },
+        stock_transfers: { x: 700, y: 450 },
+        stock_adjustments: { x: 1040, y: 450 },
+        bad_products: { x: 1380, y: 450 },
+        stock_in_items: { x: 40, y: 920 },
+        stock_out_items: { x: 370, y: 920 },
+        stock_transfer_items: { x: 700, y: 920 },
+        stock_adjustment_items: { x: 1040, y: 920 },
+        stock_movements: { x: 520, y: 1170 },
+        inventory: { x: 520, y: 1680 }
+      };
+      SCHEMA.forEach(tbl => {
+        if (defaultPositions[tbl.id]) {
+          tbl.x = defaultPositions[tbl.id].x;
+          tbl.y = defaultPositions[tbl.id].y;
+        }
+      });
+      renderTables();
+    }
+
+    function filterTier(tier) {
+      document.querySelectorAll("[id^='tab-']").forEach(t => {
+        t.className = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+      });
+      document.getElementById(`tab-${tier}`).className = "px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium transition";
+
+      SCHEMA.forEach(tbl => {
+        const el = document.getElementById(`card-${tbl.id}`);
+        if (!el) return;
+        if (tier === "all" || tbl.tier === tier) {
+          el.style.display = "block";
+        } else {
+          el.style.display = "none";
+        }
+      });
+      renderLines();
+    }
+
+    // Initialize
+    updateTransform();
+    renderTables();
+  </script>
+</body>
+</html>

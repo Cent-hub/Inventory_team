@@ -1,0 +1,117 @@
+<?php
+/**
+ * API Endpoint: Create Stock Out
+ * Primary Consumers:
+ *   - Team 3: Production (Material Request for Raw Materials)
+ *   - Team 4: Sales (Delivery of Finished Goods)
+ * Method: POST
+ */
+
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../helpers/response.php';
+require_once __DIR__ . '/../../helpers/auth.php';
+require_once __DIR__ . '/../../helpers/rate_limiter.php';
+require_once __DIR__ . '/../../helpers/StockService.php';
+
+header('Content-Type: application/json; charset=utf-8');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Method Not Allowed. Use POST.'
+    ], 405);
+}
+
+// Authenticate caller (Admin, Production, or Sales)
+$authUser = requireApiAuth(['production', 'sales']);
+$userId = (int)$authUser['user_id'];
+
+// Enforce rate limiting per API token (30 req / 60s)
+checkRateLimit('stock_out_create', 30, 60, $authUser['api_token']);
+
+$payload = getRequestJson();
+
+$warehouseId = (int)($payload['warehouse_id'] ?? 0);
+$sourceType = strtoupper(trim($payload['source_type'] ?? ''));
+$sourceReferenceNo = trim($payload['source_reference_no'] ?? '');
+$items = $payload['items'] ?? [];
+$remarks = $payload['remarks'] ?? null;
+
+// Validation
+if ($warehouseId <= 0) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: warehouse_id is required.'
+    ], 400);
+}
+
+$validSourceTypes = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'MANUAL'];
+if (!in_array($sourceType, $validSourceTypes, true)) {
+    jsonResponse([
+        'success' => false,
+        'error'   => "Validation Error: source_type must be either 'MATERIAL_REQUEST' (for Production) or 'SALES_DELIVERY' (for Sales)."
+    ], 400);
+}
+
+// Team domain enforcement
+if ($sourceType === 'MATERIAL_REQUEST' && $userId !== 3 && ($authUser['role'] ?? '') !== 'super_admin') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only the Production Service API or Admin can submit Material Requests. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
+if ($sourceType === 'SALES_DELIVERY' && !in_array($userId, [4, 6], true) && ($authUser['role'] ?? '') !== 'super_admin') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only the Sales Service API or Admin can submit Sales Deliveries. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
+if (empty($sourceReferenceNo)) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: source_reference_no (e.g. Material Request # or Sales Order / Delivery #) is required.'
+    ], 400);
+}
+
+if (!is_array($items) || empty($items)) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: items array is required and must contain at least one {item_id, quantity}.'
+    ], 400);
+}
+
+try {
+    $service = new StockService();
+    $result = $service->recordStockOut(
+        $warehouseId,
+        $sourceType,
+        $sourceReferenceNo,
+        $items,
+        $userId,
+        $remarks
+    );
+
+    jsonResponse([
+        'success' => true,
+        'message' => 'Stock OUT recorded successfully. Inventory deducted.',
+        'data'    => $result
+    ], 201);
+} catch (InvalidArgumentException $e) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error',
+        'detail'  => $e->getMessage()
+    ], 422);
+} catch (PDOException $e) {
+    handleDbException($e);
+} catch (Exception $e) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Internal Server Error',
+        'detail'  => $e->getMessage()
+    ], 500);
+}
