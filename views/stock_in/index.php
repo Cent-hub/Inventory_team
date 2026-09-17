@@ -126,8 +126,8 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
 <!-- Page Header -->
 <div class="page-header">
     <div>
-        <h1 class="page-title">Stock In Receiving Ledger</h1>
-        <p class="page-subtitle">Inbound inventory receiving transactions for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+        <h1 class="page-title">Inbound / Stock In</h1>
+        <p class="page-subtitle">Transactions received from Procurement and Production &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH-MAIN') ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Main Warehouse') ?></p>
     </div>
     <div class="header-actions">
         <button type="button" class="btn btn-secondary" onclick="window.print()">
@@ -138,13 +138,6 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
                 <rect width="12" height="8" x="6" y="14"/>
             </svg>
             <span>Print Ledger</span>
-        </button>
-        <button type="button" class="btn btn-primary" onclick="openNewStockInModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span>+ Receive Stock In</span>
         </button>
     </div>
 </div>
@@ -164,11 +157,119 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     </div>
 <?php endif; ?>
 
+<style>
+.api-workflow-banner {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.api-workflow-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #15803D;
+    background: #DCFCE7;
+}
+.api-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #F8FAFC;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 12px;
+    color: var(--panel-ink);
+}
+.badge-source-procurement {
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.badge-source-production {
+    background: #E0F2FE;
+    color: #0369A1;
+    border: 1px solid #BAE6FD;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.badge-source-manual {
+    background: #F1F5F9;
+    color: #475569;
+    border: 1px solid #CBD5E1;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+</style>
+
+<!-- API Integration Status & Role Notice -->
+<div class="api-workflow-banner">
+    <div class="api-workflow-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+            <circle cx="12" cy="12" r="2"/>
+            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+            <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+        </svg>
+    </div>
+    <div style="flex: 1;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 14px; font-weight: 700; color: var(--panel-ink);">
+                API Integration Active &mdash; Automated Inbound Stock In
+            </div>
+            <span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #BBF7D0; font-size: 11px; font-weight: 700;">
+                ● Live API Integration
+            </span>
+        </div>
+        <p style="margin: 4px 0 10px 0; font-size: 13px; color: var(--gray); line-height: 1.5;">
+            Inbound transactions are received automatically through external subsystem APIs. Inventory users primarily monitor, verify, and track inbound stock movements without duplicate manual entry.
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <div class="api-tag-badge">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #D97706;"></span>
+                <span><strong>Procurement API:</strong> Raw Materials &larr; Purchase Orders (PO)</span>
+            </div>
+            <div class="api-tag-badge">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #0284C7;"></span>
+                <span><strong>Production API:</strong> Finished Goods &larr; Production Batches / Work Orders</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- KPI Cards -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Inbound Receipts</span>
+            <span class="stat-label">Total Inbound</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="17" y1="7" x2="7" y2="17"/>
@@ -177,12 +278,12 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
             </div>
         </div>
         <div class="stat-value"><?= $totalStockInTxns ?></div>
-        <div class="stat-meta">Completed inbound operations</div>
+        <div class="stat-meta">Completed inbound receipts</div>
     </div>
 
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Procurement POs</span>
+            <span class="stat-label">Procurement (Raw Materials)</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>
@@ -192,12 +293,12 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
             </div>
         </div>
         <div class="stat-value"><?= $procurementInbounds ?></div>
-        <div class="stat-meta">Raw materials received from vendors</div>
+        <div class="stat-meta">Inbound raw ingredients received via PO</div>
     </div>
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Production Receipts</span>
+            <span class="stat-label">Production (Finished Goods)</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: var(--accent); background: var(--accent-light);">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m16 16 2 2 4-4"/>
@@ -206,16 +307,16 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
             </div>
         </div>
         <div class="stat-value"><?= $productionInbounds ?></div>
-        <div class="stat-meta">Finished goods delivered to warehouse</div>
+        <div class="stat-meta">Distilled / packaged bottles received</div>
     </div>
 </div>
 
-<!-- Main Table Card -->
+<!-- Inbound Transaction Ledger Card -->
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Inbound Stock Ledger Records</h2>
-            <p class="card-desc">Every transaction updates physical inventory and generates an immutable stock movement entry</p>
+            <h2 class="card-title">Inbound / Stock In Transactions</h2>
+            <p class="card-desc">Real-time log of stock received through Procurement and Production API integrations</p>
         </div>
         <div class="filter-group">
             <!-- Search Filter -->
@@ -226,15 +327,22 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="stockInSearch" class="search-box" placeholder="Filter ref, item, PO #..." onkeyup="filterStockInTable()">
+                <input type="text" id="stockInSearch" class="search-box" placeholder="Filter item, ref, PO #..." onkeyup="filterStockInTable()">
             </div>
 
-            <!-- Source Type Filter -->
+            <!-- Source Filter -->
             <select id="sourceTypeFilter" class="select-filter" onchange="filterStockInTable()">
-                <option value="">All Source Types</option>
-                <option value="PURCHASE_ORDER">Purchase Order (Procurement)</option>
-                <option value="PRODUCTION_RETURN">Production Receipt</option>
-                <option value="MANUAL">Manual Inbound</option>
+                <option value="">All Sources</option>
+                <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
+                <option value="PRODUCTION_RETURN">Production (Work Orders)</option>
+                <option value="MANUAL">Internal / Adjustment</option>
+            </select>
+
+            <!-- Item Type Filter -->
+            <select id="itemTypeFilter" class="select-filter" onchange="filterStockInTable()">
+                <option value="">All Classifications</option>
+                <option value="raw_material">Raw Materials</option>
+                <option value="finished_good">Finished Goods</option>
             </select>
         </div>
     </div>
@@ -243,14 +351,12 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
         <table id="stockInTable">
             <thead>
                 <tr>
-                    <th>Reference Number</th>
-                    <th>Source Type</th>
-                    <th>Source PO / Ref #</th>
-                    <th>Warehouse Branch</th>
-                    <th>Items Received</th>
-                    <th>Total Qty</th>
-                    <th>Date</th>
-                    <th>Received By</th>
+                    <th>Source</th>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Quantity</th>
+                    <th>Reference / Tracking #</th>
+                    <th>Date Received</th>
                     <th>Status</th>
                     <th style="text-align: right;">Action</th>
                 </tr>
@@ -258,61 +364,110 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
             <tbody>
                 <?php if (empty($stockIns)): ?>
                     <tr>
-                        <td colspan="10" style="text-align: center; color: var(--gray); padding: 36px;">No Stock In transactions recorded.</td>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 40px;">
+                            No inbound Stock In transactions recorded for this warehouse yet.
+                        </td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($stockIns as $row): ?>
-                        <tr data-source="<?= htmlspecialchars($row['source_type']) ?>">
-                            <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
-                                <?= htmlspecialchars($row['transaction_number']) ?>
-                            </td>
+                    <?php foreach ($stockIns as $row): 
+                        $lines = $linesByStockIn[(int)$row['stock_in_id']] ?? [];
+                        $firstLine = $lines[0] ?? null;
+                        $hasMultiple = count($lines) > 1;
+
+                        // Derive item classification
+                        $itemType = 'raw_material';
+                        if ($row['source_type'] === 'PRODUCTION_RETURN') {
+                            $itemType = 'finished_good';
+                        } elseif (!empty($lines)) {
+                            $types = array_unique(array_column($lines, 'item_type'));
+                            $itemType = count($types) === 1 ? $types[0] : 'mixed';
+                        }
+                    ?>
+                        <tr data-source="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
+                            <!-- Source -->
                             <td>
                                 <?php if ($row['source_type'] === 'PURCHASE_ORDER'): ?>
-                                    <span class="badge" style="background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">
-                                        Procurement PO
+                                    <span class="badge-source-procurement">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                                        Procurement
                                     </span>
                                 <?php elseif ($row['source_type'] === 'PRODUCTION_RETURN'): ?>
-                                    <span class="badge" style="background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;">
-                                        Production Batch
+                                    <span class="badge-source-production">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
+                                        Production
                                     </span>
                                 <?php else: ?>
-                                    <span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">
-                                        Manual Inbound
+                                    <span class="badge-source-manual">
+                                        Internal
                                     </span>
                                 <?php endif; ?>
                             </td>
-                            <td style="font-family: monospace; font-size: 12px; font-weight: 600;">
-                                <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
+
+                            <!-- Item -->
+                            <td style="max-width: 260px;">
+                                <?php if (!$hasMultiple && $firstLine): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($firstLine['item_name']) ?></div>
+                                    <small style="font-family: monospace; color: var(--gray); font-size: 11.5px;"><?= htmlspecialchars($firstLine['item_code']) ?></small>
+                                <?php elseif ($hasMultiple): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= count($lines) ?> items received</div>
+                                    <small style="color: var(--gray); font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['item_breakdown'] ?: '') ?>">
+                                        <?= htmlspecialchars($row['item_breakdown'] ?: 'Multiple items') ?>
+                                    </small>
+                                <?php else: ?>
+                                    <span style="color: var(--gray); font-style: italic;">No items specified</span>
+                                <?php endif; ?>
                             </td>
+
+                            <!-- Type -->
                             <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>">
-                                    <?= htmlspecialchars($row['warehouse_code']) ?>
-                                </span>
-                                <small style="color: var(--gray); margin-left: 4px;"><?= htmlspecialchars($row['warehouse_name']) ?></small>
+                                <?php if ($itemType === 'finished_good'): ?>
+                                    <span class="badge-type type-fg">Finished Good</span>
+                                <?php elseif ($itemType === 'raw_material'): ?>
+                                    <span class="badge-type type-raw">Raw Material</span>
+                                <?php else: ?>
+                                    <span class="badge-type type-raw">Mixed (<?= count($lines) ?>)</span>
+                                <?php endif; ?>
                             </td>
-                            <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['item_breakdown'] ?: '') ?>">
-                                <span style="font-weight: 600;"><?= $row['total_item_count'] ?> item(s):</span>
-                                <span style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['item_breakdown'] ?: 'No items') ?></span>
+
+                            <!-- Quantity -->
+                            <td style="font-weight: 700; color: #15803D; white-space: nowrap;">
+                                +<?= number_format((float)$row['total_quantity'], 1) ?>
+                                <?php if (!$hasMultiple && $firstLine): ?>
+                                    <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
+                                <?php endif; ?>
                             </td>
-                            <td style="font-weight: 700; color: #15803D;">
-                                +<?= number_format($row['total_quantity'], 1) ?>
+
+                            <!-- Reference / Tracking # -->
+                            <td>
+                                <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: var(--panel-ink);">
+                                    <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
+                                </div>
+                                <small style="font-family: monospace; color: var(--gray); font-size: 11px;">
+                                    <?= htmlspecialchars($row['transaction_number']) ?>
+                                </small>
                             </td>
-                            <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
+
+                            <!-- Date Received -->
+                            <td style="font-size: 12.5px; white-space: nowrap;">
                                 <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
+                                <small style="display: block; color: var(--gray); font-size: 11px;">
+                                    <?= date('h:i A', strtotime($row['created_at'])) ?>
+                                </small>
                             </td>
-                            <td style="font-size: 12.5px;">
-                                <?= htmlspecialchars($row['operator_name']) ?>
-                            </td>
+
+                            <!-- Status -->
                             <td>
                                 <?php if ($row['status'] === 'completed'): ?>
-                                    <span class="badge status-completed">Completed</span>
+                                    <span class="badge status-completed">Received</span>
                                 <?php else: ?>
                                     <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
                                 <?php endif; ?>
                             </td>
+
+                            <!-- Action -->
                             <td style="text-align: right;">
-                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                    View Items
+                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                    View Details
                                 </button>
                             </td>
                         </tr>
@@ -332,7 +487,6 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
                 <p id="modalSub" class="card-desc">Inbound line items received into warehouse</p>
             </div>
             <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeDetailModal()">
-                <!-- Close Icon -->
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -361,152 +515,11 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     </div>
 </div>
 
-<!-- Modal: New Stock In Receiving Form -->
-<div id="newStockInModal" class="modal-backdrop" onclick="if(event.target === this) closeNewStockInModal()">
-    <div class="modal-card" style="max-width: 520px;">
-        <form method="POST" action="index.php">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_stock_in">
-            <div class="modal-header">
-                <div>
-                    <h3 class="card-title">Receive Inbound Inventory</h3>
-                    <p class="card-desc">Record raw materials from Procurement or finished goods from Production</p>
-                </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewStockInModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Target Warehouse (Locked to Current Warehouse) -->
-                <div>
-                    <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Receiving Warehouse Facility
-                    </label>
-                    <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-weight: 600; color: var(--panel-ink); font-size: 13px;">
-                            <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>
-                        </span>
-                        <span class="badge" style="background: #DCFCE7; color: #15803D; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Destination Locked</span>
-                    </div>
-                </div>
-
-                <!-- Inbound Source Type -->
-                <div>
-                    <label for="modalSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Inbound Source Type <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="source_type" id="modalSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="onInboundTypeChange(this.value)">
-                        <option value="PURCHASE_ORDER">Purchase Order &mdash; Procurement (Raw Materials Only)</option>
-                        <option value="PRODUCTION_RETURN">Production Receipt &mdash; Distilling/Packaging (Finished Goods Only)</option>
-                        <option value="MANUAL">Manual Inbound &mdash; Inventory Team Adjustment</option>
-                    </select>
-                </div>
-
-                <!-- Source Reference Number -->
-                <div>
-                    <label for="modalRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Source Reference / Tracking # <span style="color: #DC2626;">*</span>
-                    </label>
-                    <input type="text" name="source_reference_no" id="modalRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="e.g. PO-2026-001" required>
-                    <small style="color: var(--gray); font-size: 11px;">Unique identifier to prevent duplicate receiving.</small>
-                </div>
-
-                <!-- Item Selection -->
-                <div>
-                    <label for="modalInItem" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Item to Receive <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_id" id="modalInItem" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="updateInboundUnit(this)">
-                        <option value="">-- Select Item --</option>
-                        <?php foreach ($allItems as $it): ?>
-                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
-                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> [<?= $it['item_type'] === 'raw_material' ? 'Raw Material' : 'Finished Good' ?>]
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Quantity -->
-                <div>
-                    <label for="modalInQty" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Quantity Received <span style="color: #DC2626;">*</span>
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="modalInQty" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0.00" required>
-                        <span id="inUnitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
-                    </div>
-                </div>
-
-                <!-- Remarks -->
-                <div>
-                    <label for="modalInRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Remarks / Delivery Notes
-                    </label>
-                    <textarea name="remarks" id="modalInRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px;" placeholder="Optional notes (carrier, batch quality, inspection notes)..."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeNewStockInModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Confirm Receipt</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <script>
 const linesData = <?= json_encode($linesByStockIn) ?>;
 
-function openNewStockInModal() {
-    document.getElementById('newStockInModal').classList.add('open');
-    onInboundTypeChange(document.getElementById('modalSourceType').value);
-}
-
-function closeNewStockInModal() {
-    document.getElementById('newStockInModal').classList.remove('open');
-}
-
-function onInboundTypeChange(type) {
-    const itemSelect = document.getElementById('modalInItem');
-    const refInput   = document.getElementById('modalRefNo');
-    const options    = itemSelect.querySelectorAll('option');
-
-    if (type === 'PURCHASE_ORDER') {
-        refInput.placeholder = 'e.g. PO-2026-001';
-    } else if (type === 'PRODUCTION_RETURN') {
-        refInput.placeholder = 'e.g. WO-BATCH-2026-001';
-    } else {
-        refInput.placeholder = 'e.g. MAN-2026-001';
-    }
-
-    // Filter items according to business rules
-    options.forEach(opt => {
-        if (!opt.value) return;
-        const itType = opt.getAttribute('data-type');
-        if (type === 'PURCHASE_ORDER') {
-            opt.hidden = (itType !== 'raw_material');
-        } else if (type === 'PRODUCTION_RETURN') {
-            opt.hidden = (itType !== 'finished_good');
-        } else {
-            opt.hidden = false;
-        }
-    });
-
-    // Reset selection if currently selected option became hidden
-    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
-    if (selectedOpt && selectedOpt.hidden) {
-        itemSelect.value = '';
-        document.getElementById('inUnitIndicator').textContent = '—';
-    }
-}
-
-function updateInboundUnit(select) {
-    const opt = select.options[select.selectedIndex];
-    const unit = opt ? opt.getAttribute('data-unit') : '—';
-    document.getElementById('inUnitIndicator').textContent = unit ? unit.toUpperCase() : '—';
-}
-
 function openDetailModal(id, txnNo) {
-    document.getElementById('modalTitle').textContent = 'Receipt ' + txnNo;
+    document.getElementById('modalTitle').textContent = 'Inbound Receipt: ' + txnNo;
     const tbody = document.getElementById('modalLineTableBody');
     tbody.innerHTML = '';
 
@@ -536,7 +549,8 @@ function closeDetailModal() {
 
 function filterStockInTable() {
     const term = document.getElementById('stockInSearch').value.toLowerCase().trim();
-    const typeFilter = document.getElementById('sourceTypeFilter').value;
+    const sourceFilter = document.getElementById('sourceTypeFilter').value;
+    const typeFilter = document.getElementById('itemTypeFilter').value;
     const table = document.getElementById('stockInTable');
     const rows = table.querySelectorAll('tbody tr');
 
@@ -544,11 +558,13 @@ function filterStockInTable() {
         if (row.querySelector('td[colspan]')) return;
         const text = row.textContent.toLowerCase();
         const rowSource = row.getAttribute('data-source') || '';
+        const rowType = row.getAttribute('data-type') || '';
 
         const matchesText = text.includes(term);
-        const matchesSource = !typeFilter || rowSource === typeFilter;
+        const matchesSource = !sourceFilter || rowSource === sourceFilter;
+        const matchesType = !typeFilter || rowType === typeFilter;
 
-        if (matchesText && matchesSource) {
+        if (matchesText && matchesSource && matchesType) {
             delete row.dataset.filteredOut;
         } else {
             row.dataset.filteredOut = 'true';
@@ -569,3 +585,4 @@ function escapeHtml(str) {
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
+

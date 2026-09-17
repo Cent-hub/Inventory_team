@@ -41,17 +41,31 @@ if ($currentWarehouseId <= 0 && !empty($currentUser['id'])) {
     $currentWarehouseId = (int)$uStmt->fetchColumn();
 }
 
+/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
 $assignedWarehouse = null;
 if ($currentWarehouseId > 0) {
     $whStmt = $pdo->prepare("SELECT warehouse_id, warehouse_code, warehouse_name, location FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
     $whStmt->execute([':id' => $currentWarehouseId]);
-    $assignedWarehouse = $whStmt->fetch(PDO::FETCH_ASSOC);
+    $res = $whStmt->fetch(PDO::FETCH_ASSOC);
+    if (is_array($res)) {
+        $assignedWarehouse = $res;
+    }
 }
 
-if (!$assignedWarehouse) {
+if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
     // Fallback to first active warehouse
     $fallbackStmt = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name, location FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
-    $assignedWarehouse = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
+    $res = $fallbackStmt ? $fallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
+    if (is_array($res)) {
+        $assignedWarehouse = $res;
+    } else {
+        $assignedWarehouse = [
+            'warehouse_id'   => 1,
+            'warehouse_code' => 'MAIN',
+            'warehouse_name' => 'Main Warehouse',
+            'location'       => 'HQ'
+        ];
+    }
     $currentWarehouseId = (int)($assignedWarehouse['warehouse_id'] ?? 1);
 }
 

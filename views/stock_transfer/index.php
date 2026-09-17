@@ -13,6 +13,14 @@ require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
 
+/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
+$assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse : [
+    'warehouse_id'   => $currentWarehouseId ?? 1,
+    'warehouse_code' => 'WH',
+    'warehouse_name' => 'Assigned Warehouse',
+    'location'       => 'Default Location'
+];
+
 $successMessage = null;
 $errorMessage   = null;
 
@@ -203,7 +211,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
             </div>
         </div>
         <div class="stat-value"><?= $totalTransfers ?></div>
-        <div class="stat-meta">From <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
+        <div class="stat-meta">From <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></div>
     </div>
 
     <div class="stat-card">
@@ -240,7 +248,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
     <div class="card-header">
         <div>
             <h2 class="card-title">Inter-Warehouse Movement Records</h2>
-            <p class="card-desc">Transfers originating from <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> with dual-posting ledger entries</p>
+            <p class="card-desc">Transfers originating from <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?> with dual-posting ledger entries</p>
         </div>
         <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
@@ -385,7 +393,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                     </label>
                     <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-weight: 600; color: var(--panel-ink); font-size: 13px;">
-                            <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>
+                            <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Warehouse') ?>
                         </span>
                         <span class="badge" style="background: #E2E8F0; color: #475569; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Source Locked</span>
                     </div>
@@ -505,7 +513,7 @@ function handleItemChange(selectElem) {
         const maxStock = parseFloat(selectedOption.dataset.stock);
         const unit = selectedOption.dataset.unit || '';
         unitSpan.textContent = unit;
-        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>: <strong>${maxStock.toFixed(2)} ${unit}</strong>`;
+        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></strong>: <strong>${maxStock.toFixed(2)} ${unit}</strong>`;
         qtyInput.max = maxStock;
         qtyInput.placeholder = `Max ${maxStock.toFixed(2)}`;
     } else {

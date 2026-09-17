@@ -129,8 +129,8 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 <!-- Page Header -->
 <div class="page-header">
     <div>
-        <h1 class="page-title">Stock Out Dispatch Ledger</h1>
-        <p class="page-subtitle">Outbound inventory dispatch transactions for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+        <h1 class="page-title">Outbound / Stock Out</h1>
+        <p class="page-subtitle">Inventory releases requested by Production and Sales &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH-MAIN') ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Main Warehouse') ?></p>
     </div>
     <div class="header-actions">
         <button type="button" class="btn btn-secondary" onclick="window.print()">
@@ -140,13 +140,6 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                 <rect width="12" height="8" x="6" y="14"/>
             </svg>
             <span>Print Ledger</span>
-        </button>
-        <button type="button" class="btn btn-primary" onclick="openNewStockOutModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span>+ Issue Stock Out</span>
         </button>
     </div>
 </div>
@@ -166,11 +159,119 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
     </div>
 <?php endif; ?>
 
+<style>
+.api-workflow-banner {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.api-workflow-icon-out {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #B91C1C;
+    background: #FEE2E2;
+}
+.api-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #F8FAFC;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 12px;
+    color: var(--panel-ink);
+}
+.badge-dest-production {
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.badge-dest-sales {
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #BFDBFE;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.badge-dest-manual {
+    background: #F1F5F9;
+    color: #475569;
+    border: 1px solid #CBD5E1;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+</style>
+
+<!-- API Integration Status & Role Notice -->
+<div class="api-workflow-banner">
+    <div class="api-workflow-icon-out">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+            <circle cx="12" cy="12" r="2"/>
+            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+            <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+        </svg>
+    </div>
+    <div style="flex: 1;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 14px; font-weight: 700; color: var(--panel-ink);">
+                API Integration Active &mdash; Automated Outbound Stock Out
+            </div>
+            <span class="badge" style="background: #FEE2E2; color: #B91C1C; border: 1px solid #FECACA; font-size: 11px; font-weight: 700;">
+                ● Live API Integration
+            </span>
+        </div>
+        <p style="margin: 4px 0 10px 0; font-size: 13px; color: var(--gray); line-height: 1.5;">
+            Inventory releases are requested and dispatched through connected subsystem APIs. Inventory users primarily monitor, verify, and track outbound dispatches without duplicate manual entry.
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <div class="api-tag-badge">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #D97706;"></span>
+                <span><strong>Production API:</strong> Raw Materials &rarr; Material Requests (MR)</span>
+            </div>
+            <div class="api-tag-badge">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2563EB;"></span>
+                <span><strong>Sales API:</strong> Finished Goods &rarr; Customer Sales Deliveries (SO)</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- KPI Cards -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Outbound Dispatches</span>
+            <span class="stat-label">Total Outbound</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="7" y1="17" x2="17" y2="7"/>
@@ -184,7 +285,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Sales Deliveries</span>
+            <span class="stat-label">Sales (Finished Goods)</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="16" height="13" x="1" y="5" rx="2"/>
@@ -200,7 +301,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Production Requisitions</span>
+            <span class="stat-label">Production (Raw Materials)</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>
@@ -218,8 +319,8 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Outbound Stock Dispatch Records</h2>
-            <p class="card-desc">Reduces available warehouse stock and generates immutable stock movement records</p>
+            <h2 class="card-title">Outbound / Stock Out Dispatches</h2>
+            <p class="card-desc">Real-time log of stock releases requested through Production and Sales API integrations</p>
         </div>
         <div class="filter-group">
             <!-- Search Filter -->
@@ -230,15 +331,22 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="stockOutSearch" class="search-box" placeholder="Filter ref, item, Order #..." onkeyup="filterStockOutTable()">
+                <input type="text" id="stockOutSearch" class="search-box" placeholder="Filter item, ref, SO/MR #..." onkeyup="filterStockOutTable()">
             </div>
 
-            <!-- Source Type Filter -->
+            <!-- Destination Filter -->
+            <select id="stockOutDestFilter" class="select-filter" onchange="filterStockOutTable()">
+                <option value="">All Destinations</option>
+                <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
+                <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
+                <option value="MANUAL">Internal / Manual</option>
+            </select>
+
+            <!-- Item Type Filter -->
             <select id="stockOutTypeFilter" class="select-filter" onchange="filterStockOutTable()">
-                <option value="">All Reason Types</option>
-                <option value="SALES_DELIVERY">Sales Delivery (Commercial)</option>
-                <option value="MATERIAL_REQUEST">Material Request (Production)</option>
-                <option value="MANUAL">Manual Dispatch</option>
+                <option value="">All Classifications</option>
+                <option value="finished_good">Finished Goods</option>
+                <option value="raw_material">Raw Materials</option>
             </select>
         </div>
     </div>
@@ -247,14 +355,12 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         <table id="stockOutTable">
             <thead>
                 <tr>
-                    <th>Reference Number</th>
-                    <th>Reason / Type</th>
-                    <th>Source Ref #</th>
-                    <th>Warehouse Branch</th>
-                    <th>Items Dispatched</th>
-                    <th>Total Qty</th>
-                    <th>Date</th>
-                    <th>Dispatched By</th>
+                    <th>Destination</th>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Quantity</th>
+                    <th>Reference / Order #</th>
+                    <th>Date Dispatched</th>
                     <th>Status</th>
                     <th style="text-align: right;">Action</th>
                 </tr>
@@ -262,61 +368,110 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             <tbody>
                 <?php if (empty($stockOuts)): ?>
                     <tr>
-                        <td colspan="10" style="text-align: center; color: var(--gray); padding: 36px;">No Stock Out transactions recorded.</td>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 40px;">
+                            No outbound Stock Out transactions recorded for this warehouse yet.
+                        </td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($stockOuts as $row): ?>
-                        <tr data-source="<?= htmlspecialchars($row['source_type']) ?>">
-                            <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
-                                <?= htmlspecialchars($row['transaction_number']) ?>
-                            </td>
+                    <?php foreach ($stockOuts as $row): 
+                        $lines = $linesByStockOut[(int)$row['stock_out_id']] ?? [];
+                        $firstLine = $lines[0] ?? null;
+                        $hasMultiple = count($lines) > 1;
+
+                        // Derive item classification
+                        $itemType = 'finished_good';
+                        if ($row['source_type'] === 'MATERIAL_REQUEST') {
+                            $itemType = 'raw_material';
+                        } elseif (!empty($lines)) {
+                            $types = array_unique(array_column($lines, 'item_type'));
+                            $itemType = count($types) === 1 ? $types[0] : 'mixed';
+                        }
+                    ?>
+                        <tr data-destination="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
+                            <!-- Destination -->
                             <td>
                                 <?php if ($row['source_type'] === 'SALES_DELIVERY'): ?>
-                                    <span class="badge" style="background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;">
-                                        Sales Delivery
+                                    <span class="badge-dest-sales">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="16" height="13" x="1" y="5" rx="2"/><polygon points="17 8 20 8 23 11 23 18 17 18 17 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                                        Sales
                                     </span>
                                 <?php elseif ($row['source_type'] === 'MATERIAL_REQUEST'): ?>
-                                    <span class="badge" style="background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">
-                                        Material Request
+                                    <span class="badge-dest-production">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/>    <polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                                        Production
                                     </span>
                                 <?php else: ?>
-                                    <span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">
-                                        Manual Out
+                                    <span class="badge-dest-manual">
+                                        Internal
                                     </span>
                                 <?php endif; ?>
                             </td>
-                            <td style="font-family: monospace; font-size: 12px; font-weight: 600;">
-                                <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
+
+                            <!-- Item -->
+                            <td style="max-width: 260px;">
+                                <?php if (!$hasMultiple && $firstLine): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($firstLine['item_name']) ?></div>
+                                    <small style="font-family: monospace; color: var(--gray); font-size: 11.5px;"><?= htmlspecialchars($firstLine['item_code']) ?></small>
+                                <?php elseif ($hasMultiple): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= count($lines) ?> items dispatched</div>
+                                    <small style="color: var(--gray); font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['item_breakdown'] ?: '') ?>">
+                                        <?= htmlspecialchars($row['item_breakdown'] ?: 'Multiple items') ?>
+                                    </small>
+                                <?php else: ?>
+                                    <span style="color: var(--gray); font-style: italic;">No items specified</span>
+                                <?php endif; ?>
                             </td>
+
+                            <!-- Type -->
                             <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>">
-                                    <?= htmlspecialchars($row['warehouse_code']) ?>
-                                </span>
-                                <small style="color: var(--gray); margin-left: 4px;"><?= htmlspecialchars($row['warehouse_name']) ?></small>
+                                <?php if ($itemType === 'finished_good'): ?>
+                                    <span class="badge-type type-fg">Finished Good</span>
+                                <?php elseif ($itemType === 'raw_material'): ?>
+                                    <span class="badge-type type-raw">Raw Material</span>
+                                <?php else: ?>
+                                    <span class="badge-type type-raw">Mixed (<?= count($lines) ?>)</span>
+                                <?php endif; ?>
                             </td>
-                            <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['item_breakdown'] ?: '') ?>">
-                                <span style="font-weight: 600;"><?= $row['total_item_count'] ?> item(s):</span>
-                                <span style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['item_breakdown'] ?: 'No items') ?></span>
+
+                            <!-- Quantity -->
+                            <td style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
+                                -<?= number_format((float)$row['total_quantity'], 1) ?>
+                                <?php if (!$hasMultiple && $firstLine): ?>
+                                    <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
+                                <?php endif; ?>
                             </td>
-                            <td style="font-weight: 700; color: #B91C1C;">
-                                -<?= number_format($row['total_quantity'], 1) ?>
+
+                            <!-- Reference / Order # -->
+                            <td>
+                                <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: var(--panel-ink);">
+                                    <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
+                                </div>
+                                <small style="font-family: monospace; color: var(--gray); font-size: 11px;">
+                                    <?= htmlspecialchars($row['transaction_number']) ?>
+                                </small>
                             </td>
-                            <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
+
+                            <!-- Date Dispatched -->
+                            <td style="font-size: 12.5px; white-space: nowrap;">
                                 <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
+                                <small style="display: block; color: var(--gray); font-size: 11px;">
+                                    <?= date('h:i A', strtotime($row['created_at'])) ?>
+                                </small>
                             </td>
-                            <td style="font-size: 12.5px;">
-                                <?= htmlspecialchars($row['operator_name']) ?>
-                            </td>
+
+                            <!-- Status -->
                             <td>
                                 <?php if ($row['status'] === 'completed'): ?>
-                                    <span class="badge status-completed">Completed</span>
+                                    <span class="badge status-completed">Dispatched</span>
                                 <?php else: ?>
                                     <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
                                 <?php endif; ?>
                             </td>
+
+                            <!-- Action -->
                             <td style="text-align: right;">
-                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                    View Items
+                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                    View Details
                                 </button>
                             </td>
                         </tr>
@@ -364,171 +519,11 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
     </div>
 </div>
 
-<!-- Modal: New Stock Out Dispatch Form -->
-<div id="newStockOutModal" class="modal-backdrop" onclick="if(event.target === this) closeNewStockOutModal()">
-    <div class="modal-card" style="max-width: 520px;">
-        <form method="POST" action="index.php">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_stock_out">
-            <div class="modal-header">
-                <div>
-                    <h3 class="card-title">Issue Outbound Stock</h3>
-                    <p class="card-desc">Dispatch finished goods for Sales orders or release raw ingredients to Production</p>
-                </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewStockOutModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Source Warehouse (Locked to Current Warehouse) -->
-                <div>
-                    <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Dispatching Warehouse Facility
-                    </label>
-                    <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-weight: 600; color: var(--panel-ink); font-size: 13px;">
-                            <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>
-                        </span>
-                        <span class="badge" style="background: #FEE2E2; color: #B91C1C; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Source Facility Locked</span>
-                    </div>
-                </div>
-
-                <!-- Outbound Destination / Reason Type -->
-                <div>
-                    <label for="modalOutSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Outbound Operation Type <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="source_type" id="modalOutSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="onOutboundTypeChange(this.value)">
-                        <option value="SALES_DELIVERY">Sales Delivery &mdash; Customer Dispatch (Finished Goods Only)</option>
-                        <option value="MATERIAL_REQUEST">Material Request &mdash; Production Line (Raw Materials Only)</option>
-                        <option value="MANUAL">Manual Stock Out &mdash; Sample / Write-Down</option>
-                    </select>
-                </div>
-
-                <!-- Reference Number -->
-                <div>
-                    <label for="modalOutRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Sales Order # / Material Request # <span style="color: #DC2626;">*</span>
-                    </label>
-                    <input type="text" name="source_reference_no" id="modalOutRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="e.g. SO-2026-001" required>
-                    <small style="color: var(--gray); font-size: 11px;">Unique identifier to prevent duplicate dispatch.</small>
-                </div>
-
-                <!-- Item Selection from Available Warehouse Stock -->
-                <div>
-                    <label for="modalOutItem" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Available Item to Issue <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_id" id="modalOutItem" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="updateOutboundLimits(this)">
-                        <option value="">-- Select Item with Positive Stock --</option>
-                        <?php foreach ($availableItems as $item): ?>
-                            <option value="<?= (int)$item['item_id'] ?>" data-type="<?= htmlspecialchars($item['item_type']) ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
-                                <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [Stock: <?= number_format((float)$item['current_stock'], 2) ?> <?= htmlspecialchars($item['unit']) ?>]
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?php if (empty($availableItems)): ?>
-                        <div style="font-size: 11.5px; color: #DC2626; margin-top: 4px;">No items currently available with positive stock in this warehouse.</div>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Quantity -->
-                <div>
-                    <label for="modalOutQty" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Quantity to Dispatch <span style="color: #DC2626;">*</span>
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="modalOutQty" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0.00" required>
-                        <span id="outUnitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
-                    </div>
-                    <div id="outStockHint" style="font-size: 11.5px; color: var(--gray); margin-top: 4px;">Select an item to view maximum available stock.</div>
-                </div>
-
-                <!-- Remarks -->
-                <div>
-                    <label for="modalOutRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Dispatch Notes / Remarks
-                    </label>
-                    <textarea name="remarks" id="modalOutRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px;" placeholder="Optional notes (client, sales order details, production batch)..."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeNewStockOutModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary" <?= empty($availableItems) ? 'disabled' : '' ?>>Confirm Dispatch</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <script>
 const outLinesData = <?= json_encode($linesByStockOut) ?>;
 
-function openNewStockOutModal() {
-    document.getElementById('newStockOutModal').classList.add('open');
-    onOutboundTypeChange(document.getElementById('modalOutSourceType').value);
-}
-
-function closeNewStockOutModal() {
-    document.getElementById('newStockOutModal').classList.remove('open');
-}
-
-function onOutboundTypeChange(type) {
-    const itemSelect = document.getElementById('modalOutItem');
-    const refInput   = document.getElementById('modalOutRefNo');
-    const options    = itemSelect.querySelectorAll('option');
-
-    if (type === 'SALES_DELIVERY') {
-        refInput.placeholder = 'e.g. SO-2026-001';
-    } else if (type === 'MATERIAL_REQUEST') {
-        refInput.placeholder = 'e.g. MR-2026-001';
-    } else {
-        refInput.placeholder = 'e.g. OUT-2026-001';
-    }
-
-    // Filter items according to business rules
-    options.forEach(opt => {
-        if (!opt.value) return;
-        const itType = opt.getAttribute('data-type');
-        if (type === 'SALES_DELIVERY') {
-            opt.hidden = (itType !== 'finished_good');
-        } else if (type === 'MATERIAL_REQUEST') {
-            opt.hidden = (itType !== 'raw_material');
-        } else {
-            opt.hidden = false;
-        }
-    });
-
-    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
-    if (selectedOpt && selectedOpt.hidden) {
-        itemSelect.value = '';
-        document.getElementById('outUnitIndicator').textContent = '—';
-        document.getElementById('outStockHint').textContent = 'Select an item to view maximum available stock.';
-    }
-}
-
-function updateOutboundLimits(select) {
-    const opt = select.options[select.selectedIndex];
-    const qtyInput = document.getElementById('modalOutQty');
-    const hint = document.getElementById('outStockHint');
-    const unitIndicator = document.getElementById('outUnitIndicator');
-
-    if (opt && opt.value) {
-        const maxStock = parseFloat(opt.getAttribute('data-stock') || 0);
-        const unit = opt.getAttribute('data-unit') || '';
-        qtyInput.max = maxStock;
-        unitIndicator.textContent = unit.toUpperCase();
-        hint.textContent = `Available physical balance: ${maxStock.toFixed(2)} ${unit}`;
-        hint.style.color = 'var(--gray)';
-    } else {
-        qtyInput.removeAttribute('max');
-        unitIndicator.textContent = '—';
-        hint.textContent = 'Select an item to view maximum available stock.';
-        hint.style.color = 'var(--gray)';
-    }
-}
-
 function openOutDetailModal(id, txnNo) {
-    document.getElementById('modalOutTitle').textContent = 'Dispatch ' + txnNo;
+    document.getElementById('modalOutTitle').textContent = 'Dispatch: ' + txnNo;
     const tbody = document.getElementById('modalOutTableBody');
     tbody.innerHTML = '';
 
@@ -558,6 +553,7 @@ function closeOutDetailModal() {
 
 function filterStockOutTable() {
     const term = document.getElementById('stockOutSearch').value.toLowerCase().trim();
+    const destFilter = document.getElementById('stockOutDestFilter').value;
     const typeFilter = document.getElementById('stockOutTypeFilter').value;
     const table = document.getElementById('stockOutTable');
     const rows = table.querySelectorAll('tbody tr');
@@ -565,12 +561,14 @@ function filterStockOutTable() {
     rows.forEach(row => {
         if (row.querySelector('td[colspan]')) return;
         const text = row.textContent.toLowerCase();
-        const rowSource = row.getAttribute('data-source') || '';
+        const rowDest = row.getAttribute('data-destination') || '';
+        const rowType = row.getAttribute('data-type') || '';
 
         const matchesText = text.includes(term);
-        const matchesSource = !typeFilter || rowSource === typeFilter;
+        const matchesDest = !destFilter || rowDest === destFilter;
+        const matchesType = !typeFilter || rowType === typeFilter;
 
-        if (matchesText && matchesSource) {
+        if (matchesText && matchesDest && matchesType) {
             delete row.dataset.filteredOut;
         } else {
             row.dataset.filteredOut = 'true';
@@ -591,3 +589,5 @@ function escapeHtml(str) {
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
+
+

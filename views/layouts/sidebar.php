@@ -4,6 +4,10 @@
  * StockPilot — Liquor Business Inventory Management System
  */
 
+$activePage  = $activePage ?? 'dashboard';
+$activeGroup = $activeGroup ?? '';
+$currentUser = $currentUser ?? [];
+
 $isInventoryActive = in_array($activePage, [
     'raw_materials', 'finished_goods', 'items', 'stock_in', 'stock_out', 
     'stock_transfer', 'stock_adjustment', 'stock_card', 'movement'
@@ -71,7 +75,7 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
                 <!-- Items Catalog -->
                 <a href="<?= BASE_URL ?>views/items/index.php" class="nav-sub-link <?= $activePage === 'items' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Item Catalog (SKUs)</span>
+                    <span>Item Master</span>
                 </a>
                 <!-- Raw Materials -->
                 <a href="<?= BASE_URL ?>views/inventory/raw_materials.php" class="nav-sub-link <?= $activePage === 'raw_materials' ? 'active' : '' ?>">
@@ -83,15 +87,15 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
                     <span class="sub-bullet"></span>
                     <span>Finished Goods</span>
                 </a>
-                <!-- Stock In -->
+                <!-- Inbound / Stock In -->
                 <a href="<?= BASE_URL ?>views/stock_in/index.php" class="nav-sub-link <?= $activePage === 'stock_in' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Stock In</span>
+                    <span>Inbound / Stock In</span>
                 </a>
-                <!-- Stock Out -->
+                <!-- Outbound / Stock Out -->
                 <a href="<?= BASE_URL ?>views/stock_out/index.php" class="nav-sub-link <?= $activePage === 'stock_out' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Stock Out</span>
+                    <span>Outbound / Stock Out</span>
                 </a>
                 <!-- Stock Transfer -->
                 <a href="<?= BASE_URL ?>views/stock_transfer/index.php" class="nav-sub-link <?= $activePage === 'stock_transfer' ? 'active' : '' ?>">
@@ -116,30 +120,18 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
             </div>
         </div>
 
-        <!-- Reports Dropdown Group -->
-        <div class="nav-group <?= $isReportsActive ? 'open has-active' : '' ?>" id="group-reports">
-            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-reports')" aria-expanded="<?= $isReportsActive ? 'true' : 'false' ?>">
-                <div class="nav-group-left">
-                    <!-- Lucide BarChart3 Icon -->
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 3v18h18"/>
-                        <path d="M18 17V9"/>
-                        <path d="M13 17V5"/>
-                        <path d="M8 17v-3"/>
-                    </svg>
-                    <span>Reports</span>
-                </div>
-                <!-- Chevron Icon -->
-                <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"/>
+        <!-- Reports -->
+        <div class="nav-item">
+            <a href="<?= BASE_URL ?>views/reports/index.php" class="nav-link <?= $isReportsActive ? 'active' : '' ?>">
+                <!-- Lucide BarChart3 Icon -->
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/>
+                    <path d="M18 17V9"/>
+                    <path d="M13 17V5"/>
+                    <path d="M8 17v-3"/>
                 </svg>
-            </button>
-            <div class="nav-sub-list">
-                <a href="<?= BASE_URL ?>views/reports/index.php" class="nav-sub-link <?= $activePage === 'reports' ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Inventory Reports</span>
-                </a>
-            </div>
+                <span>Reports</span>
+            </a>
         </div>
 
         <!-- Management Section -->
@@ -159,18 +151,6 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
             </a>
         </div>
 
-        <!-- Logout Link -->
-        <div class="nav-item">
-            <a href="<?= BASE_URL ?>api/auth/logout.php" class="nav-link">
-                <!-- Lucide LogOut Icon -->
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color: #F87171;">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16 17 21 12 16 7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                <span>Logout</span>
-            </a>
-        </div>
     </nav>
 
     <!-- Sidebar User Footer -->

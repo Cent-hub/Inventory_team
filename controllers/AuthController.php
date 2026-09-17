@@ -321,8 +321,12 @@ class AuthController {
             } else {
                 $assignedWhId = 1;
             }
-            $upStmt = $this->db->prepare("UPDATE users SET warehouse_id = :wid WHERE user_id = :uid");
-            $upStmt->execute([':wid' => $assignedWhId, ':uid' => (int)$user['user_id']]);
+            try {
+                $upStmt = $this->db->prepare("UPDATE users SET warehouse_id = :wid WHERE user_id = :uid");
+                $upStmt->execute([':wid' => $assignedWhId, ':uid' => (int)$user['user_id']]);
+            } catch (PDOException $e) {
+                error_log("Failed to auto-assign warehouse: " . $e->getMessage());
+            }
         }
 
         // Prevent session fixation attack

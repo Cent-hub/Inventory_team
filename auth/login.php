@@ -1066,6 +1066,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             } catch (err) {
+                console.error('Login error details:', err);
                 showAlert('danger', 'Network error or server unreachable. Please try again.');
                 setLoading(false);
             }

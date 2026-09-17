@@ -6,7 +6,7 @@
 ?>
 <div class="main-content">
     <header class="navbar">
-        <div class="navbar-left">
+        <div class="navbar-right">
             <button type="button" class="btn-mobile-toggle" onclick="toggleMobileSidebar()" aria-label="Toggle navigation menu">
                 <!-- Lucide Menu Icon -->
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -31,10 +31,6 @@
         </div>
 
         <div class="navbar-right">
-            <div class="admin-badge">
-                <span class="status-dot"></span>
-                <span><?= htmlspecialchars($currentUser['name'] ?? 'Admin') ?></span>
-            </div>
 
             <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -45,15 +41,6 @@
                 </svg>
                 <span>Refresh</span>
             </button>
-
-            <a href="<?= BASE_URL ?>api/auth/logout.php" class="btn btn-danger" aria-label="Sign out">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16 17 21 12 16 7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                <span>Logout</span>
-            </a>
         </div>
     </header>
     <main class="content-body">

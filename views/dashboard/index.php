@@ -158,7 +158,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 <line x1="17" y1="7" x2="7" y2="17"/>
                 <polyline points="17 17 7 17 7 7"/>
             </svg>
-            <span>Stock In Receiving</span>
+            <span>Inbound / Stock In</span>
         </a>
     </div>
 </div>
