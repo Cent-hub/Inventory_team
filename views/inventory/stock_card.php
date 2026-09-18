@@ -190,7 +190,7 @@ if ($selectedItemId > 0) {
                 <?= htmlspecialchars($selectedItem['item_name']) ?>
             </h2>
             <p style="font-size: 13px; color: #94A3B8;">
-                Standard Inventory Unit: <strong><?= htmlspecialchars($selectedItem['unit']) ?></strong> &middot; Reorder Threshold: <?= number_format($selectedItem['default_reorder_level'], 2) ?> <?= htmlspecialchars($selectedItem['unit']) ?>
+                Standard Inventory Unit: <strong><?= htmlspecialchars($selectedItem['unit']) ?></strong> &middot; Reorder Threshold: <?= formatQty($selectedItem['default_reorder_level']) ?> <?= htmlspecialchars($selectedItem['unit']) ?>
             </p>
         </div>
 
@@ -200,7 +200,7 @@ if ($selectedItemId > 0) {
                 Current Balance on Hand
             </div>
             <div style="font-family: var(--font-display); font-size: 28px; font-weight: 800; color: #ffffff;">
-                <?= number_format($currentStock, 2) ?> <small style="font-size: 14px; font-weight: 500; color: #E2E8F0;"><?= htmlspecialchars($selectedItem['unit']) ?></small>
+                <?= formatQty($currentStock) ?> <small style="font-size: 14px; font-weight: 500; color: #E2E8F0;"><?= htmlspecialchars($selectedItem['unit']) ?></small>
             </div>
             <div style="font-size: 11.5px; color: #CBD5E1; margin-top: 2px;">
                 <?= count($movements) ?> ledger transactions recorded
@@ -258,13 +258,13 @@ if ($selectedItemId > 0) {
                                 </span>
                             </td>
                             <td style="text-align: right; font-weight: 700; color: #15803D;">
-                                <?= $qtyIn > 0 ? ('+' . number_format($qtyIn, 2)) : '—' ?>
+                                <?= $qtyIn > 0 ? ('+' . formatQty($qtyIn)) : '—' ?>
                             </td>
                             <td style="text-align: right; font-weight: 700; color: #B91C1C;">
-                                <?= $qtyOut > 0 ? ('-' . number_format($qtyOut, 2)) : '—' ?>
+                                <?= $qtyOut > 0 ? ('-' . formatQty($qtyOut)) : '—' ?>
                             </td>
                             <td style="text-align: right; font-weight: 800; font-size: 14px; color: var(--panel-ink); background: #F8FAFC;">
-                                <?= number_format($m['balance_after'] ?? 0, 2) ?>
+                                <?= formatQty($m['balance_after'] ?? 0) ?>
                             </td>
                             <td>
                                 <span class="badge-wh"><?= htmlspecialchars($m['warehouse_code']) ?></span>

@@ -4,9 +4,20 @@
  * StockPilot — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Users & Accounts — StockPilot';
-$activePage  = 'users';
-$activeGroup = 'users';
+require_once __DIR__ . '/../../controllers/AuthController.php';
+
+$auth = new AuthController();
+if (!$auth->isAuthenticated()) {
+    header('Location: ' . $auth->getLoginRedirectUrl());
+    exit;
+}
+
+$currentUser = $auth->getCurrentUser();
+$isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+
+$pageTitle   = $isSuperAdmin ? 'Users & Accounts — StockPilot' : 'My Account — StockPilot';
+$activePage  = $isSuperAdmin ? 'users' : 'my_account';
+$activeGroup = $isSuperAdmin ? 'users' : 'settings';
 
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
@@ -22,56 +33,62 @@ $currentBranch = $assignedWarehouse
     ? ($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')')
     : 'WH-MAIN (Main Warehouse - Laguna)';
 
-// Query users from database with assigned warehouse
-$sql = "
-    SELECT 
-        u.user_id,
-        u.name,
-        u.email,
-        u.role,
-        u.status,
-        u.warehouse_id,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.created_at,
-        u.updated_at
-    FROM users u
-    LEFT JOIN warehouses w ON u.warehouse_id = w.warehouse_id
-    WHERE 1=1
-";
-$params = [];
-
-if ($search !== '') {
-    $sql .= " AND (u.name LIKE ? OR u.email LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-}
-
-if ($roleFilter !== '') {
-    $sql .= " AND u.role = ?";
-    $params[] = $roleFilter;
-}
-
-if ($statusFilter !== '') {
-    $sql .= " AND u.status = ?";
-    $params[] = $statusFilter;
-}
-
-$sql .= " ORDER BY u.created_at DESC, u.user_id DESC";
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Metrics
-$totalUsers = count($users);
+$users = [];
+$totalUsers = 0;
 $activeCount = 0;
 $adminCount = 0;
-foreach ($users as $u) {
-    if (($u['status'] ?? '') === 'active') $activeCount++;
-    if (in_array($u['role'] ?? '', ['admin', 'super_admin'])) $adminCount++;
-}
+$totalWarehouses = 0;
 
-$totalWarehouses = (int)$pdo->query("SELECT COUNT(*) FROM warehouses WHERE status = 'active'")->fetchColumn();
+if ($isSuperAdmin) {
+    // Query users from database with assigned warehouse (Super Admin only)
+    $sql = "
+        SELECT 
+            u.user_id,
+            u.name,
+            u.email,
+            u.role,
+            u.status,
+            u.warehouse_id,
+            w.warehouse_code,
+            w.warehouse_name,
+            u.created_at,
+            u.updated_at
+        FROM users u
+        LEFT JOIN warehouses w ON u.warehouse_id = w.warehouse_id
+        WHERE 1=1
+    ";
+    $params = [];
+
+    if ($search !== '') {
+        $sql .= " AND (u.name LIKE ? OR u.email LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+
+    if ($roleFilter !== '') {
+        $sql .= " AND u.role = ?";
+        $params[] = $roleFilter;
+    }
+
+    if ($statusFilter !== '') {
+        $sql .= " AND u.status = ?";
+        $params[] = $statusFilter;
+    }
+
+    $sql .= " ORDER BY u.created_at DESC, u.user_id DESC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Metrics
+    $totalUsers = count($users);
+    foreach ($users as $u) {
+        if (($u['status'] ?? '') === 'active') $activeCount++;
+        if (in_array($u['role'] ?? '', ['admin', 'super_admin'])) $adminCount++;
+    }
+
+    $totalWarehouses = (int)$pdo->query("SELECT COUNT(*) FROM warehouses WHERE status = 'active'")->fetchColumn();
+}
 
 // Map functional department/team based on email or role for liquor ERP display
 function getTeamAssignment($email, $role) {
@@ -98,9 +115,10 @@ function getFacilityAssignment($user) {
 <!-- Page Header -->
 <div class="page-header">
     <div>
-        <h1 class="page-title">Users & Account Management</h1>
-        <p class="page-subtitle">Directory of authorized distillery operators, inventory controllers, and cross-team service accounts</p>
+        <h1 class="page-title"><?= $isSuperAdmin ? 'Users & Account Management' : 'My Account' ?></h1>
+        <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery operators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
     </div>
+    <?php if ($isSuperAdmin): ?>
     <div class="header-actions">
         <button type="button" class="btn btn-secondary" onclick="window.print()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -111,10 +129,11 @@ function getFacilityAssignment($user) {
             <span>Print User Roster</span>
         </button>
     </div>
+    <?php endif; ?>
 </div>
 
 <!-- My Profile Spotlight Card -->
-<div class="card mb-6" style="border-left: 4px solid #1F7A6C;">
+<div class="card mb-6" id="my-account" style="border-left: 4px solid #1F7A6C;">
     <div class="card-body">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div class="flex items-center gap-4">
@@ -137,7 +156,7 @@ function getFacilityAssignment($user) {
                     </div>
                 </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" id="security">
                 <span class="badge badge-navy" style="padding: 8px 12px; font-size: 12px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block mr-1">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -149,6 +168,138 @@ function getFacilityAssignment($user) {
     </div>
 </div>
 
+<?php if (!$isSuperAdmin): ?>
+<!-- Settings Sections Grouped Card (Styled after iOS reference in StockPilot theme) -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin: 0 4px 6px 4px;">
+    <span class="settings-group-label" style="margin: 0;">Settings &amp; Quick Actions</span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="openSettingsModal('main')" style="height: 28px; padding: 0 10px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Open Modal</span>
+    </button>
+</div>
+<div class="settings-group mb-6">
+    <!-- Row 1: My Account Profile -->
+    <div class="settings-row" onclick="openSettingsModal('account')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle teal">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">My Account Profile</div>
+                <div class="settings-row-subtitle">Assigned facility, permissions &amp; contact info</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-row-value"><?= htmlspecialchars($currentBranch) ?></span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 2: Change Password -->
+    <div class="settings-row" onclick="openSettingsModal('password')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle bronze">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="7.5" cy="15.5" r="5.5"/>
+                    <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Change Password</div>
+                <div class="settings-row-subtitle">Update credentials or trigger OTP recovery</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 3: Notifications -->
+    <div class="settings-row" onclick="openSettingsModal('notifications')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle amber">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Notifications</div>
+                <div class="settings-row-subtitle">Low stock replenishment &amp; outbound movement alerts</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-badge" style="background: #D97706;">Live</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 4: Security -->
+    <div class="settings-row" onclick="openSettingsModal('security')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle navy">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <path d="m9 12 2 2 4-4"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Security</div>
+                <div class="settings-row-subtitle">Session Guard, cache defenses &amp; rate limiting</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-row-value" style="color: #15803D; font-weight: 500;">Guarded</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 5: Backup & Export -->
+    <div class="settings-row" onclick="openSettingsModal('backup')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle green">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Backup &amp; Export</div>
+                <div class="settings-row-subtitle">Warehouse CSV exports &amp; audit ledgers</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-row-value">CSV</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+</div>
+<?php else: ?>
 <!-- Summary Metrics -->
 <div class="kpi-grid mb-6">
     <div class="kpi-card">
@@ -436,5 +587,6 @@ window.addEventListener('click', function(e) {
     }
 });
 </script>
+<?php endif; // $isSuperAdmin ?>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

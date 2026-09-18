@@ -85,6 +85,28 @@ if (!function_exists('getWarehouseBadgeClass')) {
     }
 }
 
+if (!function_exists('formatQuantity')) {
+    /**
+     * Formats a quantity value cleanly, removing unnecessary .00 and .0 trailing decimals.
+     * Preserves non-zero decimal values (e.g. 10.5, 12.75).
+     *
+     * @param float|int|string|null $val
+     * @param int $decimals
+     * @return string
+     */
+    function formatQuantity($val, $decimals = 2) {
+        if ($val === null || $val === '') return '0';
+        $n = number_format((float)$val, $decimals);
+        return strpos($n, '.') !== false ? rtrim(rtrim($n, '0'), '.') : $n;
+    }
+}
+
+if (!function_exists('formatQty')) {
+    function formatQty($val, $decimals = 2) {
+        return formatQuantity($val, $decimals);
+    }
+}
+
 $pageTitle   = $pageTitle ?? 'Admin Portal — StockPilot';
 $activePage  = $activePage ?? 'dashboard';
 $activeGroup = $activeGroup ?? '';

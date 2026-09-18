@@ -383,7 +383,7 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
 
                             <!-- Quantity -->
                             <td style="font-weight: 700; color: #15803D; white-space: nowrap;">
-                                +<?= number_format((float)$row['total_quantity'], 1) ?>
+                                +<?= formatQty((float)$row['total_quantity']) ?>
                                 <?php if (!$hasMultiple && $firstLine): ?>
                                     <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
                                 <?php endif; ?>
@@ -485,7 +485,7 @@ function openDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #15803D;">+${parseFloat(l.quantity).toFixed(2)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: #15803D;">+${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });

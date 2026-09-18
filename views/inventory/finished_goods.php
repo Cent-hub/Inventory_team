@@ -111,7 +111,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($totalFGQty, 1) ?></div>
+        <div class="stat-value"><?= formatQty($totalFGQty) ?></div>
         <div class="stat-meta">In assigned warehouse storage</div>
     </div>
 
@@ -202,7 +202,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                             </td>
                             <td>
                                 <span style="font-weight: 700; font-size: 14.5px; color: <?= $isReorder ? '#B91C1C' : '#14213D' ?>;">
-                                    <?= number_format($item['current_stock'], 2) ?>
+                                    <?= formatQty($item['current_stock']) ?>
                                 </span>
                             </td>
                             <td>
@@ -220,7 +220,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                                 <?php if (!empty($item['batch_reference'])): ?>
                                     <span style="color: var(--panel-ink); font-weight: 600;"><?= htmlspecialchars($item['batch_reference']) ?></span>
                                     <?php if (!empty($item['last_produced_qty'])): ?>
-                                        <small style="color: #15803D;">(+<?= number_format($item['last_produced_qty'], 1) ?>)</small>
+                                        <small style="color: #15803D;">(+<?= formatQty($item['last_produced_qty']) ?>)</small>
                                     <?php endif; ?>
                                 <?php else: ?>
                                     <span style="color: var(--gray);">Batch Distilled</span>

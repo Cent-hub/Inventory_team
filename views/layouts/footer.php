@@ -19,6 +19,8 @@
 </div><!-- /.main-content -->
 </div><!-- /.app-shell -->
 
+<?php require_once __DIR__ . '/settings_modal.php'; ?>
+
 <script>
 // Toggle Accordion Nav Group
 function toggleNavGroup(groupId) {

@@ -216,7 +216,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($totalStock, 1) ?></div>
+        <div class="stat-value"><?= formatQty($totalStock) ?></div>
         <div class="stat-meta">Net inventory in <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
     </div>
 
@@ -249,7 +249,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($recentStockInVolume, 1) ?></div>
+        <div class="stat-value"><?= formatQty($recentStockInVolume) ?></div>
         <div class="stat-meta"><?= $recentStockInCount ?> completed inbound receipts</div>
     </div>
 
@@ -265,7 +265,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($recentStockOutVolume, 1) ?></div>
+        <div class="stat-value"><?= formatQty($recentStockOutVolume) ?></div>
         <div class="stat-meta"><?= $recentStockOutCount ?> completed outbound dispatches</div>
     </div>
 </div>
@@ -322,9 +322,9 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                             </td>
                             <td style="font-weight: 700; font-size: 13.5px;">
                                 <?php if ($isIncoming): ?>
-                                    <span style="color: #15803D;">+<?= number_format($act['quantity_in'], 1) ?></span>
+                                    <span style="color: #15803D;">+<?= formatQty($act['quantity_in']) ?></span>
                                 <?php else: ?>
-                                    <span style="color: #B91C1C;">-<?= number_format($act['quantity_out'], 1) ?></span>
+                                    <span style="color: #B91C1C;">-<?= formatQty($act['quantity_out']) ?></span>
                                 <?php endif; ?>
                                 <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($act['unit']) ?></small>
                             </td>
@@ -401,11 +401,11 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                                 </span>
                             </td>
                             <td>
-                                <span style="font-weight: 700; font-size: 14.5px;"><?= number_format($row['quantity'], 2) ?></span>
+                                <span style="font-weight: 700; font-size: 14.5px;"><?= formatQty($row['quantity']) ?></span>
                                 <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                             </td>
                             <td>
-                                <?= number_format($row['default_reorder_level'], 2) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                <?= formatQty($row['default_reorder_level']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                             </td>
                             <td>
                                 <?php if ($isOptimal): ?>

@@ -129,7 +129,7 @@ foreach ($adjustments as $a) {
             </div>
         </div>
         <div class="stat-value" style="color: <?= $netVariance >= 0 ? '#15803D' : '#B91C1C' ?>;">
-            <?= ($netVariance >= 0 ? '+' : '') . number_format($netVariance, 2) ?>
+            <?= ($netVariance >= 0 ? '+' : '') . formatQty($netVariance) ?>
         </div>
         <div class="stat-meta">Cumulative count adjustment diff</div>
     </div>
@@ -195,13 +195,13 @@ foreach ($adjustments as $a) {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?= number_format($row['previous_quantity'] ?? 0, 2) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
+                                <?= formatQty($row['previous_quantity'] ?? 0) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
                             </td>
                             <td>
-                                <strong style="color: var(--panel-ink);"><?= number_format($row['adjusted_quantity'] ?? 0, 2) ?></strong> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
+                                <strong style="color: var(--panel-ink);"><?= formatQty($row['adjusted_quantity'] ?? 0) ?></strong> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
                             </td>
                             <td style="font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
-                                <?= ($diff >= 0 ? '+' : '') . number_format($diff, 2) ?>
+                                <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?>
                             </td>
                             <td style="max-width: 220px; font-size: 12px; color: var(--gray);" title="<?= htmlspecialchars($row['reason']) ?>">
                                 <?= htmlspecialchars($row['reason']) ?>
@@ -272,7 +272,7 @@ foreach ($adjustments as $a) {
                             </span>
                         </td>
                         <td style="font-weight: 700; color: #B91C1C;">
-                            -<?= number_format($bp['quantity'], 2) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
+                            -<?= formatQty($bp['quantity']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
                         </td>
                         <td style="font-size: 12px; color: var(--gray);">
                             <?= htmlspecialchars($bp['reason']) ?>

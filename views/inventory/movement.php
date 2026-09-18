@@ -120,7 +120,7 @@ $netFlow = $sumQtyIn - $sumQtyOut;
                 </svg>
             </div>
         </div>
-        <div class="stat-value" style="color: #15803D;">+<?= number_format($sumQtyIn, 2) ?></div>
+        <div class="stat-value" style="color: #15803D;">+<?= formatQty($sumQtyIn) ?></div>
         <div class="stat-meta">Sum of incoming unit volume</div>
     </div>
 
@@ -135,7 +135,7 @@ $netFlow = $sumQtyIn - $sumQtyOut;
                 </svg>
             </div>
         </div>
-        <div class="stat-value" style="color: #B91C1C;">-<?= number_format($sumQtyOut, 2) ?></div>
+        <div class="stat-value" style="color: #B91C1C;">-<?= formatQty($sumQtyOut) ?></div>
         <div class="stat-meta">Sum of outgoing unit volume</div>
     </div>
 
@@ -150,7 +150,7 @@ $netFlow = $sumQtyIn - $sumQtyOut;
             </div>
         </div>
         <div class="stat-value" style="color: <?= $netFlow >= 0 ? '#15803D' : '#B91C1C' ?>;">
-            <?= $netFlow >= 0 ? '+' : '' ?><?= number_format($netFlow, 2) ?>
+            <?= $netFlow >= 0 ? '+' : '' ?><?= formatQty($netFlow) ?>
         </div>
         <div class="stat-meta">Inflow minus outflow balance</div>
     </div>
@@ -313,20 +313,20 @@ $netFlow = $sumQtyIn - $sumQtyOut;
                             </td>
                             <td style="text-align: right; font-weight: 700;">
                                 <?php if ((float)$m['quantity_in'] > 0): ?>
-                                    <span style="color: #15803D;">+<?= number_format((float)$m['quantity_in'], 2) ?></span>
+                                    <span style="color: #15803D;">+<?= formatQty((float)$m['quantity_in']) ?></span>
                                 <?php else: ?>
                                     <span style="color: var(--gray-light);">—</span>
                                 <?php endif; ?>
                             </td>
                             <td style="text-align: right; font-weight: 700;">
                                 <?php if ((float)$m['quantity_out'] > 0): ?>
-                                    <span style="color: #B91C1C;">-<?= number_format((float)$m['quantity_out'], 2) ?></span>
+                                    <span style="color: #B91C1C;">-<?= formatQty((float)$m['quantity_out']) ?></span>
                                 <?php else: ?>
                                     <span style="color: var(--gray-light);">—</span>
                                 <?php endif; ?>
                             </td>
                             <td style="text-align: right; font-weight: 700; color: var(--panel-ink);">
-                                <?= number_format((float)$m['balance_after'], 2) ?>
+                                <?= formatQty((float)$m['balance_after']) ?>
                                 <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($m['unit']) ?></small>
                             </td>
                             <td style="font-size: 12px; color: var(--gray); max-width: 220px;" title="<?= htmlspecialchars($m['notes']) ?>">

@@ -8,12 +8,18 @@ $activePage  = $activePage ?? 'dashboard';
 $activeGroup = $activeGroup ?? '';
 $currentUser = $currentUser ?? [];
 
+$isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+
 $isInventoryActive = in_array($activePage, [
     'raw_materials', 'finished_goods', 'items', 'stock_in', 'stock_out', 
     'stock_transfer', 'stock_adjustment', 'stock_card', 'movement'
 ], true);
 
 $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
+
+$isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
+    'settings', 'my_account', 'change_password', 'notifications', 'security', 'backup_export'
+], true) || ($activePage === 'users' && !$isSuperAdmin));
 ?>
 <aside id="appSidebar" class="sidebar" aria-label="Main Navigation">
     <!-- Brand Header -->
@@ -136,9 +142,10 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
         <!-- Management Section -->
         <span class="nav-section-label">Management</span>
 
-        <!-- Users / Account -->
+        <?php if ($isSuperAdmin): ?>
+        <!-- Users / Account (Super Admin only: User management & system-wide administration) -->
         <div class="nav-item">
-            <a href="<?= BASE_URL ?>views/users/index.php" class="nav-link <?= $activePage === 'users' ? 'active' : '' ?>">
+            <a href="<?= BASE_URL ?>views/users/index.php" class="nav-link <?= ($activePage === 'users' && $activeGroup !== 'settings') ? 'active' : '' ?>">
                 <!-- Lucide Users Icon -->
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -149,12 +156,25 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
                 <span>Users / Account</span>
             </a>
         </div>
+        <?php endif; ?>
+
+        <!-- Settings (Opens Settings Modal Popup for Admin) -->
+        <div class="nav-item">
+            <a href="javascript:void(0)" class="nav-link <?= $isSettingsActive ? 'active' : '' ?>" id="sidebarSettingsLink" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('main'); } return false;" role="button" aria-haspopup="dialog" title="Settings">
+                <!-- Lucide Settings Icon -->
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <span>Settings</span>
+            </a>
+        </div>
 
     </nav>
 
     <!-- Sidebar User Footer -->
     <div class="sidebar-footer">
-        <div class="sidebar-user">
+        <div class="sidebar-user" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); }" style="cursor: pointer;" title="Manage Account Settings">
             <div class="user-avatar" aria-hidden="true">
                 <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
             </div>

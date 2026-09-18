@@ -292,7 +292,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                                 <span style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['items_summary'] ?: 'No items') ?></span>
                             </td>
                             <td style="font-weight: 700; color: #1D4ED8;">
-                                <?= number_format($row['total_quantity'], 1) ?>
+                                <?= formatQty($row['total_quantity']) ?>
                             </td>
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
                                 <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
@@ -417,7 +417,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                         <option value="">-- Select Item with Available Stock --</option>
                         <?php foreach ($availableItems as $item): ?>
                             <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
-                                <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [Stock: <?= number_format((float)$item['current_stock'], 2) ?> <?= htmlspecialchars($item['unit']) ?>]
+                                <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [Stock: <?= formatQty((float)$item['current_stock']) ?> <?= htmlspecialchars($item['unit']) ?>]
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -432,7 +432,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                         Transfer Quantity <span style="color: #DC2626;">*</span>
                     </label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0.00" required>
+                        <input type="number" step="0.01" min="0.01" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
                         <span id="unitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <div id="availStockHint" style="font-size: 11.5px; color: var(--gray); margin-top: 4px;">Select an item to view maximum transferable balance.</div>
@@ -474,7 +474,7 @@ function openTransferDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #1D4ED8;">${parseFloat(l.quantity).toFixed(2)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: #1D4ED8;">${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });
@@ -505,14 +505,14 @@ function handleItemChange(selectElem) {
         const maxStock = parseFloat(selectedOption.dataset.stock);
         const unit = selectedOption.dataset.unit || '';
         unitSpan.textContent = unit;
-        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></strong>: <strong>${maxStock.toFixed(2)} ${unit}</strong>`;
+        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></strong>: <strong>${Number(maxStock.toFixed(2))} ${unit}</strong>`;
         qtyInput.max = maxStock;
-        qtyInput.placeholder = `Max ${maxStock.toFixed(2)}`;
+        qtyInput.placeholder = `Max ${Number(maxStock.toFixed(2))}`;
     } else {
         unitSpan.textContent = '—';
         hintDiv.textContent = 'Select an item to view maximum transferable balance.';
         qtyInput.removeAttribute('max');
-        qtyInput.placeholder = '0.00';
+        qtyInput.placeholder = '0';
     }
 }
 

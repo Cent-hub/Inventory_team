@@ -165,7 +165,7 @@ $catCount     = count($categories);
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Active Taxonomies</span>
+            <span class="stat-label">Active Categories</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #6D28D9; background: #F5F3FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
             </div>
@@ -202,7 +202,7 @@ $catCount     = count($categories);
             <thead>
                 <tr>
                     <th>Item ID</th>
-                    <th>Item Code (SKU)</th>
+                    <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Classification</th>
                     <th>Category</th>
@@ -249,7 +249,7 @@ $catCount     = count($categories);
                                 <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td style="font-family: monospace; font-weight: 600;">
-                                <?= number_format((float)$row['default_reorder_level'], 1) ?> <?= htmlspecialchars($row['unit']) ?>
+                                <?= formatQty($row['default_reorder_level']) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td>
                                 <span class="badge status-completed">Active</span>
@@ -293,7 +293,7 @@ $catCount     = count($categories);
                 <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
                     <div>
                         <label for="modalItemCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Item Code (SKU) <span style="color: #DC2626;">*</span>
+                            Item Code <span style="color: #DC2626;">*</span>
                         </label>
                         <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; height: 40px; border-radius: 8px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required>
                     </div>
@@ -337,7 +337,7 @@ $catCount     = count($categories);
                     <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Default Low Stock Reorder Threshold
                     </label>
-                    <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" value="50.00" required>
+                    <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" value="50" required>
                     <small style="color: var(--gray); font-size: 11px;">Triggers replenishment alert when warehouse quantity drops below this level.</small>
                 </div>
 

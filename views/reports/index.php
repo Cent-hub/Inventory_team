@@ -448,9 +448,9 @@ switch ($reportType) {
                                     </span>
                                 </td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
-                                <td style="text-align: right; color: var(--gray);"><?= number_format($reorder, 2) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
+                                <td style="text-align: right; color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
                                 <td style="text-align: right; font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
-                                    <?= number_format($qty, 2) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                    <?= formatQty($qty) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                                 <td>
                                     <?php if ($qty == 0): ?>
@@ -506,13 +506,13 @@ switch ($reportType) {
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td><span class="badge <?= $pillClass ?>"><?= htmlspecialchars(str_replace('_', ' ', $row['movement_type'])) ?></span></td>
                                 <td style="text-align: right; font-weight: 700; color: #15803D;">
-                                    <?= (float)$row['quantity_in'] > 0 ? '+' . number_format((float)$row['quantity_in'], 2) : '—' ?>
+                                    <?= (float)$row['quantity_in'] > 0 ? '+' . formatQty((float)$row['quantity_in']) : '—' ?>
                                 </td>
                                 <td style="text-align: right; font-weight: 700; color: #B91C1C;">
-                                    <?= (float)$row['quantity_out'] > 0 ? '-' . number_format((float)$row['quantity_out'], 2) : '—' ?>
+                                    <?= (float)$row['quantity_out'] > 0 ? '-' . formatQty((float)$row['quantity_out']) : '—' ?>
                                 </td>
                                 <td style="text-align: right; font-weight: 700; color: var(--panel-ink);">
-                                    <?= number_format((float)$row['balance_after'], 2) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                    <?= formatQty((float)$row['balance_after']) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -546,7 +546,7 @@ switch ($reportType) {
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; color: #15803D;">+<?= number_format((float)$row['total_qty'], 2) ?></td>
+                                <td style="text-align: right; font-weight: 700; color: #15803D;">+<?= formatQty((float)$row['total_qty']) ?></td>
                                 <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -580,7 +580,7 @@ switch ($reportType) {
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; color: #B91C1C;">-<?= number_format((float)$row['total_qty'], 2) ?></td>
+                                <td style="text-align: right; font-weight: 700; color: #B91C1C;">-<?= formatQty((float)$row['total_qty']) ?></td>
                                 <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -612,7 +612,7 @@ switch ($reportType) {
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['to_code']) ?>"><?= htmlspecialchars($row['to_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['to_name']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?></td>
-                                <td style="text-align: right; font-weight: 700; color: #1D4ED8;"><?= number_format((float)$row['total_qty'], 2) ?></td>
+                                <td style="text-align: right; font-weight: 700; color: #1D4ED8;"><?= formatQty((float)$row['total_qty']) ?></td>
                                 <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -649,10 +649,10 @@ switch ($reportType) {
                                     <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
                                 </td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
-                                <td style="text-align: right; color: var(--gray);"><?= number_format((float)$row['previous_quantity'], 2) ?></td>
-                                <td style="text-align: right; font-weight: 600; color: var(--panel-ink);"><?= number_format((float)$row['adjusted_quantity'], 2) ?></td>
+                                <td style="text-align: right; color: var(--gray);"><?= formatQty((float)$row['previous_quantity']) ?></td>
+                                <td style="text-align: right; font-weight: 600; color: var(--panel-ink);"><?= formatQty((float)$row['adjusted_quantity']) ?></td>
                                 <td style="text-align: right; font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
-                                    <?= $diff >= 0 ? '+' : '' ?><?= number_format($diff, 2) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                    <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 200px;" title="<?= htmlspecialchars($row['reason']) ?>">
                                     <?= htmlspecialchars($row['reason'] ?: 'Cycle count adjustment') ?>
