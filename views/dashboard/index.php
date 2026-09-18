@@ -12,25 +12,29 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// 1. Total Raw Materials (sum of inventory for raw_material items in assigned warehouse)
+// 1. Total Raw Materials (count of unique active raw materials with inventory > 0)
 $stmtRM = $pdo->prepare("
-    SELECT COALESCE(SUM(inv.quantity), 0) 
+    SELECT COUNT(DISTINCT inv.item_id) 
     FROM inventory inv 
     JOIN items i ON inv.item_id = i.item_id 
-    WHERE i.item_type = 'raw_material' AND inv.warehouse_id = :wid
+    WHERE i.item_type = 'raw_material' 
+      AND i.status = 'active'
+      AND inv.quantity > 0
 ");
-$stmtRM->execute([':wid' => $currentWarehouseId]);
-$totalRawMaterials = (float)$stmtRM->fetchColumn();
+$stmtRM->execute();
+$totalRawMaterials = (int)$stmtRM->fetchColumn();
 
-// 2. Total Finished Goods (sum of inventory for finished_good items in assigned warehouse)
+// 2. Total Finished Goods (count of unique active finished goods with inventory > 0)
 $stmtFG = $pdo->prepare("
-    SELECT COALESCE(SUM(inv.quantity), 0) 
+    SELECT COUNT(DISTINCT inv.item_id) 
     FROM inventory inv 
     JOIN items i ON inv.item_id = i.item_id 
-    WHERE i.item_type = 'finished_good' AND inv.warehouse_id = :wid
+    WHERE i.item_type = 'finished_good' 
+      AND i.status = 'active'
+      AND inv.quantity > 0
 ");
-$stmtFG->execute([':wid' => $currentWarehouseId]);
-$totalFinishedGoods = (float)$stmtFG->fetchColumn();
+$stmtFG->execute();
+$totalFinishedGoods = (int)$stmtFG->fetchColumn();
 
 // 3. Total Stock (net physical quantity in assigned warehouse)
 $stmtStock = $pdo->prepare("
@@ -164,7 +168,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 </div>
 
 <!-- 6 Core Summary KPI Cards -->
-<div class="stats-grid">
+<div class="stats-grid stats-grid-3">
     <!-- 1. Total Raw Materials -->
     <div class="stat-card stat-gold">
         <div class="stat-header">
@@ -178,7 +182,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($totalRawMaterials, 1) ?></div>
+        <div class="stat-value"><?= number_format($totalRawMaterials) ?></div>
         <div class="stat-meta">Inbounded from Procurement</div>
     </div>
 
@@ -196,7 +200,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= number_format($totalFinishedGoods, 1) ?></div>
+        <div class="stat-value"><?= number_format($totalFinishedGoods) ?></div>
         <div class="stat-meta">Distillery &amp; packaging output</div>
     </div>
 
@@ -266,119 +270,75 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Two-Column Section: Recent Inventory Activity & Quick Pipeline Integration -->
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px;" class="dashboard-grid">
-    <!-- Recent Inventory Activity -->
-    <div class="card" style="margin-bottom: 0;">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Recent Inventory Activity</h2>
-                <p class="card-desc">Chronological ledger activity from Procurement receipts, Production, and Sales</p>
-            </div>
-            <a href="<?= BASE_URL ?>views/inventory/movement.php" class="btn btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;">
-                <span>View Full Ledger</span>
-            </a>
+<!-- Recent Inventory Activity Card -->
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">Recent Inventory Activity</h2>
+            <p class="card-desc">Chronological ledger activity from Procurement receipts, Production, and Sales</p>
         </div>
-        <div class="table-responsive">
-            <table id="recentActivityTable">
-                <thead>
-                    <tr>
-                        <th>Product / Item</th>
-                        <th>Classification</th>
-                        <th>Movement</th>
-                        <th>Quantity</th>
-                        <th>Facility</th>
-                        <th>Date &amp; Time</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($recentActivities)): ?>
-                        <tr>
-                            <td colspan="6" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded yet.</td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($recentActivities as $act): ?>
-                            <?php 
-                                $isIncoming = (float)$act['quantity_in'] > 0;
-                                $isTransfer = strpos($act['movement_type'], 'TRANSFER') !== false;
-                                $pillClass = $isTransfer ? 'mov-transfer' : ($isIncoming ? 'mov-in' : 'mov-out');
-                            ?>
-                            <tr>
-                                <td>
-                                    <strong><?= htmlspecialchars($act['item_name']) ?></strong>
-                                    <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($act['item_code']) ?></div>
-                                </td>
-                                <td>
-                                    <span class="badge-type <?= $act['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
-                                        <?= htmlspecialchars(str_replace('_', ' ', $act['item_type'])) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <span class="badge <?= $pillClass ?>">
-                                        <?= htmlspecialchars($act['movement_type']) ?>
-                                    </span>
-                                </td>
-                                <td style="font-weight: 700; font-size: 13.5px;">
-                                    <?php if ($isIncoming): ?>
-                                        <span style="color: #15803D;">+<?= number_format($act['quantity_in'], 1) ?></span>
-                                    <?php else: ?>
-                                        <span style="color: #B91C1C;">-<?= number_format($act['quantity_out'], 1) ?></span>
-                                    <?php endif; ?>
-                                    <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($act['unit']) ?></small>
-                                </td>
-                                <td>
-                                    <span class="badge-wh"><?= htmlspecialchars($act['warehouse_code']) ?></span>
-                                </td>
-                                <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
-                                    <?= date('M d, Y H:i', strtotime($act['created_at'])) ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+        <a href="<?= BASE_URL ?>views/inventory/movement.php" class="btn btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;">
+            <span>View Full Ledger</span>
+        </a>
     </div>
-
-    <!-- Liquor Inventory Integration Pipeline Card -->
-    <div class="card" style="margin-bottom: 0;">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Inter-Team Pipeline</h2>
-                <p class="card-desc">Procurement &middot; Production &middot; Sales</p>
-            </div>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 16px;">
-            <!-- Step 1: Procurement -->
-            <div style="padding: 14px; background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius-md);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="font-size: 12px; font-weight: 700; color: var(--gold); text-transform: uppercase;">1. Procurement</span>
-                    <span class="badge status-optimal">Active</span>
-                </div>
-                <div style="font-size: 13px; font-weight: 600; color: var(--panel-ink);">Raw Materials Inbound</div>
-                <div style="font-size: 12px; color: var(--gray); margin-top: 2px;">Procurement receives raw materials, spirits bases, and packaging into storage.</div>
-            </div>
-
-            <!-- Step 2: Production -->
-            <div style="padding: 14px; background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius-md);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase;">2. Production</span>
-                    <span class="badge status-optimal">Active</span>
-                </div>
-                <div style="font-size: 13px; font-weight: 600; color: var(--panel-ink);">Distillation &amp; Packaging</div>
-                <div style="font-size: 12px; color: var(--gray); margin-top: 2px;">Processes raw ingredients and manages finished bottled goods inventory.</div>
-            </div>
-
-            <!-- Step 3: Sales -->
-            <div style="padding: 14px; background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius-md);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="font-size: 12px; font-weight: 700; color: #1D4ED8; text-transform: uppercase;">3. Sales &amp; Dispatch</span>
-                    <span class="badge status-optimal">Active</span>
-                </div>
-                <div style="font-size: 13px; font-weight: 600; color: var(--panel-ink);">Customer Delivery</div>
-                <div style="font-size: 12px; color: var(--gray); margin-top: 2px;">Outbound dispatches reduce available finished goods stock.</div>
-            </div>
-        </div>
+    <div class="table-responsive">
+        <table id="recentActivityTable">
+            <thead>
+                <tr>
+                    <th>Product / Item</th>
+                    <th>Classification</th>
+                    <th>Movement</th>
+                    <th>Quantity</th>
+                    <th>Facility</th>
+                    <th>Date &amp; Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($recentActivities)): ?>
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded yet.</td>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach ($recentActivities as $act): ?>
+                        <?php 
+                            $isIncoming = (float)$act['quantity_in'] > 0;
+                            $isTransfer = strpos($act['movement_type'], 'TRANSFER') !== false;
+                            $pillClass = $isTransfer ? 'mov-transfer' : ($isIncoming ? 'mov-in' : 'mov-out');
+                        ?>
+                        <tr>
+                            <td>
+                                <strong><?= htmlspecialchars($act['item_name']) ?></strong>
+                                <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($act['item_code']) ?></div>
+                            </td>
+                            <td>
+                                <span class="badge-type <?= $act['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
+                                    <?= htmlspecialchars(str_replace('_', ' ', $act['item_type'])) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $pillClass ?>">
+                                    <?= htmlspecialchars($act['movement_type']) ?>
+                                </span>
+                            </td>
+                            <td style="font-weight: 700; font-size: 13.5px;">
+                                <?php if ($isIncoming): ?>
+                                    <span style="color: #15803D;">+<?= number_format($act['quantity_in'], 1) ?></span>
+                                <?php else: ?>
+                                    <span style="color: #B91C1C;">-<?= number_format($act['quantity_out'], 1) ?></span>
+                                <?php endif; ?>
+                                <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($act['unit']) ?></small>
+                            </td>
+                            <td>
+                                <span class="badge-wh"><?= htmlspecialchars($act['warehouse_code']) ?></span>
+                            </td>
+                            <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
+                                <?= date('M d, Y H:i', strtotime($act['created_at'])) ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -473,13 +433,5 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
         </table>
     </div>
 </div>
-
-<style>
-@media (max-width: 900px) {
-    .dashboard-grid {
-        grid-template-columns: 1fr !important;
-    }
-}
-</style>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

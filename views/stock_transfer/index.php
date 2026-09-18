@@ -163,20 +163,12 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
         <p class="page-subtitle">Track transfers originating from <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?>)</strong> to other facilities</p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect width="12" height="8" x="6" y="14"/>
-            </svg>
-            <span>Print Ledger</span>
-        </button>
         <button type="button" class="btn btn-primary" onclick="openNewTransferModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            <span>+ Initiate Transfer</span>
+            <span> Initiate Transfer</span>
         </button>
     </div>
 </div>

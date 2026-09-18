@@ -620,6 +620,22 @@
             margin-bottom: 24px;
         }
 
+        .stats-grid-3 {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        @media (max-width: 992px) {
+            .stats-grid-3 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .stats-grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .stat-card {
             background: #ffffff;
             border: 1px solid var(--border);

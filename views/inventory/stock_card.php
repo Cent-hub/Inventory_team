@@ -111,16 +111,6 @@ if ($selectedItemId > 0) {
         <h1 class="page-title">Item Stock Card Ledger</h1>
         <p class="page-subtitle">Inspect the complete audit trail for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
     </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect width="12" height="8" x="6" y="14"/>
-            </svg>
-            <span>Print Stock Card</span>
-        </button>
-    </div>
 </div>
 
 <!-- Interactive Item & Filter Toolbar -->

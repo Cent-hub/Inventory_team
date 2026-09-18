@@ -9,9 +9,8 @@
     <!-- App Bottom Footer -->
     <footer style="background: #ffffff; border-top: 1px solid var(--border); padding: 16px 28px; text-align: center; font-size: 12.5px; color: var(--gray); margin-top: auto;">
         <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1540px; margin: 0 auto; flex-wrap: wrap; gap: 12px;">
-            <span>&copy; <?= date('Y') ?> StockPilot &middot; Liquor Business Inventory Management System</span>
+            <span>&copy; <?= date('Y') ?> InventoryTeam &middot; Liquor Business Inventory Management System</span>
             <span style="display: flex; align-items: center; gap: 14px;">
-                <span>Procurement &middot; Production &middot; Sales Integrated</span>
                 <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);"></span>
                 <span style="color: var(--accent); font-weight: 600;">System Online</span>
             </span>

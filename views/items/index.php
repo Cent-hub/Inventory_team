@@ -108,25 +108,8 @@ $catCount     = count($categories);
 <!-- Page Header -->
 <div class="page-header">
     <div>
-        <h1 class="page-title">Item Catalog &amp; SKU Management</h1>
+        <h1 class="page-title">Item Catalog</h1>
         <p class="page-subtitle">Master product definitions for raw distilling ingredients and packaged finished goods</p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect width="12" height="8" x="6" y="14"/>
-            </svg>
-            <span>Print Catalog</span>
-        </button>
-        <button type="button" class="btn btn-primary" onclick="openNewItemModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span>+ Add New Item</span>
-        </button>
     </div>
 </div>
 
@@ -149,7 +132,7 @@ $catCount     = count($categories);
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Registered SKUs</span>
+            <span class="stat-label">Total Registered </span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
             </div>
@@ -160,7 +143,7 @@ $catCount     = count($categories);
 
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Raw Material SKUs</span>
+            <span class="stat-label">Raw Material</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
             </div>
@@ -171,7 +154,7 @@ $catCount     = count($categories);
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Finished Goods SKUs</span>
+            <span class="stat-label">Finished Goods</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
             </div>

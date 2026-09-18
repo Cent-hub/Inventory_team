@@ -28,15 +28,14 @@ $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
             </svg>
         </div>
         <div class="brand-text-wrap">
-            <span class="brand-name">Stock<span>Pilot</span></span>
-            <span class="brand-sub">Liquor Inventory</span>
+            <span class="brand-name">Inventory<span>Team</span></span>
         </div>
     </div>
 
     <!-- Navigation Scroll Area -->
     <nav class="sidebar-nav">
         <!-- Main Section -->
-        <span class="nav-section-label">Core Operations</span>
+        <span class="nav-section-label">Operations</span>
 
         <!-- Dashboard -->
         <div class="nav-item">

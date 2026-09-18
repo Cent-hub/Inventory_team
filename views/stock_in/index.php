@@ -128,18 +128,7 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     <div>
         <h1 class="page-title">Inbound / Stock In</h1>
         <p class="page-subtitle">Transactions received from Procurement and Production &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH-MAIN') ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Main Warehouse') ?></p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <!-- Lucide Printer Icon -->
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect width="12" height="8" x="6" y="14"/>
-            </svg>
-            <span>Print Ledger</span>
-        </button>
-    </div>
+</div>  
 </div>
 
 <!-- Flash Alerts -->
@@ -228,43 +217,6 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     gap: 5px;
 }
 </style>
-
-<!-- API Integration Status & Role Notice -->
-<div class="api-workflow-banner">
-    <div class="api-workflow-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
-            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
-            <circle cx="12" cy="12" r="2"/>
-            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
-            <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
-        </svg>
-    </div>
-    <div style="flex: 1;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-            <div style="font-size: 14px; font-weight: 700; color: var(--panel-ink);">
-                API Integration Active &mdash; Automated Inbound Stock In
-            </div>
-            <span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #BBF7D0; font-size: 11px; font-weight: 700;">
-                ● Live API Integration
-            </span>
-        </div>
-        <p style="margin: 4px 0 10px 0; font-size: 13px; color: var(--gray); line-height: 1.5;">
-            Inbound transactions are received automatically through external subsystem APIs. Inventory users primarily monitor, verify, and track inbound stock movements without duplicate manual entry.
-        </p>
-        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-            <div class="api-tag-badge">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #D97706;"></span>
-                <span><strong>Procurement API:</strong> Raw Materials &larr; Purchase Orders (PO)</span>
-            </div>
-            <div class="api-tag-badge">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #0284C7;"></span>
-                <span><strong>Production API:</strong> Finished Goods &larr; Production Batches / Work Orders</span>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- KPI Cards -->
 <div class="stats-grid">
     <div class="stat-card">
