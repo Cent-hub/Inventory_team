@@ -298,6 +298,56 @@ function getFacilityAssignment($user) {
             </svg>
         </div>
     </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 6: Accountability Log -->
+    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/settings/accountability.php'" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle navy">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+                    <path d="m9 14 2 2 4-4"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Accountability Log</div>
+                <div class="settings-row-subtitle">Cross-team activity, operators &amp; warehouse trail</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-badge" style="background: #1F7A6C;">Whole Page</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- Row 7: Contact Support -->
+    <div class="settings-row" onclick="openSettingsModal('contact_support')" role="button" tabindex="0">
+        <div class="settings-row-left">
+            <div class="settings-squircle purple">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    <line x1="8" y1="10" x2="16" y2="10"/>
+                    <line x1="8" y1="14" x2="13" y2="14"/>
+                </svg>
+            </div>
+            <div>
+                <div class="settings-row-title">Contact Support</div>
+                <div class="settings-row-subtitle">Compose inquiry or message to Super Admin</div>
+            </div>
+        </div>
+        <div class="settings-row-right">
+            <span class="settings-badge" style="background: #7C3AED;">Direct</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </div>
+    </div>
 </div>
 <?php else: ?>
 <!-- Summary Metrics -->

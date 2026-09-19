@@ -78,7 +78,19 @@ if (!in_array($sourceType, $validSourceTypes, true)) {
 }
 
 // Team domain enforcement
-if ($sourceType === 'MATERIAL_REQUEST' && $userId !== 3 && ($authUser['role'] ?? '') !== 'super_admin') {
+$isSalesUser = in_array($userId, [4, 6], true);
+$isProductionUser = ($userId === 3);
+$isSuperAdmin = (($authUser['role'] ?? '') === 'super_admin');
+
+if ($isSalesUser && $sourceType !== 'SALES_DELIVERY') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Sales service accounts are restricted strictly to 'SALES_DELIVERY' stock-out operations. Submitted: '{$sourceType}'."
+    ], 403);
+}
+
+if ($sourceType === 'MATERIAL_REQUEST' && !$isProductionUser && !$isSuperAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -86,11 +98,19 @@ if ($sourceType === 'MATERIAL_REQUEST' && $userId !== 3 && ($authUser['role'] ??
     ], 403);
 }
 
-if ($sourceType === 'SALES_DELIVERY' && !in_array($userId, [4, 6], true) && ($authUser['role'] ?? '') !== 'super_admin') {
+if ($sourceType === 'SALES_DELIVERY' && !$isSalesUser && !$isSuperAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
         'detail'  => "Only the Sales Service API or Admin can submit Sales Deliveries. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
+if ($sourceType === 'MANUAL' && !$isSuperAdmin) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only Super Administrators can submit MANUAL stock adjustments via API. Your account is '{$authUser['name']}'."
     ], 403);
 }
 

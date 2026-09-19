@@ -410,6 +410,142 @@ class StockService {
     }
 
     /**
+     * Dedicated Finished Goods Query for Sales Team
+     * Returns available finished goods with warehouse, location, unit, status, and quantity.
+     * Excludes internal purchasing parameters and strictly filters to active finished goods.
+     *
+     * @param int|null $warehouseId Filter by specific warehouse
+     * @param string|null $itemCode Filter by exact item code
+     * @param int|null $itemId Filter by specific item ID
+     * @param bool $inStockOnly Only return records with positive available stock
+     * @return array
+     */
+    public function getFinishedGoods(
+        ?int $warehouseId = null,
+        ?string $itemCode = null,
+        ?int $itemId = null,
+        bool $inStockOnly = false
+    ): array {
+        $params = [];
+
+        if ($warehouseId !== null) {
+            $sql = "
+                SELECT 
+                    i.item_id,
+                    i.item_code,
+                    i.item_name,
+                    COALESCE(c.category_name, 'Finished Goods') AS category_name,
+                    i.unit,
+                    COALESCE(inv.quantity, 0.000) AS available_quantity,
+                    w.warehouse_id,
+                    w.warehouse_code,
+                    w.warehouse_name,
+                    COALESCE(w.location, '') AS warehouse_location,
+                    i.status,
+                    inv.updated_at AS last_updated_at
+                FROM items i
+                LEFT JOIN categories c ON c.category_id = i.category_id
+                CROSS JOIN warehouses w ON w.warehouse_id = ? AND w.status = 'active'
+                LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = w.warehouse_id
+                WHERE i.item_type = 'finished_good'
+                  AND i.status = 'active'
+            ";
+            $params[] = $warehouseId;
+        } else {
+            $sql = "
+                SELECT 
+                    i.item_id,
+                    i.item_code,
+                    i.item_name,
+                    COALESCE(c.category_name, 'Finished Goods') AS category_name,
+                    i.unit,
+                    COALESCE(inv.quantity, 0.000) AS available_quantity,
+                    w.warehouse_id,
+                    w.warehouse_code,
+                    w.warehouse_name,
+                    COALESCE(w.location, '') AS warehouse_location,
+                    i.status,
+                    inv.updated_at AS last_updated_at
+                FROM items i
+                LEFT JOIN categories c ON c.category_id = i.category_id
+                JOIN inventory inv ON inv.item_id = i.item_id
+                JOIN warehouses w ON w.warehouse_id = inv.warehouse_id AND w.status = 'active'
+                WHERE i.item_type = 'finished_good'
+                  AND i.status = 'active'
+            ";
+        }
+
+        if ($itemCode !== null) {
+            $sql .= " AND i.item_code = ?";
+            $params[] = $itemCode;
+        }
+        if ($itemId !== null) {
+            $sql .= " AND i.item_id = ?";
+            $params[] = $itemId;
+        }
+        if ($inStockOnly) {
+            $sql .= " AND COALESCE(inv.quantity, 0) > 0";
+        }
+
+        $sql .= " ORDER BY i.item_name ASC, w.warehouse_name ASC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        // If a specific item was requested but has no inventory record yet across any warehouse
+        if (empty($rows) && ($itemCode !== null || $itemId !== null) && !$inStockOnly && $warehouseId === null) {
+            $itemSql = "
+                SELECT 
+                    i.item_id,
+                    i.item_code,
+                    i.item_name,
+                    COALESCE(c.category_name, 'Finished Goods') AS category_name,
+                    i.unit,
+                    0.000 AS available_quantity,
+                    NULL AS warehouse_id,
+                    NULL AS warehouse_code,
+                    NULL AS warehouse_name,
+                    NULL AS warehouse_location,
+                    i.status,
+                    i.updated_at AS last_updated_at
+                FROM items i
+                LEFT JOIN categories c ON c.category_id = i.category_id
+                WHERE i.item_type = 'finished_good' AND i.status = 'active'
+            ";
+            $itemParams = [];
+            if ($itemCode !== null) {
+                $itemSql .= " AND i.item_code = ?";
+                $itemParams[] = $itemCode;
+            }
+            if ($itemId !== null) {
+                $itemSql .= " AND i.item_id = ?";
+                $itemParams[] = $itemId;
+            }
+            $stmtItem = $this->pdo->prepare($itemSql);
+            $stmtItem->execute($itemParams);
+            $rows = $stmtItem->fetchAll();
+        }
+
+        return array_map(function ($row) {
+            return [
+                'item_id'            => (int)$row['item_id'],
+                'item_code'          => (string)$row['item_code'],
+                'item_name'          => (string)$row['item_name'],
+                'category_name'      => (string)$row['category_name'],
+                'available_quantity' => (float)$row['available_quantity'],
+                'unit'               => (string)$row['unit'],
+                'warehouse_id'       => $row['warehouse_id'] !== null ? (int)$row['warehouse_id'] : null,
+                'warehouse_code'     => $row['warehouse_code'] ?? null,
+                'warehouse_name'     => $row['warehouse_name'] ?? null,
+                'warehouse_location' => $row['warehouse_location'] ?? null,
+                'status'             => (string)$row['status'],
+                'last_updated_at'    => (string)$row['last_updated_at']
+            ];
+        }, $rows);
+    }
+
+    /**
      * Get Active Low Stock Alerts
      * Primary Consumer: Team 1 (Procurement - Reorder replenishment)
      */

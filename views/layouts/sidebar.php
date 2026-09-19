@@ -117,11 +117,6 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
                     <span class="sub-bullet"></span>
                     <span>Stock Card</span>
                 </a>
-                <!-- Stock Movement -->
-                <a href="<?= BASE_URL ?>views/inventory/movement.php" class="nav-sub-link <?= $activePage === 'movement' ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Stock Movement</span>
-                </a>
             </div>
         </div>
 

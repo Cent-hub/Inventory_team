@@ -667,10 +667,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </form>
 
-                    <!-- Helper Footer -->
-                    <p class="helper" style="margin-top: 24px; color: var(--gray); font-size: 12.5px;">
-                        Need account access? Contact your System Administrator.
-                    </p>
+                    <!-- Helper Footer with Contact Support Button -->
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <span style="color: var(--gray); font-size: 12.5px;">Having trouble signing in or need account access?</span>
+                        <button type="button" id="btn-login-support" onclick="openLoginSupportModal()" style="background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.25); color: #7C3AED; font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 20px; transition: all 0.15s ease;" onmouseover="this.style.background='rgba(124, 58, 237, 0.14)';" onmouseout="this.style.background='rgba(124, 58, 237, 0.08)';">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                <line x1="8" y1="10" x2="16" y2="10"/>
+                                <line x1="8" y1="14" x2="13" y2="14"/>
+                            </svg>
+                            <span>Contact Support</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -807,12 +815,196 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- Contact Support Modal for Login Page (Direct to Super Admin) -->
+    <div id="login-support-modal-backdrop" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
+        <div class="modal-card" style="width:100%; max-width:500px; background:#ffffff; border-radius:24px; padding:28px 26px; box-shadow:0 25px 50px -12px rgba(15,23,42,0.35); position:relative; overflow:hidden; max-height:92vh; overflow-y:auto;">
+            <!-- Header -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; background:rgba(124,58,237,0.1); color:#7C3AED;">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <line x1="8" y1="10" x2="16" y2="10"/>
+                            <line x1="8" y1="14" x2="13" y2="14"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <h3 style="font-family:var(--font-display); font-size:16.5px; font-weight:700; color:var(--panel-ink); margin:0;">Contact Support</h3>
+                        <p style="font-size:12px; color:var(--gray); margin:0;">Direct inquiry channel to the Super Admin</p>
+                    </div>
+                </div>
+                <button type="button" id="btn-close-login-support-modal" onclick="closeLoginSupportModal()" aria-label="Close" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:color 0.15s ease;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <!-- Dynamic Feedback Alert (shown upon simulated send) -->
+            <div id="login-support-feedback" style="display:none; background:#dcfce7; border:1px solid #bbf7d0; border-radius:12px; padding:12px 14px; margin-bottom:16px;">
+                <div style="display:flex; align-items:flex-start; gap:10px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;">
+                        <path d="M20 6 9 17l-5-5"/>
+                    </svg>
+                    <div>
+                        <strong style="color:#15803d; font-size:13px; display:block; margin-bottom:2px;">Message Sent Successfully!</strong>
+                        <span style="color:#166534; font-size:12px; line-height:1.4; display:block;">Your inquiry has been simulated and routed to the <strong>Super Admin</strong>. The administrator will follow up with you at your email address. (UI Simulation Mode)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compose Form -->
+            <form id="login-support-form" onsubmit="event.preventDefault(); handleSimulateLoginSupportSend();">
+                <!-- Recipient Info Capsule -->
+                <div style="margin-bottom:14px;">
+                    <label class="label" style="margin-bottom:5px; font-size:12px;">Recipient</label>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px; background:#F8FAFC; border:1px solid var(--border); border-radius:10px; font-size:12.5px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--gray);">
+                                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            <span style="font-weight:600; color:var(--panel-ink);">Super Admin</span>
+                            <span style="font-size:11.5px; color:var(--gray);">&lt;superadmin@centhub.local&gt;</span>
+                        </div>
+                        <span style="background:var(--panel-ink); color:#ffffff; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; letter-spacing:0.3px;">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            Super Admin
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Your Email Address -->
+                <div class="field" style="margin-bottom:12px;">
+                    <label class="label" for="login-support-email" style="font-size:12px;">Your Email Address <span style="color:var(--error);">*</span></label>
+                    <div class="input-wrap">
+                        <input id="login-support-email" type="email" class="input" placeholder="e.g. employee@centhub.com" required autocomplete="email" style="font-size:13px;" />
+                    </div>
+                </div>
+
+                <!-- Inquiry Topic / Category -->
+                <div class="field" style="margin-bottom:12px;">
+                    <label class="label" for="login-support-category" style="font-size:12px;">Inquiry Topic</label>
+                    <div class="input-wrap">
+                        <select id="login-support-category" class="input" style="height:46px; font-size:13px; background:#fff; cursor:pointer;">
+                            <option value="login_issue" selected>Account Access &amp; Login Issue</option>
+                            <option value="password_reset">Password Reset Assistance</option>
+                            <option value="user_access">New Warehouse User Access Requisition</option>
+                            <option value="system_bug">Report a System Bug / Error</option>
+                            <option value="general">Other Operational Inquiries</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Subject -->
+                <div class="field" style="margin-bottom:12px;">
+                    <label class="label" for="login-support-subject" style="font-size:12px;">Subject <span style="color:var(--error);">*</span></label>
+                    <div class="input-wrap">
+                        <input id="login-support-subject" type="text" class="input" placeholder="e.g. Unable to sign in after password expiration" required style="font-size:13px;" />
+                    </div>
+                </div>
+
+                <!-- Message Body -->
+                <div class="field" style="margin-bottom:16px;">
+                    <label class="label" for="login-support-message" style="font-size:12px;">Message <span style="color:var(--error);">*</span></label>
+                    <div class="input-wrap">
+                        <textarea id="login-support-message" class="input" rows="3" style="height:auto; min-height:85px; padding:10px 14px; resize:vertical; font-size:13px; line-height:1.45;" placeholder="Describe your issue or request for the Super Admin..." required></textarea>
+                    </div>
+                </div>
+
+                <!-- Action Buttons: Cancel and Send Message -->
+                <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding-top:12px; border-top:1px solid var(--border);">
+                    <button type="button" onclick="closeLoginSupportModal()" style="background:#F1F5F9; border:1px solid #CBD5E1; color:var(--panel-ink); font-family:var(--font-body); font-size:13px; font-weight:600; padding:9px 18px; border-radius:10px; cursor:pointer; transition:all 0.15s ease;" onmouseover="this.style.background='#E2E8F0';" onmouseout="this.style.background='#F1F5F9';">
+                        Cancel
+                    </button>
+                    <button type="submit" id="btn-submit-login-support" class="login-btn" style="width:auto; padding:9px 20px; font-size:13px; background:#7C3AED; border-color:#7C3AED; display:inline-flex; align-items:center; gap:7px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                        <span id="text-login-support-btn">Send Message</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
     function fillDefaultAdmin() {
         const emailInput = document.getElementById('login_input');
         const pwdInput = document.getElementById('password');
         if (emailInput) emailInput.value = 'admin@inventory.local';
         if (pwdInput) pwdInput.value = 'admin123';
+    }
+
+    function openLoginSupportModal() {
+        const modal = document.getElementById('login-support-modal-backdrop');
+        if (!modal) return;
+        const feedback = document.getElementById('login-support-feedback');
+        if (feedback) feedback.style.display = 'none';
+
+        const loginInput = document.getElementById('login_input');
+        const emailInput = document.getElementById('login-support-email');
+        if (loginInput && emailInput && !emailInput.value && loginInput.value.includes('@')) {
+            emailInput.value = loginInput.value.trim();
+        }
+
+        modal.style.display = 'flex';
+        modal.style.pointerEvents = 'auto';
+        requestAnimationFrame(() => {
+            modal.style.opacity = '1';
+        });
+        document.body.style.overflow = 'hidden';
+        if (emailInput && !emailInput.value) {
+            emailInput.focus();
+        } else {
+            const subject = document.getElementById('login-support-subject');
+            if (subject) subject.focus();
+        }
+    }
+
+    function closeLoginSupportModal() {
+        const modal = document.getElementById('login-support-modal-backdrop');
+        if (!modal) return;
+        modal.style.opacity = '0';
+        modal.style.pointerEvents = 'none';
+        setTimeout(() => {
+            modal.style.display = 'none';
+            const feedback = document.getElementById('login-support-feedback');
+            if (feedback) feedback.style.display = 'none';
+        }, 220);
+        document.body.style.overflow = '';
+    }
+
+    function handleSimulateLoginSupportSend() {
+        const btn = document.getElementById('btn-submit-login-support');
+        const btnText = document.getElementById('text-login-support-btn');
+        const feedback = document.getElementById('login-support-feedback');
+
+        if (btn && btnText) {
+            btn.disabled = true;
+            btnText.textContent = 'Sending...';
+        }
+
+        setTimeout(() => {
+            if (btn && btnText) {
+                btn.disabled = false;
+                btnText.textContent = 'Send Message';
+            }
+            if (feedback) {
+                feedback.style.display = 'block';
+                feedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            const subject = document.getElementById('login-support-subject');
+            const message = document.getElementById('login-support-message');
+            if (subject) subject.value = '';
+            if (message) message.value = '';
+
+            setTimeout(() => {
+                closeLoginSupportModal();
+            }, 3000);
+        }, 600);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1253,9 +1445,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (e.target === modalBackdrop) closeForgotModal();
             });
         }
+        const supportModalBackdrop = document.getElementById('login-support-modal-backdrop');
+        if (supportModalBackdrop) {
+            supportModalBackdrop.addEventListener('click', function (e) {
+                if (e.target === supportModalBackdrop) closeLoginSupportModal();
+            });
+        }
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && modalBackdrop && modalBackdrop.style.display === 'flex') {
-                closeForgotModal();
+            if (e.key === 'Escape') {
+                if (modalBackdrop && modalBackdrop.style.display === 'flex') {
+                    closeForgotModal();
+                }
+                if (supportModalBackdrop && supportModalBackdrop.style.display === 'flex') {
+                    closeLoginSupportModal();
+                }
             }
         });
 
@@ -1551,6 +1754,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Auto-open modal if URL has ?forgot=1 or #forgot
         if (window.location.search.includes('forgot=1') || window.location.hash === '#forgot') {
             setTimeout(openForgotModal, 150);
+        }
+        if (window.location.search.includes('support=1') || window.location.hash === '#support') {
+            setTimeout(openLoginSupportModal, 150);
         }
 
         // Trigger lockout countdown if loaded in a rate-limited state

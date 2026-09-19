@@ -3,6 +3,9 @@
  * API Response & Error Helper
  */
 
+require_once __DIR__ . '/cors.php';
+handleCors();
+
 function jsonResponse(array $data, int $statusCode = 200): void {
     if (!headers_sent()) {
         http_response_code($statusCode);
