@@ -113,19 +113,81 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
+<style>
+.searchable-select-wrap {
+    position: relative;
+    width: 100%;
+}
+.searchable-dropdown-list {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
+    z-index: 1050;
+    padding: 4px 0;
+}
+.searchable-dropdown-list .item-result-row {
+    padding: 9px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #F1F5F9;
+    transition: background 0.12s ease;
+}
+.searchable-dropdown-list .item-result-row:hover,
+.searchable-dropdown-list .item-result-row.highlighted {
+    background-color: #F8FAFC;
+}
+.searchable-dropdown-list .item-result-row.selected {
+    background-color: #EFF6FF;
+    border-left: 3px solid #2563EB;
+}
+.searchable-dropdown-list .item-result-row:last-child {
+    border-bottom: none;
+}
+.search-match-highlight {
+    background-color: #FEF08A;
+    color: #854D0E;
+    font-weight: 700;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+</style>
+
 <!-- Interactive Item & Filter Toolbar -->
 <div class="card" style="padding: 18px 22px;">
-    <form method="GET" action="stock_card.php" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">
-        <!-- Item Selector -->
-        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 260px; flex: 1;">
-            <label for="item_id" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Select Inventory Item:</label>
-            <select name="item_id" id="item_id" class="select-filter" style="width: 100%; font-weight: 600;" onchange="this.form.submit()">
-                <?php foreach ($items as $it): ?>
-                    <option value="<?= (int)$it['item_id'] ?>" <?= (int)$it['item_id'] === $selectedItemId ? 'selected' : '' ?>>
-                        [<?= htmlspecialchars($it['item_code']) ?>] <?= htmlspecialchars($it['item_name']) ?> (<?= $it['item_type'] === 'raw_material' ? 'Raw' : 'Finished' ?>)
-                    </option>
-                <?php endforeach; ?>
-            </select>
+    <form method="GET" action="stock_card.php" id="stockCardForm" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">
+        <!-- Searchable Item Autocomplete Selector -->
+        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 280px; flex: 1; position: relative;">
+            <label for="itemSearchInput" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Select Inventory Item:</label>
+            <input type="hidden" name="item_id" id="selectedItemId" value="<?= (int)$selectedItemId ?>">
+            
+            <div id="itemSearchWrapper" class="searchable-select-wrap">
+                <div style="position: relative; display: flex; align-items: center;">
+                    <input type="text" 
+                           id="itemSearchInput" 
+                           class="select-filter" 
+                           style="width: 100%; font-weight: 600; padding-right: 32px; height: 38px; cursor: text;" 
+                           placeholder="Type item name or ID... 🔍" 
+                           value="<?= $selectedItem ? htmlspecialchars($selectedItem['item_name'] . ' — ' . $selectedItem['item_code']) : '' ?>" 
+                           autocomplete="off"
+                           onfocus="openItemDropdown()"
+                           oninput="filterItemDropdown(this.value)"
+                           onkeydown="handleItemDropdownKeydown(event)">
+                    <button type="button" id="clearItemSearchBtn" onclick="clearItemSearch()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--gray); font-size: 16px; display: <?= $selectedItem ? 'inline-block' : 'none' ?>; line-height: 1; padding: 2px;" title="Clear search">&times;</button>
+                </div>
+
+                <!-- Dropdown Search Results Container -->
+                <div id="itemDropdownList" class="searchable-dropdown-list"></div>
+            </div>
         </div>
 
         <!-- Assigned Warehouse Branch Badge -->
@@ -279,5 +341,203 @@ if ($selectedItemId > 0) {
         </table>
     </div>
 </div>
+
+<script>
+const allInventoryItems = <?= json_encode(array_map(function($it) {
+    return [
+        'id'   => (int)$it['item_id'],
+        'code' => (string)$it['item_code'],
+        'name' => (string)$it['item_name'],
+        'type' => (string)$it['item_type'],
+        'unit' => (string)($it['unit'] ?? '')
+    ];
+}, $items), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+let currentHighlightedIndex = -1;
+let currentFilteredItems = [];
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function highlightMatches(text, query) {
+    if (!query || !text) return escapeHtml(text || '');
+    const escapedText = escapeHtml(text);
+    const escapedQuery = escapeHtml(query);
+    const regex = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    return escapedText.replace(regex, '<span class="search-match-highlight">$1</span>');
+}
+
+function renderItemDropdown(matches, query) {
+    const list = document.getElementById('itemDropdownList');
+    currentFilteredItems = matches;
+    currentHighlightedIndex = -1;
+
+    if (!matches || matches.length === 0) {
+        list.innerHTML = '<div style="padding: 14px 16px; text-align: center; color: var(--gray); font-size: 13px; font-weight: 600;">No inventory items found.</div>';
+        list.style.display = 'block';
+        return;
+    }
+
+    const selectedId = parseInt(document.getElementById('selectedItemId').value, 10);
+
+    let html = '';
+    matches.forEach((item, index) => {
+        const isSelected = (item.id === selectedId);
+        const typeBadge = item.type === 'finished_good' 
+            ? '<span class="badge-type type-fg" style="font-size: 10px; padding: 2px 6px;">Finished</span>'
+            : '<span class="badge-type type-raw" style="font-size: 10px; padding: 2px 6px;">Raw</span>';
+
+        html += `
+            <div class="item-result-row ${isSelected ? 'selected' : ''}" 
+                 id="item-opt-${index}"
+                 data-index="${index}"
+                 onclick="selectInventoryItem(${item.id})">
+                <div style="display: flex; flex-direction: column;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-weight: 700; color: var(--panel-ink); font-size: 13px;">${highlightMatches(item.name, query)}</span>
+                        <span style="color: var(--gray); font-size: 12px;">—</span>
+                        <span style="font-family: monospace; font-size: 12px; font-weight: 600; color: #475569;">${highlightMatches(item.code, query)}</span>
+                    </div>
+                    <small style="color: var(--gray); font-size: 11px;">Item ID: ${item.id} ${item.unit ? '&middot; Unit: ' + escapeHtml(item.unit) : ''}</small>
+                </div>
+                ${typeBadge}
+            </div>
+        `;
+    });
+
+    list.innerHTML = html;
+    list.style.display = 'block';
+}
+
+function filterItemDropdown(query) {
+    const q = (query || '').trim().toLowerCase();
+    const clearBtn = document.getElementById('clearItemSearchBtn');
+    if (clearBtn) {
+        clearBtn.style.display = (query && query.length > 0) ? 'inline-block' : 'none';
+    }
+
+    if (!q) {
+        renderItemDropdown(allInventoryItems, '');
+        return;
+    }
+
+    const matches = allInventoryItems.filter(item => {
+        const nameMatch = (item.name || '').toLowerCase().includes(q);
+        const codeMatch = (item.code || '').toLowerCase().includes(q);
+        const idMatch   = String(item.id).includes(q) || ('rm-' + item.id).includes(q) || ('fg-' + item.id).includes(q);
+        return nameMatch || codeMatch || idMatch;
+    });
+
+    renderItemDropdown(matches, query);
+}
+
+function openItemDropdown() {
+    const input = document.getElementById('itemSearchInput');
+    input.select();
+    filterItemDropdown('');
+}
+
+function closeItemDropdown() {
+    const list = document.getElementById('itemDropdownList');
+    if (list) {
+        list.style.display = 'none';
+    }
+    currentHighlightedIndex = -1;
+}
+
+function selectInventoryItem(itemId) {
+    const item = allInventoryItems.find(it => it.id === itemId);
+    if (!item) return;
+
+    document.getElementById('selectedItemId').value = item.id;
+    document.getElementById('itemSearchInput').value = item.name + ' — ' + item.code;
+    const clearBtn = document.getElementById('clearItemSearchBtn');
+    if (clearBtn) clearBtn.style.display = 'inline-block';
+    closeItemDropdown();
+
+    document.getElementById('stockCardForm').submit();
+}
+
+function clearItemSearch() {
+    const input = document.getElementById('itemSearchInput');
+    input.value = '';
+    const clearBtn = document.getElementById('clearItemSearchBtn');
+    if (clearBtn) clearBtn.style.display = 'none';
+    input.focus();
+    filterItemDropdown('');
+}
+
+function restoreSelectedItemDisplay() {
+    const selectedId = parseInt(document.getElementById('selectedItemId').value, 10);
+    const item = allInventoryItems.find(it => it.id === selectedId);
+    if (item) {
+        document.getElementById('itemSearchInput').value = item.name + ' — ' + item.code;
+        const clearBtn = document.getElementById('clearItemSearchBtn');
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+    }
+}
+
+function handleItemDropdownKeydown(e) {
+    const list = document.getElementById('itemDropdownList');
+    const isOpen = (list && list.style.display === 'block');
+
+    if (!isOpen) {
+        if (e.key === 'ArrowDown' || e.key === 'Enter') {
+            openItemDropdown();
+            e.preventDefault();
+        }
+        return;
+    }
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (currentFilteredItems.length === 0) return;
+        currentHighlightedIndex = (currentHighlightedIndex + 1) % currentFilteredItems.length;
+        updateHighlightedRow();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (currentFilteredItems.length === 0) return;
+        currentHighlightedIndex = (currentHighlightedIndex - 1 + currentFilteredItems.length) % currentFilteredItems.length;
+        updateHighlightedRow();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentHighlightedIndex >= 0 && currentHighlightedIndex < currentFilteredItems.length) {
+            selectInventoryItem(currentFilteredItems[currentHighlightedIndex].id);
+        } else if (currentFilteredItems.length === 1) {
+            selectInventoryItem(currentFilteredItems[0].id);
+        }
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeItemDropdown();
+        restoreSelectedItemDisplay();
+    }
+}
+
+function updateHighlightedRow() {
+    document.querySelectorAll('.searchable-dropdown-list .item-result-row').forEach((row, idx) => {
+        if (idx === currentHighlightedIndex) {
+            row.classList.add('highlighted');
+            row.scrollIntoView({ block: 'nearest' });
+        } else {
+            row.classList.remove('highlighted');
+        }
+    });
+}
+
+// Click outside listener to dismiss dropdown
+document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('itemSearchWrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        const list = document.getElementById('itemDropdownList');
+        if (list && list.style.display === 'block') {
+            closeItemDropdown();
+            restoreSelectedItemDisplay();
+        }
+    }
+});
+</script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

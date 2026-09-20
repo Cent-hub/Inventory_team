@@ -89,7 +89,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Finished Product SKUs</span>
+            <span class="stat-label">Finished Product</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: var(--accent); background: var(--accent-light);">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m7.5 4.27 9 5.15"/>

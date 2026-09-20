@@ -7,6 +7,10 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/response.php';
 
+if (!defined('API_REQUEST')) {
+    define('API_REQUEST', true);
+}
+
 function getBearerToken(): ?string {
     $authHeader = null;
 
@@ -92,7 +96,7 @@ function requireApiAuth(array $allowed = []): array {
 
     $pdo = Database::getConnection();
     $stmt = $pdo->prepare("
-        SELECT user_id, name, email, role, api_token, status
+        SELECT user_id, name, email, role, warehouse_id, api_token, status
         FROM users
         WHERE api_token = ? AND status = 'active'
         LIMIT 1

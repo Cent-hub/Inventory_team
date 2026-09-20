@@ -268,7 +268,6 @@ $productionInbounds  = (int)$stmtProd->fetchColumn();
     <div class="card-header">
         <div>
             <h2 class="card-title">Inbound / Stock In Transactions</h2>
-            <p class="card-desc">Real-time log of stock received through Procurement and Production API integrations</p>
         </div>
         <div class="filter-group">
             <!-- Search Filter -->

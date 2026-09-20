@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
+require_once __DIR__ . '/../../helpers/AccountabilityService.php';
 
 $auth = new AuthController();
 if (!$auth->isAuthenticated()) {
@@ -14,6 +15,8 @@ if (!$auth->isAuthenticated()) {
 
 $currentUser = $auth->getCurrentUser();
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+$currentWarehouseId = $isSuperAdmin ? 0 : (int)($currentUser['warehouse_id'] ?? 0);
+$recentAccountabilityLogs = AccountabilityService::getLogs($currentWarehouseId, ['limit' => 20]);
 
 $pageTitle   = 'System Settings & Accountability — StockPilot';
 $activePage  = 'settings';
@@ -291,271 +294,71 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 </tr>
             </thead>
             <tbody>
-                <!-- Row 1: Procurement (Potatoes) -->
-                <tr data-team="Procurement">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">09:15 AM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #FEF3C7; color: #92400E; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                JD
+                <?php if (empty($recentAccountabilityLogs)): ?>
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 30px; color: var(--gray);">
+                            No recent accountability records for this facility.
+                        </td>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach ($recentAccountabilityLogs as $log): 
+                        $createdAt = strtotime($log['created_at']);
+                        $dateFormatted = date('M d, Y', $createdAt);
+                        $timeFormatted = date('h:i A', $createdAt);
+                        $initials = AccountabilityService::getUserInitials($log['user_name']);
+                        $team = htmlspecialchars($log['team']);
+                        $actionBadge = AccountabilityService::formatActionBadge($log['action_type'], $log['channel']);
+                        $teamBadge = AccountabilityService::formatTeamBadge($log['team']);
+                        $whName = htmlspecialchars($log['warehouse_name']);
+                        $destName = !empty($log['dest_name']) ? htmlspecialchars($log['dest_name']) : '';
+                    ?>
+                    <tr data-team="<?= $team ?>">
+                        <td style="white-space: nowrap;">
+                            <strong><?= $dateFormatted ?></strong><br>
+                            <small style="color: var(--gray);"><?= $timeFormatted ?></small>
+                        </td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="width: 28px; height: 28px; border-radius: 50%; background: #E2E8F0; color: #1E293B; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                    <?= htmlspecialchars($initials) ?>
+                                </div>
+                                <div>
+                                    <strong><?= htmlspecialchars($log['user_name']) ?></strong>
+                                    <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $log['user_role'] ?? 'user'))) ?></div>
+                                </div>
                             </div>
-                            <strong>Juan Dela Cruz</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team procurement">Procurement</span>
-                    </td>
-                    <td>
-                        <span class="badge-action inbound">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
-                            </svg>
-                            Stock In Request
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Potatoes</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Raw Material &middot; RM-POT-01</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px;">50</span>
-                        <small style="color: var(--gray);">kg</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-main">Main Warehouse</span>
-                    </td>
-                </tr>
-
-                <!-- Row 2: Procurement (Salt) -->
-                <tr data-team="Procurement">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">10:32 AM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #FEF3C7; color: #92400E; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                MS
-                            </div>
-                            <strong>Maria Santos</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team procurement">Procurement</span>
-                    </td>
-                    <td>
-                        <span class="badge-action inbound">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
-                            </svg>
-                            Stock In Request
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Salt</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Raw Material &middot; RM-SLT-04</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px;">20</span>
-                        <small style="color: var(--gray);">kg</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-main">Main Warehouse</span>
-                    </td>
-                </tr>
-
-                <!-- Row 3: Production (Took raw materials) -->
-                <tr data-team="Production">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">11:45 AM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #F3E8FF; color: #6B21A8; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                RR
-                            </div>
-                            <strong>Ricardo Ramos</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team production">Production</span>
-                    </td>
-                    <td>
-                        <span class="badge-action issue">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
-                            </svg>
-                            Material Issued (Took Raw)
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Premium Malted Barley</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Raw Material &middot; RM-BRL-02</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px; color: #92400E;">120</span>
-                        <small style="color: var(--gray);">kg</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-bond">Bonded Distillery</span>
-                    </td>
-                </tr>
-
-                <!-- Row 4: Production (Stocked in finished goods) -->
-                <tr data-team="Production">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">01:20 PM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #F3E8FF; color: #6B21A8; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                EG
-                            </div>
-                            <strong>Elena Gomez</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team production">Production</span>
-                    </td>
-                    <td>
-                        <span class="badge-action inbound">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
-                            </svg>
-                            Stock In Finished Goods
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Barrel Reserve Rum 750ml</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Finished Good &middot; FG-RUM-01</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px; color: #15803D;">350</span>
-                        <small style="color: var(--gray);">bottles</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-bott">Bottling &amp; Packaging</span>
-                    </td>
-                </tr>
-
-                <!-- Row 5: Sales (Finished Goods Stock Out) -->
-                <tr data-team="Sales">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">02:40 PM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #E0F2FE; color: #0369A1; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                CM
-                            </div>
-                            <strong>Carlo Mendoza</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team sales">Sales</span>
-                    </td>
-                    <td>
-                        <span class="badge-action outbound">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-                            </svg>
-                            Stock Out (Sales Dispatch)
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Single Malt Whisky 700ml</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Finished Good &middot; FG-WHK-02</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px; color: #991B1B;">60</span>
-                        <small style="color: var(--gray);">cases</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-main">Main Warehouse</span>
-                    </td>
-                </tr>
-
-                <!-- Row 6: Inventory (Stock Adjustment) -->
-                <tr data-team="Inventory">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">03:15 PM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #E6F4F1; color: #165B50; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                VS
-                            </div>
-                            <strong>Vincent Santos</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team inventory">Inventory</span>
-                    </td>
-                    <td>
-                        <span class="badge-action adjustment">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="3"/>
-                            </svg>
-                            Cycle Count Adjustment
-                        </span>
-                    </td>
-                    <td>
-                        <strong>Neutral Cane Spirit</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Raw Material &middot; RM-NCS-03</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px; color: #15803D;">+15</span>
-                        <small style="color: var(--gray);">L</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-bond">Bonded Distillery</span>
-                    </td>
-                </tr>
-
-                <!-- Row 7: Inventory (Inter-Warehouse Transfer) -->
-                <tr data-team="Inventory">
-                    <td style="white-space: nowrap;">
-                        <strong>Sept 19, 2026</strong><br>
-                        <small style="color: var(--gray);">04:05 PM</small>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #E6F4F1; color: #165B50; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                TR
-                            </div>
-                            <strong>Teresa Reyes</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge-team inventory">Inventory</span>
-                    </td>
-                    <td>
-                        <span class="badge-action transfer">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                            </svg>
-                            Inter-Warehouse Transfer
-                        </span>
-                    </td>
-                    <td>
-                        <strong>French Oak Chips</strong>
-                        <div style="font-size: 11.5px; color: var(--gray);">Raw Material &middot; RM-FOC-09</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <span style="font-weight: 700; font-size: 14px; color: #1D4ED8;">40</span>
-                        <small style="color: var(--gray);">kg</small>
-                    </td>
-                    <td>
-                        <span class="badge-wh wh-main">Laguna Central Hub</span>
-                    </td>
-                </tr>
+                        </td>
+                        <td>
+                            <?= $teamBadge ?>
+                        </td>
+                        <td>
+                            <?= $actionBadge ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($log['item_name'])): ?>
+                                <strong><?= htmlspecialchars($log['item_name']) ?></strong>
+                                <div style="font-size: 11.5px; color: var(--gray);"><?= htmlspecialchars($log['item_code'] ?? '') ?></div>
+                            <?php else: ?>
+                                <span style="color: var(--gray); font-size: 13px;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="text-align: right;">
+                            <?php if ((float)$log['quantity'] != 0): ?>
+                                <span style="font-weight: 700; font-size: 14px;"><?= (float)$log['quantity'] > 0 ? '+' : '' ?><?= rtrim(rtrim(number_format((float)$log['quantity'], 4), '0'), '.') ?></span>
+                                <small style="color: var(--gray);"><?= htmlspecialchars($log['unit'] ?? '') ?></small>
+                            <?php else: ?>
+                                <span style="color: var(--gray); font-size: 13px;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <span class="badge-wh wh-main"><?= $whName ?></span>
+                            <?php if (!empty($destName)): ?>
+                                <div style="font-size: 10.5px; color: var(--gray); margin-top: 1px;">➔ <?= $destName ?></div>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>

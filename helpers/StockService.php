@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/AccountabilityService.php';
 
 class StockService {
     private PDO $pdo;
@@ -149,6 +150,18 @@ class StockService {
                     'unit'          => $itemInfo['unit'],
                     'balance_after' => (float)$newQty
                 ];
+
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => ($sourceType === 'PURCHASE_ORDER' ? 'Procurement' : ($sourceType === 'PRODUCTION_RETURN' ? 'Production' : 'Inventory')),
+                    'action_type'      => 'STOCK_IN',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => $itemId,
+                    'quantity'         => $qty,
+                    'warehouse_id'     => $warehouseId,
+                    'reference_number' => $sourceReferenceNo ?: $txnNumber,
+                    'notes'            => $remarks ?: "Inbound stock received ({$sourceType})"
+                ]);
             }
 
             $this->pdo->commit();
@@ -336,6 +349,18 @@ class StockService {
                     'unit'          => $itemInfo['unit'],
                     'balance_after' => $newQty
                 ];
+
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => ($sourceType === 'MATERIAL_REQUEST' ? 'Production' : ($sourceType === 'SALES_DELIVERY' ? 'Sales' : 'Inventory')),
+                    'action_type'      => 'STOCK_OUT',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => $itemId,
+                    'quantity'         => $qty,
+                    'warehouse_id'     => $warehouseId,
+                    'reference_number' => $sourceReferenceNo ?: $txnNumber,
+                    'notes'            => $remarks ?: "Outbound stock dispatched ({$sourceType})"
+                ]);
             }
 
             $this->pdo->commit();
@@ -669,6 +694,18 @@ class StockService {
                     'unit'                => $it['unit'],
                     'balance_after'       => $newBal
                 ];
+
+                AccountabilityService::log([
+                    'user_id'          => $cancelledBy,
+                    'team'             => ($txn['source_type'] === 'PURCHASE_ORDER' ? 'Procurement' : ($txn['source_type'] === 'PRODUCTION_RETURN' ? 'Production' : 'Inventory')),
+                    'action_type'      => 'STOCK_IN_CANCEL',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => (int)$it['item_id'],
+                    'quantity'         => (float)$it['quantity'],
+                    'warehouse_id'     => (int)$txn['warehouse_id'],
+                    'reference_number' => $txn['transaction_number'],
+                    'notes'            => "Cancelled Stock IN: " . $cancellationReason
+                ]);
             }
 
             $this->pdo->commit();
@@ -772,6 +809,18 @@ class StockService {
                     'unit'               => $it['unit'],
                     'balance_after'      => $newBal
                 ];
+
+                AccountabilityService::log([
+                    'user_id'          => $cancelledBy,
+                    'team'             => ($txn['source_type'] === 'MATERIAL_REQUEST' ? 'Production' : ($txn['source_type'] === 'SALES_DELIVERY' ? 'Sales' : 'Inventory')),
+                    'action_type'      => 'STOCK_OUT_CANCEL',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => (int)$it['item_id'],
+                    'quantity'         => (float)$it['quantity'],
+                    'warehouse_id'     => (int)$txn['warehouse_id'],
+                    'reference_number' => $txn['transaction_number'],
+                    'notes'            => "Cancelled Stock OUT: " . $cancellationReason
+                ]);
             }
 
             $this->pdo->commit();
@@ -876,14 +925,14 @@ class StockService {
                 ];
             }
 
-            // Insert stock_transfers header
+            // Insert stock_transfers header with status 'pending' (In Transit)
             $stmtHeader = $this->pdo->prepare("
                 INSERT INTO stock_transfers (
                     transaction_number, source_warehouse_id, destination_warehouse_id,
                     transaction_date, status, remarks, created_by
                 ) VALUES (
                     ?, ?, ?,
-                    CURDATE(), 'completed', ?, ?
+                    CURDATE(), 'pending', ?, ?
                 )
             ");
             $stmtHeader->execute([
@@ -895,7 +944,7 @@ class StockService {
             ]);
             $stockTransferId = (int)$this->pdo->lastInsertId();
 
-            // Insert line items and dual movements (OUT from source, IN to destination)
+            // Insert line items and movement OUT from source warehouse (deducts source inventory)
             $stmtLine = $this->pdo->prepare("
                 INSERT INTO stock_transfer_items (stock_transfer_id, item_id, quantity)
                 VALUES (?, ?, ?)
@@ -908,16 +957,6 @@ class StockService {
                 ) VALUES (
                     ?, ?, 'STOCK_TRANSFER_OUT', ?,
                     ?, 0.000, ?
-                )
-            ");
-
-            $stmtMoveIn = $this->pdo->prepare("
-                INSERT INTO stock_movements (
-                    item_id, warehouse_id, movement_type, stock_transfer_id,
-                    reference_number, quantity_in, quantity_out
-                ) VALUES (
-                    ?, ?, 'STOCK_TRANSFER_IN', ?,
-                    ?, ?, 0.000
                 )
             ");
 
@@ -934,14 +973,10 @@ class StockService {
 
                 $stmtLine->execute([$stockTransferId, $itemId, $qty]);
                 $stmtMoveOut->execute([$itemId, $sourceWhId, $stockTransferId, $txnNumber . '-SRC', $qty]);
-                $stmtMoveIn->execute([$itemId, $destWhId, $stockTransferId, $txnNumber . '-DEST', $qty]);
 
-                // Query new balances
+                // Query new balance at source
                 $stmtBal->execute([$itemId, $sourceWhId]);
                 $sourceBal = (float)$stmtBal->fetchColumn();
-
-                $stmtBal->execute([$itemId, $destWhId]);
-                $destBal = (float)$stmtBal->fetchColumn();
 
                 $processedItems[] = [
                     'item_id'                => $itemId,
@@ -949,9 +984,21 @@ class StockService {
                     'item_name'              => $itemInfo['item_name'],
                     'quantity_transferred'   => $qty,
                     'unit'                   => $itemInfo['unit'],
-                    'source_balance_after'   => $sourceBal,
-                    'dest_balance_after'     => $destBal
+                    'source_balance_after'   => $sourceBal
                 ];
+
+                AccountabilityService::log([
+                    'user_id'                  => $userId,
+                    'team'                     => 'Inventory',
+                    'action_type'              => 'TRANSFER_INITIATED',
+                    'channel'                  => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'                  => $itemId,
+                    'quantity'                 => $qty,
+                    'warehouse_id'             => $sourceWhId,
+                    'destination_warehouse_id' => $destWhId,
+                    'reference_number'         => $txnNumber,
+                    'notes'                    => $remarks ?: "Transfer initiated from {$srcWh['warehouse_name']} to {$destWh['warehouse_name']}"
+                ]);
             }
 
             $this->pdo->commit();
@@ -959,10 +1006,178 @@ class StockService {
             return [
                 'stock_transfer_id'        => $stockTransferId,
                 'transaction_number'       => $txnNumber,
+                'status'                   => 'pending',
                 'source_warehouse'         => $whMap[$sourceWhId],
                 'destination_warehouse'    => $whMap[$destWhId],
                 'items_count'              => count($processedItems),
                 'items'                    => $processedItems
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Destination Warehouse Receiving Confirmation
+     * Transitions transfer from 'pending' (In Transit) to 'completed' (Received)
+     * and credits destination warehouse inventory via STOCK_TRANSFER_IN movement.
+     */
+    public function confirmStockTransferReceipt(int $stockTransferId, int $userId, ?array $authUser = null): array {
+        if ($stockTransferId <= 0) {
+            throw new InvalidArgumentException("Invalid stock_transfer_id.");
+        }
+        if ($userId <= 0) {
+            throw new InvalidArgumentException("Invalid user ID.");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // Lock transfer row for atomic update
+            $stmt = $this->pdo->prepare("
+                SELECT st.*, 
+                       sw.warehouse_name AS source_warehouse_name, sw.warehouse_code AS source_warehouse_code,
+                       dw.warehouse_name AS dest_warehouse_name, dw.warehouse_code AS dest_warehouse_code
+                FROM stock_transfers st
+                JOIN warehouses sw ON sw.warehouse_id = st.source_warehouse_id
+                JOIN warehouses dw ON dw.warehouse_id = st.destination_warehouse_id
+                WHERE st.stock_transfer_id = ?
+                FOR UPDATE
+            ");
+            $stmt->execute([$stockTransferId]);
+            $txn = $stmt->fetch();
+
+            if (!$txn) {
+                throw new InvalidArgumentException("Stock transfer #{$stockTransferId} does not exist.");
+            }
+
+            // Prevent double confirmation
+            if ($txn['status'] === 'completed') {
+                throw new DomainException(
+                    "This stock transfer ({$txn['transaction_number']}) has already been confirmed and received."
+                );
+            }
+            if ($txn['status'] === 'cancelled') {
+                throw new DomainException(
+                    "Cannot receive cancelled stock transfer ({$txn['transaction_number']})."
+                );
+            }
+            if ($txn['status'] !== 'pending') {
+                throw new DomainException(
+                    "Stock transfer {$txn['transaction_number']} is not in pending / in-transit status."
+                );
+            }
+
+            // Security: Strictly restrict receiving confirmation to destination warehouse (or super_admin)
+            if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ((int)$txn['destination_warehouse_id'] !== $userWhId) {
+                    throw new DomainException(
+                        "Access Denied: Only administrators assigned to the destination warehouse ('{$txn['dest_warehouse_name']}') can confirm receipt of this stock transfer."
+                    );
+                }
+            }
+
+            // Fetch line items
+            $stmtItems = $this->pdo->prepare("
+                SELECT sti.item_id, sti.quantity, i.item_code, i.item_name, i.unit, i.item_type
+                FROM stock_transfer_items sti
+                JOIN items i ON i.item_id = sti.item_id
+                WHERE sti.stock_transfer_id = ?
+            ");
+            $stmtItems->execute([$stockTransferId]);
+            $items = $stmtItems->fetchAll();
+
+            if (empty($items)) {
+                throw new DomainException("No items found in stock transfer #{$stockTransferId}.");
+            }
+
+            // Fetch receiver's name for audit trail
+            $stmtUser = $this->pdo->prepare("SELECT name FROM users WHERE user_id = ?");
+            $stmtUser->execute([$userId]);
+            $receiverName = $stmtUser->fetchColumn() ?: 'Warehouse Operator';
+
+            // Insert STOCK_TRANSFER_IN movement for destination warehouse
+            $stmtMoveIn = $this->pdo->prepare("
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, stock_transfer_id,
+                    reference_number, quantity_in, quantity_out
+                ) VALUES (
+                    ?, ?, 'STOCK_TRANSFER_IN', ?,
+                    ?, ?, 0.000
+                )
+            ");
+
+            $stmtBal = $this->pdo->prepare("
+                SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?
+            ");
+
+            $processedItems = [];
+            foreach ($items as $it) {
+                $itemId = (int)$it['item_id'];
+                $qty = (float)$it['quantity'];
+
+                $stmtMoveIn->execute([
+                    $itemId, 
+                    (int)$txn['destination_warehouse_id'], 
+                    $stockTransferId, 
+                    $txn['transaction_number'] . '-DEST', 
+                    $qty
+                ]);
+
+                $stmtBal->execute([$itemId, (int)$txn['destination_warehouse_id']]);
+                $destBal = (float)$stmtBal->fetchColumn();
+
+                $processedItems[] = [
+                    'item_id'            => $itemId,
+                    'item_code'          => $it['item_code'],
+                    'item_name'          => $it['item_name'],
+                    'quantity_received'  => $qty,
+                    'unit'               => $it['unit'],
+                    'dest_balance_after' => $destBal
+                ];
+
+                AccountabilityService::log([
+                    'user_id'                  => $userId,
+                    'user_name'                => $receiverName,
+                    'team'                     => 'Inventory',
+                    'action_type'              => 'TRANSFER_RECEIVED',
+                    'channel'                  => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'                  => $itemId,
+                    'quantity'                 => $qty,
+                    'warehouse_id'             => (int)$txn['destination_warehouse_id'],
+                    'destination_warehouse_id' => (int)$txn['source_warehouse_id'],
+                    'reference_number'         => $txn['transaction_number'],
+                    'notes'                    => "Stock transfer delivery confirmed and received into {$txn['dest_warehouse_name']} from {$txn['source_warehouse_name']}"
+                ]);
+            }
+
+            // Update transfer status to 'completed', record received_by/at, and append audit confirmation note
+            $auditNote = "[Received by {$receiverName} on " . date('Y-m-d H:i:s') . "]";
+            $updatedRemarks = trim(($txn['remarks'] ?? '') . "\n" . $auditNote);
+
+            $stmtUpdate = $this->pdo->prepare("
+                UPDATE stock_transfers
+                SET status = 'completed',
+                    received_by = ?,
+                    received_at = NOW(),
+                    remarks = ?
+                WHERE stock_transfer_id = ? AND status = 'pending'
+            ");
+            $stmtUpdate->execute([$userId, $updatedRemarks, $stockTransferId]);
+
+            $this->pdo->commit();
+
+            return [
+                'stock_transfer_id'     => $stockTransferId,
+                'transaction_number'    => $txn['transaction_number'],
+                'status'                => 'completed',
+                'source_warehouse'      => $txn['source_warehouse_name'],
+                'destination_warehouse' => $txn['dest_warehouse_name'],
+                'receiver_name'         => $receiverName,
+                'items'                 => $processedItems
             ];
         } catch (Exception $e) {
             if ($this->pdo->inTransaction()) {
@@ -1001,11 +1216,12 @@ class StockService {
                 throw new InvalidArgumentException("Stock transfer #{$stockTransferId} does not exist.");
             }
 
-            // IDOR Protection: Restrict regular admins to only cancel their own transfers
+            // Restrict regular admins to only cancel transfers originating from their assigned warehouse
             if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
-                if ((int)$txn['created_by'] !== (int)$authUser['user_id']) {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ((int)$txn['source_warehouse_id'] !== $userWhId) {
                     throw new DomainException(
-                        "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} ('{$authUser['name']}') is not authorized to cancel transfers created by administrator #{$txn['created_by']}."
+                        "Access Denied: Only administrators from the source warehouse are authorized to cancel this transfer."
                     );
                 }
             }
@@ -1013,8 +1229,41 @@ class StockService {
             if ($txn['status'] === 'cancelled') {
                 throw new InvalidArgumentException("Stock transfer {$txn['transaction_number']} is already cancelled.");
             }
-            if ($txn['status'] !== 'completed') {
-                throw new InvalidArgumentException("Only completed transfers can be cancelled.");
+            if (!in_array($txn['status'], ['pending', 'completed'], true)) {
+                throw new InvalidArgumentException("Only pending or completed transfers can be cancelled.");
+            }
+
+            $stmtItems = $this->pdo->prepare("
+                SELECT sti.item_id, i.item_code, i.item_name, i.unit, sti.quantity
+                FROM stock_transfer_items sti
+                JOIN items i ON i.item_id = sti.item_id
+                WHERE sti.stock_transfer_id = ?
+            ");
+            $stmtItems->execute([$stockTransferId]);
+            $affectedItems = $stmtItems->fetchAll();
+
+            // If pending, stock was deducted from source but never credited to destination.
+            // MySQL trigger trg_stock_transfers_after_update only fires on completed -> cancelled,
+            // so we restore stock to source warehouse explicitly.
+            if ($txn['status'] === 'pending') {
+                $stmtRestore = $this->pdo->prepare("
+                    INSERT INTO stock_movements (
+                        item_id, warehouse_id, movement_type, stock_transfer_id,
+                        reference_number, quantity_in, quantity_out
+                    ) VALUES (
+                        ?, ?, 'STOCK_TRANSFER_CANCEL', ?,
+                        ?, ?, 0.000
+                    )
+                ");
+                foreach ($affectedItems as $it) {
+                    $stmtRestore->execute([
+                        $it['item_id'],
+                        $txn['source_warehouse_id'],
+                        $stockTransferId,
+                        $txn['transaction_number'] . '-CAN-SRC',
+                        $it['quantity']
+                    ]);
+                }
             }
 
             $stmtItems = $this->pdo->prepare("
@@ -1058,6 +1307,19 @@ class StockService {
                     'source_balance_after' => $srcBal,
                     'dest_balance_after'   => $destBal
                 ];
+
+                AccountabilityService::log([
+                    'user_id'                  => $cancelledBy,
+                    'team'                     => 'Inventory',
+                    'action_type'              => 'TRANSFER_CANCELLED',
+                    'channel'                  => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'                  => (int)$it['item_id'],
+                    'quantity'                 => (float)$it['quantity'],
+                    'warehouse_id'             => (int)$txn['source_warehouse_id'],
+                    'destination_warehouse_id' => (int)$txn['destination_warehouse_id'],
+                    'reference_number'         => $txn['transaction_number'],
+                    'notes'                    => "Transfer cancelled: " . $cancellationReason
+                ]);
             }
 
             $this->pdo->commit();
@@ -1177,11 +1439,14 @@ class StockService {
             throw new InvalidArgumentException("Stock transfer transaction #{$stockTransferId} not found.");
         }
 
-        // IDOR Protection: An admin cannot inspect transactions created by another admin unless they are super_admin
-        if (($authUser['role'] ?? '') !== 'super_admin' && (int)$txn['created_by'] !== (int)$authUser['user_id']) {
-            throw new DomainException(
-                "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} ('{$authUser['name']}') is not authorized to view transactions created by administrator #{$txn['created_by']}."
-            );
+        // Warehouse Isolation & Access Security: Allow involved warehouses (source or destination) or super_admin
+        if (($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ((int)$txn['source_warehouse_id'] !== $userWhId && (int)$txn['destination_warehouse_id'] !== $userWhId) {
+                throw new DomainException(
+                    "Access Denied: Administrator #{$authUser['user_id']} ('{$authUser['name']}') is not authorized to view transfers unrelated to their assigned warehouse."
+                );
+            }
         }
 
         $stmtItems = $this->pdo->prepare("
@@ -1296,6 +1561,7 @@ class StockService {
             $stmt->bindValue(1, $limit, PDO::PARAM_INT);
             $stmt->execute();
         } else {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
             $stmt = $this->pdo->prepare("
                 SELECT st.stock_transfer_id, st.transaction_number, 
                        st.source_warehouse_id, sw.warehouse_name AS source_warehouse_name,
@@ -1305,15 +1571,639 @@ class StockService {
                 JOIN warehouses sw ON sw.warehouse_id = st.source_warehouse_id
                 JOIN warehouses dw ON dw.warehouse_id = st.destination_warehouse_id
                 JOIN users u ON u.user_id = st.created_by
-                WHERE st.created_by = ?
+                WHERE st.source_warehouse_id = ? OR st.destination_warehouse_id = ?
                 ORDER BY st.stock_transfer_id DESC
                 LIMIT ?
             ");
-            $stmt->bindValue(1, (int)$authUser['user_id'], PDO::PARAM_INT);
-            $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+            $stmt->bindValue(1, $userWhId, PDO::PARAM_INT);
+            $stmt->bindValue(2, $userWhId, PDO::PARAM_INT);
+            $stmt->bindValue(3, $limit, PDO::PARAM_INT);
             $stmt->execute();
         }
 
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Record a new Stock Adjustment (Initiated as 'pending' for discrepancy review)
+     */
+    public function recordStockAdjustment(
+        int $warehouseId,
+        string $adjustmentDate,
+        string $reason,
+        array $items,
+        int $userId,
+        ?array $authUser = null
+    ): array {
+        if (empty($items)) {
+            throw new InvalidArgumentException("At least one item is required for Stock Adjustment.");
+        }
+        if (empty(trim($reason))) {
+            throw new InvalidArgumentException("A valid reason or reconciliation note is required.");
+        }
+
+        // Warehouse authorization check
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId !== $warehouseId) {
+                throw new DomainException("Access Denied: You cannot create stock adjustments for a facility other than your assigned warehouse.");
+            }
+        }
+
+        // Validate warehouse exists and is active
+        $stmtWh = $this->pdo->prepare("SELECT warehouse_name FROM warehouses WHERE warehouse_id = ? AND status = 'active'");
+        $stmtWh->execute([$warehouseId]);
+        $wh = $stmtWh->fetch();
+        if (!$wh) {
+            throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $txnNumber = 'ADJ-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            $stmtAdj = $this->pdo->prepare("
+                INSERT INTO stock_adjustments (
+                    transaction_number, warehouse_id, adjustment_date,
+                    reason, status, created_by
+                ) VALUES (?, ?, ?, ?, 'pending', ?)
+            ");
+            $stmtAdj->execute([$txnNumber, $warehouseId, $adjustmentDate, trim($reason), $userId]);
+            $adjId = (int)$this->pdo->lastInsertId();
+
+            $stmtCheckItem = $this->pdo->prepare("
+                SELECT item_id, item_code, item_name, unit, status FROM items WHERE item_id = ?
+            ");
+            $stmtLockInv = $this->pdo->prepare("
+                SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ? FOR UPDATE
+            ");
+            $stmtLine = $this->pdo->prepare("
+                INSERT INTO stock_adjustment_items (
+                    stock_adjustment_id, item_id, previous_quantity, adjusted_quantity
+                ) VALUES (?, ?, ?, ?)
+            ");
+
+            $processedItems = [];
+            foreach ($items as $entry) {
+                $itemId = (int)($entry['item_id'] ?? 0);
+                $adjustedQty = (float)($entry['adjusted_quantity'] ?? $entry['quantity'] ?? 0);
+
+                if ($itemId <= 0) {
+                    throw new InvalidArgumentException("Invalid item ID provided in adjustment.");
+                }
+                if ($adjustedQty < 0) {
+                    throw new InvalidArgumentException("Physical adjusted count cannot be negative.");
+                }
+
+                $stmtCheckItem->execute([$itemId]);
+                $itemInfo = $stmtCheckItem->fetch();
+                if (!$itemInfo || $itemInfo['status'] !== 'active') {
+                    throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
+                }
+
+                // Lock inventory row and fetch current quantity
+                $stmtLockInv->execute([$itemId, $warehouseId]);
+                $currentStock = $stmtLockInv->fetchColumn();
+                $previousQty = ($currentStock !== false) ? (float)$currentStock : 0.000;
+
+                $stmtLine->execute([$adjId, $itemId, $previousQty, $adjustedQty]);
+                $diff = $adjustedQty - $previousQty;
+
+                $processedItems[] = [
+                    'item_id'           => $itemId,
+                    'item_code'         => $itemInfo['item_code'],
+                    'item_name'         => $itemInfo['item_name'],
+                    'previous_quantity' => $previousQty,
+                    'adjusted_quantity' => $adjustedQty,
+                    'difference'        => $diff,
+                    'unit'              => $itemInfo['unit']
+                ];
+
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'ADJUSTMENT_REQUESTED',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => $itemId,
+                    'quantity'         => $diff,
+                    'warehouse_id'     => $warehouseId,
+                    'reference_number' => $txnNumber,
+                    'notes'            => "Adjustment requested: " . $reason . " (Diff: " . ($diff >= 0 ? "+{$diff}" : $diff) . ")"
+                ]);
+            }
+
+            $this->pdo->commit();
+
+            return [
+                'stock_adjustment_id' => $adjId,
+                'transaction_number'  => $txnNumber,
+                'warehouse_id'        => $warehouseId,
+                'warehouse_name'      => $wh['warehouse_name'],
+                'status'              => 'pending',
+                'adjustment_date'     => $adjustmentDate,
+                'reason'              => $reason,
+                'items_count'         => count($processedItems),
+                'items'               => $processedItems
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Approve a pending Stock Adjustment and post ledger movements to adjust inventory
+     */
+    public function approveStockAdjustment(int $adjustmentId, int $userId, ?array $authUser = null): array {
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM stock_adjustments WHERE stock_adjustment_id = ? FOR UPDATE
+            ");
+            $stmt->execute([$adjustmentId]);
+            $adj = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$adj) {
+                throw new InvalidArgumentException("Stock adjustment record #{$adjustmentId} not found.");
+            }
+
+            if ($adj['status'] !== 'pending') {
+                throw new DomainException("Adjustment {$adj['transaction_number']} cannot be approved because its current status is '{$adj['status']}'.");
+            }
+
+            // Authorization check: Super admin or admin belonging to adjustment warehouse
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId !== (int)$adj['warehouse_id']) {
+                    throw new DomainException("Access Denied: You are not authorized to approve adjustments for other warehouses.");
+                }
+            }
+
+            // Update status to approved
+            $stmtApprove = $this->pdo->prepare("
+                UPDATE stock_adjustments
+                SET status = 'approved', approved_by = ?, approved_at = NOW()
+                WHERE stock_adjustment_id = ?
+            ");
+            $stmtApprove->execute([$userId, $adjustmentId]);
+
+            // Fetch line items
+            $stmtLines = $this->pdo->prepare("
+                SELECT sai.*, i.item_code, i.item_name
+                FROM stock_adjustment_items sai
+                JOIN items i ON sai.item_id = i.item_id
+                WHERE sai.stock_adjustment_id = ?
+            ");
+            $stmtLines->execute([$adjustmentId]);
+            $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
+
+            $stmtMove = $this->pdo->prepare("
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, stock_adjustment_id,
+                    reference_number, quantity_in, quantity_out
+                ) VALUES (?, ?, 'STOCK_ADJUSTMENT', ?, ?, ?, ?)
+            ");
+
+            foreach ($lines as $line) {
+                $diff = (float)$line['difference'];
+                if ($diff > 0) {
+                    // Surplus: quantity_in = diff, quantity_out = 0
+                    $stmtMove->execute([
+                        $line['item_id'],
+                        $adj['warehouse_id'],
+                        $adjustmentId,
+                        $adj['transaction_number'],
+                        $diff,
+                        0.000
+                    ]);
+                } elseif ($diff < 0) {
+                    // Shortage: quantity_in = 0, quantity_out = abs(diff)
+                    $stmtMove->execute([
+                        $line['item_id'],
+                        $adj['warehouse_id'],
+                        $adjustmentId,
+                        $adj['transaction_number'],
+                        0.000,
+                        abs($diff)
+                    ]);
+                }
+
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'ADJUSTMENT_APPROVED',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => (int)$line['item_id'],
+                    'quantity'         => (float)$line['difference'],
+                    'warehouse_id'     => (int)$adj['warehouse_id'],
+                    'reference_number' => $adj['transaction_number'],
+                    'notes'            => "Adjustment approved: " . $adj['reason'] . " (Diff: " . ($diff >= 0 ? "+{$diff}" : $diff) . ")"
+                ]);
+            }
+
+            $this->pdo->commit();
+
+            return [
+                'stock_adjustment_id' => $adjustmentId,
+                'transaction_number'  => $adj['transaction_number'],
+                'status'              => 'approved',
+                'approved_by'         => $userId
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Reject a pending Stock Adjustment (No stock movements generated)
+     */
+    public function rejectStockAdjustment(int $adjustmentId, int $userId, string $reason, ?array $authUser = null): array {
+        if (empty(trim($reason))) {
+            throw new InvalidArgumentException("A reason is required when rejecting a stock adjustment.");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM stock_adjustments WHERE stock_adjustment_id = ? FOR UPDATE
+            ");
+            $stmt->execute([$adjustmentId]);
+            $adj = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$adj) {
+                throw new InvalidArgumentException("Stock adjustment record #{$adjustmentId} not found.");
+            }
+
+            if ($adj['status'] !== 'pending') {
+                throw new DomainException("Adjustment {$adj['transaction_number']} cannot be rejected because its current status is '{$adj['status']}'.");
+            }
+
+            // Authorization check
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId !== (int)$adj['warehouse_id']) {
+                    throw new DomainException("Access Denied: You are not authorized to reject adjustments for other warehouses.");
+                }
+            }
+
+            $stmtReject = $this->pdo->prepare("
+                UPDATE stock_adjustments
+                SET status = 'rejected', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
+                WHERE stock_adjustment_id = ?
+            ");
+            $stmtReject->execute([$userId, trim($reason), $adjustmentId]);
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'ADJUSTMENT_REJECTED',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'warehouse_id'     => (int)$adj['warehouse_id'],
+                'reference_number' => $adj['transaction_number'],
+                'notes'            => "Adjustment rejected: " . trim($reason)
+            ]);
+
+            $this->pdo->commit();
+
+            return [
+                'stock_adjustment_id' => $adjustmentId,
+                'transaction_number'  => $adj['transaction_number'],
+                'status'              => 'rejected',
+                'rejected_by'         => $userId
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Cancel a Stock Adjustment (Pending is cancelled cleanly; Approved reverses movements via MySQL trigger)
+     */
+    public function cancelStockAdjustment(int $adjustmentId, string $reason, int $userId, ?array $authUser = null): array {
+        if (empty(trim($reason))) {
+            throw new InvalidArgumentException("A reason is required to cancel a stock adjustment.");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM stock_adjustments WHERE stock_adjustment_id = ? FOR UPDATE
+            ");
+            $stmt->execute([$adjustmentId]);
+            $adj = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$adj) {
+                throw new InvalidArgumentException("Stock adjustment record #{$adjustmentId} not found.");
+            }
+
+            if ($adj['status'] === 'cancelled') {
+                throw new DomainException("Stock adjustment {$adj['transaction_number']} is already cancelled.");
+            }
+
+            if ($adj['status'] === 'rejected') {
+                throw new DomainException("Cannot cancel a rejected stock adjustment.");
+            }
+
+            // Authorization check
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId !== (int)$adj['warehouse_id']) {
+                    throw new DomainException("Access Denied: You are not authorized to cancel adjustments for other warehouses.");
+                }
+            }
+
+            // Updating status to 'cancelled' fires trg_stock_adjustments_after_update in MySQL if it was 'approved'
+            $stmtCancel = $this->pdo->prepare("
+                UPDATE stock_adjustments
+                SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
+                WHERE stock_adjustment_id = ?
+            ");
+            $stmtCancel->execute([$userId, trim($reason), $adjustmentId]);
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'ADJUSTMENT_CANCELLED',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'warehouse_id'     => (int)$adj['warehouse_id'],
+                'reference_number' => $adj['transaction_number'],
+                'notes'            => "Adjustment cancelled: " . trim($reason)
+            ]);
+
+            $this->pdo->commit();
+
+            return [
+                'stock_adjustment_id' => $adjustmentId,
+                'transaction_number'  => $adj['transaction_number'],
+                'previous_status'     => $adj['status'],
+                'status'              => 'cancelled'
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Get Stock Adjustment Details with line items
+     */
+    public function getStockAdjustmentDetails(int $adjustmentId, ?array $authUser = null): array {
+        $stmt = $this->pdo->prepare("
+            SELECT sa.*, w.warehouse_code, w.warehouse_name,
+                   uc.name AS created_by_name,
+                   ua.name AS approved_by_name,
+                   ux.name AS cancelled_by_name
+            FROM stock_adjustments sa
+            JOIN warehouses w ON sa.warehouse_id = w.warehouse_id
+            JOIN users uc ON sa.created_by = uc.user_id
+            LEFT JOIN users ua ON sa.approved_by = ua.user_id
+            LEFT JOIN users ux ON sa.cancelled_by = ux.user_id
+            WHERE sa.stock_adjustment_id = ?
+        ");
+        $stmt->execute([$adjustmentId]);
+        $adj = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$adj) {
+            throw new InvalidArgumentException("Stock adjustment record #{$adjustmentId} not found.");
+        }
+
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId !== (int)$adj['warehouse_id']) {
+                throw new DomainException("Access Denied: You are not authorized to view adjustments for other warehouses.");
+            }
+        }
+
+        $stmtItems = $this->pdo->prepare("
+            SELECT sai.*, i.item_code, i.item_name, i.item_type, i.unit
+            FROM stock_adjustment_items sai
+            JOIN items i ON sai.item_id = i.item_id
+            WHERE sai.stock_adjustment_id = ?
+            ORDER BY sai.stock_adjustment_item_id ASC
+        ");
+        $stmtItems->execute([$adjustmentId]);
+        $adj['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+
+        return $adj;
+    }
+
+    /**
+     * Record a Bad Product write-off (Damaged, Defective, Expired, Spoiled)
+     * Automatically triggers MySQL trg_bad_products_after_insert to deduct available stock.
+     */
+    public function recordBadProduct(
+        int $warehouseId,
+        int $itemId,
+        string $conditionType,
+        float $quantity,
+        string $reason,
+        int $userId,
+        ?array $authUser = null
+    ): array {
+        if ($quantity <= 0) {
+            throw new InvalidArgumentException("Quantity of damaged goods must be greater than zero.");
+        }
+        if (empty(trim($reason))) {
+            throw new InvalidArgumentException("A detailed reason or defect note is required.");
+        }
+
+        $validConditions = ['damaged', 'defective', 'expired', 'spoiled', 'unusable', 'other'];
+        if (!in_array(strtolower($conditionType), $validConditions, true)) {
+            throw new InvalidArgumentException("Invalid condition type. Must be one of: " . implode(', ', $validConditions));
+        }
+
+        // Warehouse authorization check
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId !== $warehouseId) {
+                throw new DomainException("Access Denied: You cannot report damaged goods for another warehouse.");
+            }
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // Verify item
+            $stmtItem = $this->pdo->prepare("SELECT item_code, item_name, unit, status FROM items WHERE item_id = ?");
+            $stmtItem->execute([$itemId]);
+            $item = $stmtItem->fetch();
+            if (!$item || $item['status'] !== 'active') {
+                throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
+            }
+
+            // Lock inventory row and check current stock
+            $stmtLock = $this->pdo->prepare("
+                SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ? FOR UPDATE
+            ");
+            $stmtLock->execute([$itemId, $warehouseId]);
+            $currentStock = (float)($stmtLock->fetchColumn() ?: 0.000);
+
+            if ($quantity > $currentStock) {
+                throw new DomainException(
+                    "Insufficient stock: Cannot write off {$quantity} units of '{$item['item_name']}'. Only {$currentStock} units currently available in this warehouse."
+                );
+            }
+
+            $bpNumber = 'BP-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            // Inserting into bad_products with status='completed' fires trg_bad_products_after_insert
+            $stmtBp = $this->pdo->prepare("
+                INSERT INTO bad_products (
+                    bad_product_number, item_id, warehouse_id, condition_type,
+                    quantity, reason, status, reported_by
+                ) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
+            ");
+            $stmtBp->execute([
+                $bpNumber,
+                $itemId,
+                $warehouseId,
+                strtolower($conditionType),
+                $quantity,
+                trim($reason),
+                $userId
+            ]);
+            $badProductId = (int)$this->pdo->lastInsertId();
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'BAD_PRODUCT',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'item_id'          => $itemId,
+                'quantity'         => $quantity,
+                'warehouse_id'     => $warehouseId,
+                'reference_number' => $bpNumber,
+                'notes'            => "Defect write-off: [{$conditionType}] " . trim($reason)
+            ]);
+
+            $this->pdo->commit();
+
+            return [
+                'bad_product_id'     => $badProductId,
+                'bad_product_number' => $bpNumber,
+                'item_id'            => $itemId,
+                'item_code'          => $item['item_code'],
+                'item_name'          => $item['item_name'],
+                'warehouse_id'       => $warehouseId,
+                'condition_type'     => strtolower($conditionType),
+                'quantity'           => $quantity,
+                'unit'               => $item['unit'],
+                'status'             => 'completed'
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Cancel a Bad Product report (Restores deducted stock via MySQL trg_bad_products_after_update)
+     */
+    public function cancelBadProduct(int $badProductId, string $reason, int $userId, ?array $authUser = null): array {
+        if (empty(trim($reason))) {
+            throw new InvalidArgumentException("A reason is required to cancel a damaged product write-off.");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM bad_products WHERE bad_product_id = ? FOR UPDATE
+            ");
+            $stmt->execute([$badProductId]);
+            $bp = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$bp) {
+                throw new InvalidArgumentException("Bad product record #{$badProductId} not found.");
+            }
+
+            if ($bp['status'] === 'cancelled') {
+                throw new DomainException("Bad product write-off {$bp['bad_product_number']} is already cancelled.");
+            }
+
+            // Authorization check
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId !== (int)$bp['warehouse_id']) {
+                    throw new DomainException("Access Denied: You are not authorized to cancel bad product records for other warehouses.");
+                }
+            }
+
+            // Updating status to 'cancelled' fires trg_bad_products_after_update in MySQL!
+            $stmtCancel = $this->pdo->prepare("
+                UPDATE bad_products
+                SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
+                WHERE bad_product_id = ?
+            ");
+            $stmtCancel->execute([$userId, trim($reason), $badProductId]);
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'BAD_PRODUCT_CANCEL',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'item_id'          => (int)$bp['item_id'],
+                'quantity'         => (float)$bp['quantity'],
+                'warehouse_id'     => (int)$bp['warehouse_id'],
+                'reference_number' => $bp['bad_product_number'],
+                'notes'            => "Defect write-off cancelled: " . trim($reason)
+            ]);
+
+            $this->pdo->commit();
+
+            return [
+                'bad_product_id'     => $badProductId,
+                'bad_product_number' => $bp['bad_product_number'],
+                'status'             => 'cancelled'
+            ];
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Get Bad Product Details
+     */
+    public function getBadProductDetails(int $badProductId, ?array $authUser = null): array {
+        $stmt = $this->pdo->prepare("
+            SELECT bp.*, w.warehouse_code, w.warehouse_name,
+                   i.item_code, i.item_name, i.item_type, i.unit,
+                   ur.name AS reported_by_name,
+                   ux.name AS cancelled_by_name
+            FROM bad_products bp
+            JOIN warehouses w ON bp.warehouse_id = w.warehouse_id
+            JOIN items i ON bp.item_id = i.item_id
+            JOIN users ur ON bp.reported_by = ur.user_id
+            LEFT JOIN users ux ON bp.cancelled_by = ux.user_id
+            WHERE bp.bad_product_id = ?
+        ");
+        $stmt->execute([$badProductId]);
+        $bp = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$bp) {
+            throw new InvalidArgumentException("Damaged product record #{$badProductId} not found.");
+        }
+
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId !== (int)$bp['warehouse_id']) {
+                throw new DomainException("Access Denied: You are not authorized to view records for other warehouses.");
+            }
+        }
+
+        return $bp;
     }
 }

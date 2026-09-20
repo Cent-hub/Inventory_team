@@ -48,13 +48,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if ((int)$stmtChk->fetchColumn() > 0) {
                 $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
             } else {
+                $userId = (int)($currentUser['id'] ?? 1);
                 $stmtIns = $pdo->prepare("
                     INSERT INTO items (
                         item_code, item_name, description, item_type,
-                        category_id, unit, default_reorder_level, status
+                        category_id, unit, default_reorder_level, status, created_by
                     ) VALUES (
                         ?, ?, ?, ?,
-                        ?, ?, ?, 'active'
+                        ?, ?, ?, 'active', ?
                     )
                 ");
                 $stmtIns->execute([
@@ -64,8 +65,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $itemType,
                     $categoryId,
                     $unit,
-                    $reorderLevel
+                    $reorderLevel,
+                    $userId
                 ]);
+                $newId = (int)$pdo->lastInsertId();
+
+                require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'ITEM_CREATED',
+                    'channel'          => 'UI',
+                    'item_id'          => $newId,
+                    'warehouse_id'     => $currentWarehouseId ?: 1,
+                    'reference_number' => $itemCode,
+                    'notes'            => "Master item created: {$itemName} ({$itemType})"
+                ]);
+
                 $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
             }
         } catch (Exception $e) {

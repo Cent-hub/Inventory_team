@@ -309,7 +309,7 @@ switch ($reportType) {
 <!-- Page Header -->
 <div class="page-header">
     <div>
-        <h1 class="page-title">Inventory Reports</h1>
+        <h1 class="page-title"><?= htmlspecialchars($reportTitle) ?></h1>
         <p class="page-subtitle">Formal operational ledgers, stock reconciliations, and compliance reporting for <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?>)</strong></p>
     </div>
     <div class="header-actions">
@@ -345,15 +345,6 @@ switch ($reportType) {
             <div>Period: <?= htmlspecialchars($startDate) ?> to <?= htmlspecialchars($endDate) ?></div>
         </div>
     </div>
-</div>
-
-<!-- Native Styled Tab Navigation Bar -->
-<div class="tab-bar">
-    <?php foreach ($validReports as $k => $lbl): ?>
-        <a href="index.php?type=<?= $k ?>&start_date=<?= urlencode($startDate) ?>&end_date=<?= urlencode($endDate) ?>" class="tab-btn <?= $reportType === $k ? 'active' : '' ?>">
-            <span><?= $lbl ?></span>
-        </a>
-    <?php endforeach; ?>
 </div>
 
 <!-- Report Filter Card -->

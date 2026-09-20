@@ -33,12 +33,51 @@ if (!defined('BASE_URL')) {
 }
 
 // Enforce strict assigned warehouse resolution
-$currentWarehouseId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : (int)($_SESSION['warehouse_id'] ?? 0);
-
-if ($currentWarehouseId <= 0 && !empty($currentUser['id'])) {
+$userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
+if ($userAssignedWhId <= 0 && !empty($currentUser['id'])) {
     $uStmt = $pdo->prepare("SELECT warehouse_id FROM users WHERE user_id = :uid LIMIT 1");
     $uStmt->execute([':uid' => $currentUser['id']]);
-    $currentWarehouseId = (int)$uStmt->fetchColumn();
+    $userAssignedWhId = (int)$uStmt->fetchColumn();
+    $currentUser['warehouse_id'] = $userAssignedWhId;
+}
+
+$isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+
+if ($isSuperAdmin) {
+    if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
+        $currentWarehouseId = (int)$_GET['warehouse_id'];
+    } elseif (isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
+        $currentWarehouseId = (int)$_SESSION['warehouse_id'];
+    } else {
+        $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
+    }
+} else {
+    // Regular admin: Strictly enforce assigned warehouse
+    $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
+
+    // Active URL / Parameter Tampering Defense (HTTP 403 Forbidden)
+    $tamperedWhId = null;
+    if (isset($_GET['warehouse_id'])) {
+        $tamperedWhId = (int)$_GET['warehouse_id'];
+    } elseif (isset($_POST['warehouse_id'])) {
+        $tamperedWhId = (int)$_POST['warehouse_id'];
+    } elseif (isset($_GET['source_warehouse_id'])) {
+        $tamperedWhId = (int)$_GET['source_warehouse_id'];
+    } elseif (isset($_POST['source_warehouse_id'])) {
+        $tamperedWhId = (int)$_POST['source_warehouse_id'];
+    } elseif (isset($_GET['branch_id'])) {
+        $tamperedWhId = (int)$_GET['branch_id'];
+    }
+
+    if ($tamperedWhId !== null && $tamperedWhId > 0 && $tamperedWhId !== $currentWarehouseId) {
+        http_response_code(403);
+        if (file_exists(__DIR__ . '/../errors/403.php')) {
+            require_once __DIR__ . '/../errors/403.php';
+        } else {
+            echo "<h1>403 Forbidden</h1><p>Access Denied: You are not authorized to view or manage data from another warehouse facility.</p>";
+        }
+        exit;
+    }
 }
 
 /** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */

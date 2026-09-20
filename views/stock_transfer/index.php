@@ -1,10 +1,14 @@
 <?php
 /**
- * View: Stock Transfer (Inter-Branch Transfers)
+ * View: Stock Transfer (Two-Sided Transfer Ledger)
  * StockPilot — Liquor Business Inventory Management System
+ * 
+ * Organizes warehouse-to-warehouse transfers into two distinct ledger sections:
+ * 1. Received from Other Warehouse (Inbound destination)
+ * 2. Transferred to Other Warehouse (Outbound source)
  */
 
-$pageTitle   = 'Stock Transfer — StockPilot';
+$pageTitle   = 'Stock Transfer Ledger — StockPilot';
 $activePage  = 'stock_transfer';
 $activeGroup = 'inventory';
 
@@ -24,44 +28,9 @@ $assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse :
 $successMessage = null;
 $errorMessage   = null;
 
-// Handle New Transfer Initiation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_transfer') {
-    if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
-    } else {
-        // Strictly enforce source warehouse as the admin's assigned warehouse
-        $sourceWhId = $currentWarehouseId;
-    $destWhId   = isset($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : 0;
-    $itemId     = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
-    $quantity   = isset($_POST['quantity']) ? (float)$_POST['quantity'] : 0;
-    $remarks    = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
-    $userId     = (int)($currentUser['id'] ?? 1);
-
-    if ($destWhId <= 0) {
-        $errorMessage = "Please select a valid destination warehouse.";
-    } elseif ($destWhId === $sourceWhId) {
-        $errorMessage = "Destination warehouse cannot be the same as your source warehouse.";
-    } elseif ($itemId <= 0) {
-        $errorMessage = "Please select a valid item to transfer.";
-    } elseif ($quantity <= 0) {
-        $errorMessage = "Transfer quantity must be greater than zero.";
-    } else {
-        try {
-            $stockService = new StockService();
-            $result = $stockService->recordStockTransfer(
-                $sourceWhId,
-                $destWhId,
-                [['item_id' => $itemId, 'quantity' => $quantity]],
-                $userId,
-                $remarks
-            );
-            $successMessage = "Transfer initiated successfully! Transaction reference: " . htmlspecialchars($result['transaction_number']);
-        } catch (Exception $e) {
-            $errorMessage = "Transfer failed: " . $e->getMessage();
-        }
-    }
-    }
-}
+// Total active warehouses check for single-warehouse safety
+$stmtTotalWh = $pdo->query("SELECT COUNT(*) FROM warehouses WHERE status = 'active'");
+$totalActiveWarehouses = (int)$stmtTotalWh->fetchColumn();
 
 // Fetch available destination warehouses (other active warehouses only)
 $destStmt = $pdo->prepare("
@@ -72,6 +41,71 @@ $destStmt = $pdo->prepare("
 ");
 $destStmt->execute([':wid' => $currentWarehouseId]);
 $destinationWarehouses = $destStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$canInitiateTransfer = ($totalActiveWarehouses >= 2 && count($destinationWarehouses) > 0);
+
+// Handle New Transfer Initiation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_transfer') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } elseif (!$canInitiateTransfer) {
+        $errorMessage = "Stock transfer is disabled because only one active warehouse exists in the system.";
+    } else {
+        // Strictly enforce source warehouse as the admin's assigned warehouse
+        $sourceWhId = (int)$currentWarehouseId;
+        $destWhId   = isset($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : 0;
+        $itemId     = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+        $quantity   = isset($_POST['quantity']) ? (float)$_POST['quantity'] : 0;
+        $remarks    = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
+        $userId     = (int)($currentUser['id'] ?? 1);
+
+        if ($destWhId <= 0) {
+            $errorMessage = "Please select a valid destination warehouse.";
+        } elseif ($destWhId === $sourceWhId) {
+            $errorMessage = "Destination warehouse cannot be the same as your source warehouse.";
+        } elseif ($itemId <= 0) {
+            $errorMessage = "Please select a valid item to transfer.";
+        } elseif ($quantity <= 0) {
+            $errorMessage = "Transfer quantity must be greater than zero.";
+        } else {
+            try {
+                $stockService = new StockService();
+                $result = $stockService->recordStockTransfer(
+                    $sourceWhId,
+                    $destWhId,
+                    [['item_id' => $itemId, 'quantity' => $quantity]],
+                    $userId,
+                    $remarks ?: null
+                );
+                $successMessage = "Transfer initiated successfully! Transaction reference: " . htmlspecialchars($result['transaction_number']);
+            } catch (Exception $e) {
+                $errorMessage = "Transfer failed: " . $e->getMessage();
+            }
+        }
+    }
+}
+
+// Handle Receiving Confirmation (Destination Warehouse)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'confirm_receipt') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } else {
+        $transferId = (int)($_POST['stock_transfer_id'] ?? 0);
+        $userId     = (int)($currentUser['id'] ?? 1);
+
+        if ($transferId <= 0) {
+            $errorMessage = "Invalid stock transfer ID.";
+        } else {
+            try {
+                $stockService = new StockService();
+                $result = $stockService->confirmStockTransferReceipt($transferId, $userId, $currentUser);
+                $successMessage = "Stock transfer " . htmlspecialchars($result['transaction_number']) . " confirmed and received successfully into your warehouse inventory!";
+            } catch (Exception $e) {
+                $errorMessage = "Receiving confirmation failed: " . $e->getMessage();
+            }
+        }
+    }
+}
 
 // Fetch items available in source warehouse with positive stock
 $itemsStmt = $pdo->prepare("
@@ -87,13 +121,15 @@ $itemsStmt = $pdo->prepare("
     WHERE inv.warehouse_id = :wid 
       AND inv.quantity > 0 
       AND i.status = 'active'
-    ORDER BY i.item_name ASC
+    ORDER BY i.item_type ASC, i.item_name ASC
 ");
 $itemsStmt->execute([':wid' => $currentWarehouseId]);
 $availableItems = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch transfers originating from the admin's assigned warehouse
-$stmt = $pdo->prepare("
+// -----------------------------------------------------------------------------
+// 1. RECEIVED FROM OTHER WAREHOUSE (Destination = Current Warehouse)
+// -----------------------------------------------------------------------------
+$stmtRecv = $pdo->prepare("
     SELECT 
         st.stock_transfer_id,
         st.transaction_number,
@@ -110,6 +146,48 @@ $stmt = $pdo->prepare("
         u.name AS requested_by,
         COUNT(sti.item_id) AS total_items,
         COALESCE(SUM(sti.quantity), 0) AS total_quantity,
+        MIN(i.item_name) AS first_item_name,
+        MIN(i.item_code) AS first_item_code,
+        MIN(i.item_type) AS first_item_type,
+        MIN(i.unit) AS first_unit,
+        GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(sti.quantity, 1), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
+    FROM stock_transfers st
+    JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
+    JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
+    JOIN users u ON st.created_by = u.user_id
+    LEFT JOIN stock_transfer_items sti ON st.stock_transfer_id = sti.stock_transfer_id
+    LEFT JOIN items i ON sti.item_id = i.item_id
+    WHERE st.destination_warehouse_id = :wid
+    GROUP BY st.stock_transfer_id
+    ORDER BY st.created_at DESC, st.stock_transfer_id DESC
+");
+$stmtRecv->execute([':wid' => $currentWarehouseId]);
+$receivedTransfers = $stmtRecv->fetchAll(PDO::FETCH_ASSOC);
+
+// -----------------------------------------------------------------------------
+// 2. TRANSFERRED TO OTHER WAREHOUSE (Source = Current Warehouse)
+// -----------------------------------------------------------------------------
+$stmtSent = $pdo->prepare("
+    SELECT 
+        st.stock_transfer_id,
+        st.transaction_number,
+        st.source_warehouse_id,
+        sw.warehouse_code AS src_code,
+        sw.warehouse_name AS src_name,
+        st.destination_warehouse_id,
+        dw.warehouse_code AS dest_code,
+        dw.warehouse_name AS dest_name,
+        st.transaction_date,
+        st.status,
+        st.remarks,
+        st.created_at,
+        u.name AS requested_by,
+        COUNT(sti.item_id) AS total_items,
+        COALESCE(SUM(sti.quantity), 0) AS total_quantity,
+        MIN(i.item_name) AS first_item_name,
+        MIN(i.item_code) AS first_item_code,
+        MIN(i.item_type) AS first_item_type,
+        MIN(i.unit) AS first_unit,
         GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(sti.quantity, 1), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
@@ -119,12 +197,14 @@ $stmt = $pdo->prepare("
     LEFT JOIN items i ON sti.item_id = i.item_id
     WHERE st.source_warehouse_id = :wid
     GROUP BY st.stock_transfer_id
-    ORDER BY st.stock_transfer_id DESC
+    ORDER BY st.created_at DESC, st.stock_transfer_id DESC
 ");
-$stmt->execute([':wid' => $currentWarehouseId]);
-$transfers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmtSent->execute([':wid' => $currentWarehouseId]);
+$transferredTransfers = $stmtSent->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch line items for modal inspection scoped to transfers originating from this warehouse
+// -----------------------------------------------------------------------------
+// Fetch line items for modal inspection (scoped to transfers involving this warehouse)
+// -----------------------------------------------------------------------------
 $stmtLines = $pdo->prepare("
     SELECT 
         sti.stock_transfer_id,
@@ -136,40 +216,102 @@ $stmtLines = $pdo->prepare("
     FROM stock_transfer_items sti
     JOIN stock_transfers st ON sti.stock_transfer_id = st.stock_transfer_id
     JOIN items i ON sti.item_id = i.item_id
-    WHERE st.source_warehouse_id = :wid
+    WHERE st.source_warehouse_id = :wid1 OR st.destination_warehouse_id = :wid2
     ORDER BY sti.stock_transfer_item_id ASC
 ");
-$stmtLines->execute([':wid' => $currentWarehouseId]);
+$stmtLines->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $linesByTransfer = [];
 while ($row = $stmtLines->fetch(PDO::FETCH_ASSOC)) {
     $linesByTransfer[(int)$row['stock_transfer_id']][] = $row;
 }
 
-// KPI Metrics scoped strictly to assigned warehouse
-$totalTransfers     = count($transfers);
-$stmtComp = $pdo->prepare("SELECT COUNT(*) FROM stock_transfers WHERE status = 'completed' AND source_warehouse_id = :wid");
-$stmtComp->execute([':wid' => $currentWarehouseId]);
-$completedTransfers = (int)$stmtComp->fetchColumn();
-
-$stmtPend = $pdo->prepare("SELECT COUNT(*) FROM stock_transfers WHERE status = 'pending' AND source_warehouse_id = :wid");
-$stmtPend->execute([':wid' => $currentWarehouseId]);
-$pendingTransfers   = (int)$stmtPend->fetchColumn();
+// KPI Metrics
+$totalReceived    = count($receivedTransfers);
+$totalTransferred = count($transferredTransfers);
+$allInvolved      = array_merge($receivedTransfers, $transferredTransfers);
+$completedCount   = count(array_filter($allInvolved, fn($t) => ($t['status'] ?? '') === 'completed'));
+$pendingCount     = count(array_filter($allInvolved, fn($t) => ($t['status'] ?? '') === 'pending'));
 ?>
+
+<style>
+.section-badge-recv {
+    background: #DCFCE7;
+    color: #15803D;
+    border: 1px solid #BBF7D0;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.section-badge-send {
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #BFDBFE;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.modal-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.modal-meta-item {
+    font-size: 12.5px;
+}
+.modal-meta-label {
+    color: var(--gray);
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+.modal-meta-val {
+    font-weight: 600;
+    color: var(--panel-ink);
+}
+</style>
 
 <!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title">Stock Transfer Ledger</h1>
-        <p class="page-subtitle">Track transfers originating from <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?>)</strong> to other facilities</p>
+        <p class="page-subtitle">Two-sided inter-warehouse movements for <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?>)</strong></p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-primary" onclick="openNewTransferModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span> Initiate Transfer</span>
-        </button>
+        <?php if ($canInitiateTransfer): ?>
+            <button type="button" class="btn btn-primary" onclick="openNewTransferModal()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Initiate Transfer</span>
+            </button>
+        <?php else: ?>
+            <button type="button" class="btn btn-primary" disabled style="opacity: 0.55; cursor: not-allowed;" title="Inter-warehouse transfers require at least two active warehouses.">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Initiate Transfer (Disabled)</span>
+            </button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -188,59 +330,94 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
     </div>
 <?php endif; ?>
 
+<?php if (!$canInitiateTransfer): ?>
+    <div style="background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-weight: 500;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+            <strong>Single Warehouse Notice:</strong> There is only 1 active warehouse registered in the system. Inter-warehouse transfers are disabled until additional facilities are active.
+        </div>
+    </div>
+<?php endif; ?>
+
 <!-- KPI Summary Cards -->
 <div class="stats-grid">
+    <!-- Received (Inbound) -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Outbound Transfers</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
+            <span class="stat-label">Received from Other Facilities</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="17 1 21 5 17 9"/>
-                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                    <polyline points="7 23 3 19 7 15"/>
-                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <polyline points="19 12 12 19 5 12"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= $totalTransfers ?></div>
-        <div class="stat-meta">From <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></div>
+        <div class="stat-value" style="color: #15803D;"><?= $totalReceived ?></div>
+        <div class="stat-meta">Inbound transfers to <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></div>
     </div>
 
+    <!-- Transferred (Outbound) -->
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Transferred to Other Facilities</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5"/>
+                    <polyline points="5 12 12 5 19 12"/>
+                </svg>
+            </div>
+        </div>
+        <div class="stat-value" style="color: #1D4ED8;"><?= $totalTransferred ?></div>
+        <div class="stat-meta">Outbound transfers from <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?></div>
+    </div>
+
+    <!-- Completed Movements -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Completed Transfers</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #047857; background: #D1FAE5;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= $completedTransfers ?></div>
-        <div class="stat-meta">Posted to destination facilities</div>
+        <div class="stat-value"><?= $completedCount ?></div>
+        <div class="stat-meta">Posted across dual ledgers</div>
     </div>
 
+    <!-- Connected Facilities -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Pending / In Transit</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #B45309; background: #FEF3C7;">
+            <span class="stat-label">Available Partner Warehouses</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #F5F3FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
+                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+                    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+                    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= $pendingTransfers ?></div>
-        <div class="stat-meta">Awaiting destination branch check-in</div>
+        <div class="stat-value"><?= count($destinationWarehouses) ?></div>
+        <div class="stat-meta">Active facilities ready for exchange</div>
     </div>
 </div>
 
-<!-- Main Table Card -->
-<div class="card">
-    <div class="card-header">
+<!-- ========================================================================= -->
+<!-- SECTION 1: RECEIVED FROM OTHER WAREHOUSE (Inbound Transfers)             -->
+<!-- ========================================================================= -->
+<div class="card mb-6" style="margin-bottom: 28px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-            <h2 class="card-title">Inter-Warehouse Movement Records</h2>
-            <p class="card-desc">Transfers originating from <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?> with dual-posting ledger entries</p>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span class="section-badge-recv">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                    Inbound
+                </span>
+                <h2 class="card-title" style="margin: 0; font-size: 16px;">Received from Other Warehouse</h2>
+                <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalReceived ?></span>
+            </div>
+            <p class="card-desc" style="margin: 0;">Transfers where <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong> is the destination receiving facility</p>
         </div>
         <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
@@ -249,69 +426,254 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
             </span>
-            <input type="text" id="transferSearch" class="search-box" placeholder="Filter transfer ref, destination..." onkeyup="filterTable('transferSearch', 'transfersTable')">
+            <input type="text" id="receivedSearch" class="search-box" placeholder="Filter received transfers..." onkeyup="filterTable('receivedSearch', 'receivedTable')">
         </div>
     </div>
 
     <div class="table-responsive">
-        <table id="transfersTable">
+        <table id="receivedTable">
             <thead>
                 <tr>
+                    <th>Date &amp; Time</th>
                     <th>Transfer Reference</th>
-                    <th>From Warehouse (Source)</th>
-                    <th>To Warehouse (Destination)</th>
-                    <th>Items Transferred</th>
-                    <th>Total Qty</th>
-                    <th>Date</th>
-                    <th>Requested By</th>
+                    <th>Item</th>
+                    <th>Item Type</th>
+                    <th>Quantity</th>
+                    <th>From Warehouse</th>
                     <th>Status</th>
                     <th style="text-align: right;">Action</th>
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($transfers)): ?>
+                <?php if (empty($receivedTransfers)): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No stock transfers recorded yet.</td>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">
+                            No incoming transfers received from other warehouses yet.
+                        </td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($transfers as $row): ?>
+                    <?php foreach ($receivedTransfers as $row): 
+                        $hasMultiple = ((int)$row['total_items'] > 1);
+                        $itemType = $row['first_item_type'] ?? 'finished_good';
+                    ?>
                         <tr>
+                            <!-- Date & Time -->
+                            <td style="font-size: 12.5px; white-space: nowrap;">
+                                <?= date('M d, Y', strtotime($row['created_at'] ?: $row['transaction_date'])) ?>
+                                <small style="display: block; color: var(--gray); font-size: 11px;">
+                                    <?= date('h:i A', strtotime($row['created_at'])) ?>
+                                </small>
+                            </td>
+
+                            <!-- Transfer Reference -->
                             <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                 <?= htmlspecialchars($row['transaction_number']) ?>
                             </td>
+
+                            <!-- Item -->
+                            <td style="max-width: 240px;">
+                                <?php if (!$hasMultiple && !empty($row['first_item_name'])): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['first_item_name']) ?></div>
+                                    <small style="font-family: monospace; color: var(--gray); font-size: 11.5px;"><?= htmlspecialchars($row['first_item_code']) ?></small>
+                                <?php elseif ($hasMultiple): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= (int)$row['total_items'] ?> items received</div>
+                                    <small style="color: var(--gray); font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['items_summary'] ?: '') ?>">
+                                        <?= htmlspecialchars($row['items_summary'] ?: 'Multiple items') ?>
+                                    </small>
+                                <?php else: ?>
+                                    <span style="color: var(--gray); font-style: italic;">No items specified</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Item Type -->
+                            <td>
+                                <?php if (!$hasMultiple): ?>
+                                    <?php if ($itemType === 'finished_good'): ?>
+                                        <span class="badge-type type-fg">Finished Good</span>
+                                    <?php else: ?>
+                                        <span class="badge-type type-raw">Raw Material</span>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="badge-type type-raw">Mixed (<?= (int)$row['total_items'] ?>)</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Quantity (Positive Inbound) -->
+                            <td style="font-weight: 700; color: #15803D; white-space: nowrap;">
+                                +<?= formatQty((float)$row['total_quantity']) ?>
+                                <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
+                                    <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- From Warehouse -->
                             <td>
                                 <span class="badge-wh <?= getWarehouseBadgeClass($row['src_code']) ?>"><?= htmlspecialchars($row['src_code']) ?></span>
-                                <span style="font-size: 12px; color: var(--gray); margin-left: 4px;"><?= htmlspecialchars($row['src_name']) ?></span>
+                                <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['src_name']) ?></span>
                             </td>
-                            <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($row['dest_code']) ?>"><?= htmlspecialchars($row['dest_code']) ?></span>
-                                <span style="font-size: 12px; color: var(--gray); margin-left: 4px;"><?= htmlspecialchars($row['dest_name']) ?></span>
-                            </td>
-                            <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['items_summary'] ?: '') ?>">
-                                <span style="font-weight: 600;"><?= $row['total_items'] ?> item(s):</span>
-                                <span style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['items_summary'] ?: 'No items') ?></span>
-                            </td>
-                            <td style="font-weight: 700; color: #1D4ED8;">
-                                <?= formatQty($row['total_quantity']) ?>
-                            </td>
-                            <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
-                                <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
-                            </td>
-                            <td style="font-size: 12.5px;">
-                                <?= htmlspecialchars($row['requested_by']) ?>
-                            </td>
+
+                            <!-- Status -->
                             <td>
                                 <?php if ($row['status'] === 'completed'): ?>
-                                    <span class="badge status-completed">Completed</span>
+                                    <span class="badge status-completed">Received</span>
                                 <?php elseif ($row['status'] === 'pending'): ?>
                                     <span class="badge status-pending">In Transit</span>
                                 <?php else: ?>
                                     <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
                                 <?php endif; ?>
                             </td>
+
+                            <!-- Action -->
                             <td style="text-align: right;">
-                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick="openTransferDetailModal(<?= (int)$row['stock_transfer_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                    View Items
+                                <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                                    <?php if ($row['status'] === 'pending'): ?>
+                                        <button type="button" class="btn btn-primary" style="height: 30px; padding: 0 11px; font-size: 11.5px; background: #15803D; border-color: #15803D; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;" onclick='openConfirmReceiptModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                            <span>Received Stock</span>
+                                        </button>
+                                    <?php elseif ($row['status'] === 'completed'): ?>
+                                        <span style="color: #15803D; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; margin-right: 4px;">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                            Received
+                                        </span>
+                                    <?php endif; ?>
+                                    <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick='openTransferDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>, "inbound")'>
+                                        View Details
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- SECTION 2: TRANSFERRED TO OTHER WAREHOUSE (Outbound Transfers)            -->
+<!-- ========================================================================= -->
+<div class="card mb-6">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span class="section-badge-send">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                    Outbound
+                </span>
+                <h2 class="card-title" style="margin: 0; font-size: 16px;">Transferred to Other Warehouse</h2>
+                <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalTransferred ?></span>
+            </div>
+            <p class="card-desc" style="margin: 0;">Transfers originating from <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong> dispatched to other facilities</p>
+        </div>
+        <div class="search-wrap">
+            <span class="search-icon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+            </span>
+            <input type="text" id="transferredSearch" class="search-box" placeholder="Filter transferred records..." onkeyup="filterTable('transferredSearch', 'transferredTable')">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table id="transferredTable">
+            <thead>
+                <tr>
+                    <th>Date &amp; Time</th>
+                    <th>Transfer Reference</th>
+                    <th>Item</th>
+                    <th>Item Type</th>
+                    <th>Quantity</th>
+                    <th>To Warehouse</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($transferredTransfers)): ?>
+                    <tr>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">
+                            No outgoing transfers dispatched to other warehouses yet.
+                        </td>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach ($transferredTransfers as $row): 
+                        $hasMultiple = ((int)$row['total_items'] > 1);
+                        $itemType = $row['first_item_type'] ?? 'finished_good';
+                    ?>
+                        <tr>
+                            <!-- Date & Time -->
+                            <td style="font-size: 12.5px; white-space: nowrap;">
+                                <?= date('M d, Y', strtotime($row['created_at'] ?: $row['transaction_date'])) ?>
+                                <small style="display: block; color: var(--gray); font-size: 11px;">
+                                    <?= date('h:i A', strtotime($row['created_at'])) ?>
+                                </small>
+                            </td>
+
+                            <!-- Transfer Reference -->
+                            <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
+                                <?= htmlspecialchars($row['transaction_number']) ?>
+                            </td>
+
+                            <!-- Item -->
+                            <td style="max-width: 240px;">
+                                <?php if (!$hasMultiple && !empty($row['first_item_name'])): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['first_item_name']) ?></div>
+                                    <small style="font-family: monospace; color: var(--gray); font-size: 11.5px;"><?= htmlspecialchars($row['first_item_code']) ?></small>
+                                <?php elseif ($hasMultiple): ?>
+                                    <div style="font-weight: 700; color: var(--panel-ink);"><?= (int)$row['total_items'] ?> items transferred</div>
+                                    <small style="color: var(--gray); font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['items_summary'] ?: '') ?>">
+                                        <?= htmlspecialchars($row['items_summary'] ?: 'Multiple items') ?>
+                                    </small>
+                                <?php else: ?>
+                                    <span style="color: var(--gray); font-style: italic;">No items specified</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Item Type -->
+                            <td>
+                                <?php if (!$hasMultiple): ?>
+                                    <?php if ($itemType === 'finished_good'): ?>
+                                        <span class="badge-type type-fg">Finished Good</span>
+                                    <?php else: ?>
+                                        <span class="badge-type type-raw">Raw Material</span>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="badge-type type-raw">Mixed (<?= (int)$row['total_items'] ?>)</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Quantity (Negative Outbound) -->
+                            <td style="font-weight: 700; color: #1D4ED8; white-space: nowrap;">
+                                -<?= formatQty((float)$row['total_quantity']) ?>
+                                <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
+                                    <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- To Warehouse -->
+                            <td>
+                                <span class="badge-wh <?= getWarehouseBadgeClass($row['dest_code']) ?>"><?= htmlspecialchars($row['dest_code']) ?></span>
+                                <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['dest_name']) ?></span>
+                            </td>
+
+                            <!-- Status -->
+                            <td>
+                                <?php if ($row['status'] === 'completed'): ?>
+                                    <span class="badge status-completed">Received</span>
+                                <?php elseif ($row['status'] === 'pending'): ?>
+                                    <span class="badge status-pending">In Transit</span>
+                                <?php else: ?>
+                                    <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Action -->
+                            <td style="text-align: right;">
+                                <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick='openTransferDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>, "outbound")'>
+                                    View Details
                                 </button>
                             </td>
                         </tr>
@@ -322,13 +684,15 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
     </div>
 </div>
 
-<!-- Modal for Transfer Lines -->
+<!-- ========================================================================= -->
+<!-- MODAL: Enhanced Transfer Details                                         -->
+<!-- ========================================================================= -->
 <div id="transferModal" class="modal-backdrop" onclick="if(event.target === this) closeTransferDetailModal()">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width: 620px;">
         <div class="modal-header">
             <div>
                 <h3 id="modalTrfTitle" class="card-title">Transfer Details</h3>
-                <p id="modalTrfSub" class="card-desc">Items transferred between warehouse facilities</p>
+                <p id="modalTrfSub" class="card-desc">Warehouse-to-warehouse movement record</p>
             </div>
             <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeTransferDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -338,14 +702,52 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
             </button>
         </div>
         <div class="modal-body">
+            <!-- Metadata Summary Grid -->
+            <div class="modal-meta-grid">
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Transfer Reference</div>
+                    <div id="modalTrfRef" class="modal-meta-val" style="font-family: monospace;">—</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Movement Status</div>
+                    <div id="modalTrfStatus" class="modal-meta-val">—</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Source Warehouse</div>
+                    <div id="modalTrfSrc" class="modal-meta-val">—</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Destination Warehouse</div>
+                    <div id="modalTrfDest" class="modal-meta-val">—</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Date &amp; Time</div>
+                    <div id="modalTrfDate" class="modal-meta-val">—</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Initiated By</div>
+                    <div id="modalTrfUser" class="modal-meta-val">—</div>
+                </div>
+            </div>
+
+            <!-- Optional Remarks -->
+            <div id="modalTrfRemarksContainer" style="margin-bottom: 16px; background: #F1F5F9; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
+                <strong style="color: #475569; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Transfer Notes:</strong>
+                <span id="modalTrfRemarks" style="color: var(--panel-ink);"></span>
+            </div>
+
+            <!-- Line Items Table -->
+            <div style="font-size: 13px; font-weight: 700; color: var(--panel-ink); margin-bottom: 8px;">
+                Transferred Items
+            </div>
             <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
-                            <th>Item Code</th>
+                            <th>SKU / Code</th>
                             <th>Item Name</th>
                             <th>Classification</th>
-                            <th>Transfer Quantity</th>
+                            <th style="text-align: right;">Quantity</th>
                         </tr>
                     </thead>
                     <tbody id="modalTrfTableBody">
@@ -359,7 +761,9 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
     </div>
 </div>
 
-<!-- Modal for Initiating Stock Transfer -->
+<!-- ========================================================================= -->
+<!-- MODAL: Initiate Stock Transfer                                            -->
+<!-- ========================================================================= -->
 <div id="newTransferModal" class="modal-backdrop" onclick="if(event.target === this) closeNewTransferModal()">
     <div class="modal-card" style="max-width: 540px;">
         <form method="POST" action="index.php">
@@ -378,7 +782,7 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                 </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
-                <!-- Source Warehouse (Locked to Logged-in Admin) -->
+                <!-- Source Warehouse (Locked to Logged-in Admin's Warehouse) -->
                 <div>
                     <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         From Warehouse (Source) <span style="font-size: 11px; font-weight: normal; color: var(--gray);">(Your Assigned Facility &mdash; Locked)</span>
@@ -389,7 +793,6 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
                         </span>
                         <span class="badge" style="background: #E2E8F0; color: #475569; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Source Locked</span>
                     </div>
-                    <!-- Hidden field guaranteeing source warehouse id matches session -->
                     <input type="hidden" name="source_warehouse_id" value="<?= $currentWarehouseId ?>">
                 </div>
 
@@ -456,25 +859,140 @@ $pendingTransfers   = (int)$stmtPend->fetchColumn();
     </div>
 </div>
 
+<!-- ========================================================================= -->
+<!-- MODAL: Confirm Received Stock                                             -->
+<!-- ========================================================================= -->
+<div id="confirmReceiptModal" class="modal-backdrop" onclick="if(event.target === this) closeConfirmReceiptModal()">
+    <div class="modal-card" style="max-width: 480px;">
+        <form method="POST" action="index.php">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="confirm_receipt">
+            <input type="hidden" name="stock_transfer_id" id="confirmReceiptId" value="">
+            
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 36px; height: 36px; border-radius: 50%; background: #DCFCE7; color: #15803D; display: flex; align-items: center; justify-content: center;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="card-title" style="margin: 0;">Confirm Received Stock</h3>
+                        <p class="card-desc" style="margin: 0;">Verify physical delivery of items into your warehouse</p>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeConfirmReceiptModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <p style="font-size: 13.5px; color: var(--panel-ink); margin: 0; line-height: 1.5;">
+                    Are you sure this stock has arrived and been verified at <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong>?
+                </p>
+
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+                    <div style="display: grid; grid-template-columns: 120px 1fr; gap: 8px; font-size: 13px;">
+                        <span style="color: var(--gray); font-weight: 600;">Transfer Ref:</span>
+                        <strong id="confirmTrfRef" style="font-family: monospace;">—</strong>
+
+                        <span style="color: var(--gray); font-weight: 600;">From Facility:</span>
+                        <span id="confirmTrfFrom" style="font-weight: 600; color: var(--panel-ink);">—</span>
+
+                        <span style="color: var(--gray); font-weight: 600;">Item(s):</span>
+                        <span id="confirmTrfItem" style="font-weight: 600; color: var(--panel-ink);">—</span>
+
+                        <span style="color: var(--gray); font-weight: 600;">Quantity:</span>
+                        <span id="confirmTrfQty" style="font-weight: 700; color: #15803D;">—</span>
+                    </div>
+                </div>
+
+                <div style="font-size: 12px; color: #475569; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+                    <strong style="color: #0F172A;">Note:</strong> Confirming this receipt will immediately post the stock into your warehouse inventory and mark the transfer as Completed.
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeConfirmReceiptModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="background: #15803D; border-color: #15803D; display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Confirm Received Stock</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 const trfLinesData = <?= json_encode($linesByTransfer) ?>;
 
-function openTransferDetailModal(id, txnNo) {
-    document.getElementById('modalTrfTitle').textContent = 'Transfer ' + txnNo;
+function openConfirmReceiptModal(trf) {
+    if (!trf) return;
+    document.getElementById('confirmReceiptId').value = trf.stock_transfer_id;
+    document.getElementById('confirmTrfRef').textContent = trf.transaction_number;
+    document.getElementById('confirmTrfFrom').textContent = (trf.src_code || '') + ' - ' + (trf.src_name || '');
+    
+    const itemName = ((parseInt(trf.total_items) || 0) > 1) 
+        ? (trf.total_items + ' items (' + (trf.items_summary || '') + ')') 
+        : (trf.first_item_name || 'Item');
+    document.getElementById('confirmTrfItem').textContent = itemName;
+    
+    const unit = trf.first_unit || '';
+    document.getElementById('confirmTrfQty').textContent = '+' + Number(parseFloat(trf.total_quantity).toFixed(2)) + ' ' + unit;
+
+    document.getElementById('confirmReceiptModal').style.display = 'flex';
+}
+
+function closeConfirmReceiptModal() {
+    document.getElementById('confirmReceiptModal').style.display = 'none';
+}
+
+function openTransferDetailModal(trf, direction) {
+    if (!trf) return;
+
+    document.getElementById('modalTrfTitle').textContent = 'Transfer ' + trf.transaction_number;
+    document.getElementById('modalTrfRef').textContent = trf.transaction_number;
+    
+    // Status Badge
+    let statusBadge = '<span class="badge status-completed">Completed</span>';
+    if (trf.status === 'pending') {
+        statusBadge = '<span class="badge status-pending">In Transit</span>';
+    } else if (trf.status === 'cancelled') {
+        statusBadge = '<span class="badge status-cancelled">Cancelled</span>';
+    }
+    document.getElementById('modalTrfStatus').innerHTML = statusBadge;
+
+    document.getElementById('modalTrfSrc').textContent = (trf.src_code || '') + ' - ' + (trf.src_name || '');
+    document.getElementById('modalTrfDest').textContent = (trf.dest_code || '') + ' - ' + (trf.dest_name || '');
+    
+    const dateFormatted = trf.created_at ? trf.created_at : (trf.transaction_date || '—');
+    document.getElementById('modalTrfDate').textContent = dateFormatted;
+    document.getElementById('modalTrfUser').textContent = trf.requested_by || '—';
+
+    const remarksElem = document.getElementById('modalTrfRemarks');
+    const remarksCont = document.getElementById('modalTrfRemarksContainer');
+    if (trf.remarks && trf.remarks.trim() !== '') {
+        remarksElem.textContent = trf.remarks;
+        remarksCont.style.display = 'block';
+    } else {
+        remarksCont.style.display = 'none';
+    }
+
+    // Line Items
     const tbody = document.getElementById('modalTrfTableBody');
     tbody.innerHTML = '';
 
-    const lines = trfLinesData[id] || [];
+    const lines = trfLinesData[trf.stock_transfer_id] || [];
     if (lines.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--gray); padding: 16px;">No line items found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--gray); padding: 16px;">No line items recorded for this transfer.</td></tr>';
     } else {
         lines.forEach(l => {
             const tr = document.createElement('tr');
+            const qtySign = direction === 'inbound' ? '+' : '-';
+            const qtyColor = direction === 'inbound' ? '#15803D' : '#1D4ED8';
             tr.innerHTML = `
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #1D4ED8;">${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: ${qtyColor}; text-align: right;">${qtySign}${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray); font-weight: normal;">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });
@@ -513,6 +1031,30 @@ function handleItemChange(selectElem) {
         hintDiv.textContent = 'Select an item to view maximum transferable balance.';
         qtyInput.removeAttribute('max');
         qtyInput.placeholder = '0';
+    }
+}
+
+function filterTable(inputId, tableId) {
+    const filter = document.getElementById(inputId).value.toUpperCase();
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const tr = table.getElementsByTagName('tr');
+
+    for (let i = 1; i < tr.length; i++) {
+        // Skip empty row if present
+        if (tr[i].cells.length <= 1) continue;
+        let visible = false;
+        const tds = tr[i].getElementsByTagName('td');
+        for (let j = 0; j < tds.length; j++) {
+            if (tds[j]) {
+                const txt = tds[j].textContent || tds[j].innerText;
+                if (txt.toUpperCase().indexOf(filter) > -1) {
+                    visible = true;
+                    break;
+                }
+            }
+        }
+        tr[i].style.display = visible ? '' : 'none';
     }
 }
 

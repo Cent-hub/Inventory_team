@@ -274,6 +274,25 @@
             display: flex;
         }
 
+        .nav-sub-group-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--sidebar-muted, #94A3B8);
+            padding: 8px 10px 3px 6px;
+            display: block;
+            user-select: none;
+            opacity: 0.85;
+            line-height: 1.3;
+        }
+
+        .nav-sub-group-title:not(:first-child) {
+            margin-top: 8px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
         .nav-sub-link {
             display: flex;
             align-items: center;
@@ -284,6 +303,7 @@
             text-decoration: none;
             font-size: 12.5px;
             font-weight: 500;
+            line-height: 1.3;
             transition: all 0.12s ease;
         }
 
@@ -304,6 +324,7 @@
             border-radius: 50%;
             background: currentColor;
             opacity: 0.6;
+            flex-shrink: 0;
         }
 
         .nav-sub-link.active .sub-bullet {

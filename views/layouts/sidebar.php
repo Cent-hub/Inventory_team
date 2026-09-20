@@ -16,6 +16,12 @@ $isInventoryActive = in_array($activePage, [
 ], true);
 
 $isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
+$validReportTypes = [
+    'raw_materials', 'finished_goods', 'current_stock', 
+    'stock_movements', 'stock_ins', 'stock_outs', 
+    'stock_transfers', 'stock_adjustments'
+];
+$currentReportType = $isReportsActive ? (isset($_GET['type']) && in_array(trim($_GET['type']), $validReportTypes, true) ? trim($_GET['type']) : 'current_stock') : '';
 
 $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
     'settings', 'my_account', 'change_password', 'notifications', 'security', 'backup_export'
@@ -120,18 +126,63 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
             </div>
         </div>
 
-        <!-- Reports -->
-        <div class="nav-item">
-            <a href="<?= BASE_URL ?>views/reports/index.php" class="nav-link <?= $isReportsActive ? 'active' : '' ?>">
-                <!-- Lucide BarChart3 Icon -->
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 3v18h18"/>
-                    <path d="M18 17V9"/>
-                    <path d="M13 17V5"/>
-                    <path d="M8 17v-3"/>
+        <!-- Reports Dropdown Group -->
+        <div class="nav-group <?= $isReportsActive ? 'open has-active' : '' ?>" id="group-reports">
+            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-reports')" aria-expanded="<?= $isReportsActive ? 'true' : 'false' ?>">
+                <div class="nav-group-left">
+                    <!-- Lucide BarChart3 Icon -->
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v18h18"/>
+                        <path d="M18 17V9"/>
+                        <path d="M13 17V5"/>
+                        <path d="M8 17v-3"/>
+                    </svg>
+                    <span>Reports</span>
+                </div>
+                <!-- Chevron Icon -->
+                <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"/>
                 </svg>
-                <span>Reports</span>
-            </a>
+            </button>
+            <div class="nav-sub-list">
+                <!-- Group 1: Inventory Reports -->
+                <span class="nav-sub-group-title">Inventory Reports</span>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=raw_materials" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'raw_materials') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Raw Materials Stock Report</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=finished_goods" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'finished_goods') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Finished Goods Stock Report</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=current_stock" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'current_stock') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Current Inventory Balance</span>
+                </a>
+
+                <!-- Group 2: Transaction & Movement Reports -->
+                <span class="nav-sub-group-title">Transaction &amp; Movement Reports</span>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_movements" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_movements') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Stock Movement Ledger Report</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_ins" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_ins') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Inbound Stock Receipts</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_outs" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_outs') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Outbound Stock Dispatches</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_transfers" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_transfers') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Inter-Branch Stock Transfers</span>
+                </a>
+                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_adjustments" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_adjustments') ? 'active' : '' ?>">
+                    <span class="sub-bullet"></span>
+                    <span>Stock Adjustments &amp; Variances</span>
+                </a>
+            </div>
         </div>
 
         <!-- Management Section -->
