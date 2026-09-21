@@ -83,7 +83,13 @@ if (empty($sourceReferenceNo)) {
 }
 
 // Team domain enforcement
-if ($sourceType === 'PURCHASE_ORDER' && !in_array($userId, [2, 5], true) && ($authUser['role'] ?? '') !== 'super_admin') {
+$userRole = strtolower(trim((string)($authUser['role'] ?? '')));
+$userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
+$isSuperAdmin = ($userRole === 'super_admin');
+$isProcurement = ($userTeam === 'procurement' || $userRole === 'procurement');
+$isProduction = ($userTeam === 'production' || $userRole === 'production');
+
+if ($sourceType === 'PURCHASE_ORDER' && !$isProcurement && !$isSuperAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -91,7 +97,7 @@ if ($sourceType === 'PURCHASE_ORDER' && !in_array($userId, [2, 5], true) && ($au
     ], 403);
 }
 
-if ($sourceType === 'PRODUCTION_RETURN' && $userId !== 3 && ($authUser['role'] ?? '') !== 'super_admin') {
+if ($sourceType === 'PRODUCTION_RETURN' && !$isProduction && !$isSuperAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',

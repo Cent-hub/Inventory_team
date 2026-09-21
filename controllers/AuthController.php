@@ -308,7 +308,7 @@ class AuthController {
         // Authentication successful: clear failed attempt tracker
         $this->clearLoginRateLimit();
 
-        // Resolve assigned warehouse for user
+        // Resolve assigned warehouse for user session without mutating database record
         $assignedWhId = !empty($user['warehouse_id']) ? (int)$user['warehouse_id'] : null;
         if (!$assignedWhId) {
             $emailLower = strtolower($user['email']);
@@ -320,12 +320,6 @@ class AuthController {
                 $assignedWhId = 3; // WH-BOTT (Bulacan)
             } else {
                 $assignedWhId = 1;
-            }
-            try {
-                $upStmt = $this->db->prepare("UPDATE users SET warehouse_id = :wid WHERE user_id = :uid");
-                $upStmt->execute([':wid' => $assignedWhId, ':uid' => (int)$user['user_id']]);
-            } catch (PDOException $e) {
-                error_log("Failed to auto-assign warehouse: " . $e->getMessage());
             }
         }
 

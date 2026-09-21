@@ -78,9 +78,11 @@ if (!in_array($sourceType, $validSourceTypes, true)) {
 }
 
 // Team domain enforcement
-$isSalesUser = in_array($userId, [4, 6], true);
-$isProductionUser = ($userId === 3);
-$isSuperAdmin = (($authUser['role'] ?? '') === 'super_admin');
+$userRole = strtolower(trim((string)($authUser['role'] ?? '')));
+$userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
+$isSuperAdmin = ($userRole === 'super_admin');
+$isSalesUser = ($userTeam === 'sales' || $userRole === 'sales');
+$isProductionUser = ($userTeam === 'production' || $userRole === 'production');
 
 if ($isSalesUser && $sourceType !== 'SALES_DELIVERY') {
     jsonResponse([

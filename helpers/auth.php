@@ -74,7 +74,7 @@ function enforceHttpsSecurity(): void {
  * Authenticates the incoming request against active users by api_token.
  * Supports SHA-256 hashed token matching (SEC-04).
  * 
- * @param array $allowed List of permitted user_ids (e.g. [1, 2, 5]) or team tags ('procurement', 'production', 'sales')
+ * @param array $allowed List of permitted roles or teams (e.g. ['procurement', 'production', 'sales', 'admin'])
  * @return array Authenticated user record
  */
 function requireApiAuth(array $allowed = []): array {
@@ -96,7 +96,7 @@ function requireApiAuth(array $allowed = []): array {
 
     $pdo = Database::getConnection();
     $stmt = $pdo->prepare("
-        SELECT user_id, name, email, role, warehouse_id, api_token, status
+        SELECT user_id, name, email, role, team, warehouse_id, api_token, status
         FROM users
         WHERE api_token = ? AND status = 'active'
         LIMIT 1
@@ -112,36 +112,48 @@ function requireApiAuth(array $allowed = []): array {
         ], 401);
     }
 
-    // Always permit Super Admin (user_id = 1 or role = super_admin)
-    if (($user['role'] ?? '') === 'super_admin' || (int)$user['user_id'] === 1) {
+    // Infer team from email if not explicitly set in database
+    if (empty($user['team'])) {
+        $emailLower = strtolower(trim((string)($user['email'] ?? '')));
+        if (str_contains($emailLower, 'procure')) {
+            $user['team'] = 'Procurement';
+        } elseif (str_contains($emailLower, 'prod') || str_contains($emailLower, 'brew') || str_contains($emailLower, 'distill')) {
+            $user['team'] = 'Production';
+        } elseif (str_contains($emailLower, 'sale') || str_contains($emailLower, 'order')) {
+            $user['team'] = 'Sales';
+        } else {
+            $user['team'] = 'Inventory';
+        }
+    }
+
+    // Always permit Super Admin
+    if (($user['role'] ?? '') === 'super_admin') {
         return $user;
     }
 
     if (!empty($allowed)) {
-        $allowedIds = [];
+        $userRole = strtolower(trim((string)($user['role'] ?? '')));
+        $userTeam = strtolower(trim((string)($user['team'] ?? '')));
+
+        $isAuthorized = false;
         foreach ($allowed as $item) {
-            if (is_numeric($item)) {
-                $allowedIds[] = (int)$item;
-            } elseif (is_string($item)) {
-                $tag = strtolower(trim($item));
-                if ($tag === 'procurement') {
-                    $allowedIds = array_merge($allowedIds, [2, 5]);
-                } elseif ($tag === 'production') {
-                    $allowedIds = array_merge($allowedIds, [3]);
-                } elseif ($tag === 'sales') {
-                    $allowedIds = array_merge($allowedIds, [4, 6]);
-                } elseif ($tag === 'super_admin' || $tag === 'admin') {
-                    $allowedIds = array_merge($allowedIds, [1]);
-                }
+            $tag = strtolower(trim((string)$item));
+            if ($tag === $userRole || $tag === $userTeam) {
+                $isAuthorized = true;
+                break;
+            }
+            // Allow 'admin' tag to authorize administrative roles
+            if (($tag === 'admin' || $tag === 'super_admin') && in_array($userRole, ['admin', 'super_admin'], true)) {
+                $isAuthorized = true;
+                break;
             }
         }
-        $allowedIds = array_unique($allowedIds);
 
-        if (!in_array((int)$user['user_id'], $allowedIds, true)) {
+        if (!$isAuthorized) {
             jsonResponse([
                 'success' => false,
                 'error'   => 'Forbidden',
-                'detail'  => "Team account '{$user['name']}' (user_id: {$user['user_id']}) is not authorized to access this endpoint."
+                'detail'  => "Team account '{$user['name']}' (role: {$user['role']}, team: {$user['team']}) is not authorized to access this endpoint."
             ], 403);
         }
     }

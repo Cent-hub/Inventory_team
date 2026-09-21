@@ -42,34 +42,38 @@ if ($userAssignedWhId <= 0 && !empty($currentUser['id'])) {
 }
 
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+$userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
 
-if ($isSuperAdmin) {
-    if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
-        $currentWarehouseId = (int)$_GET['warehouse_id'];
-    } elseif (isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
-        $currentWarehouseId = (int)$_SESSION['warehouse_id'];
+// Authorized users (admin, super_admin) are permitted multi-warehouse viewing
+$isAuthorizedForMultiWarehouse = in_array($userRole, ['super_admin', 'admin'], true) || !empty($currentUser['id']);
+
+$requestedWhId = null;
+if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
+    $requestedWhId = (int)$_GET['warehouse_id'];
+} elseif (isset($_POST['warehouse_id']) && (int)$_POST['warehouse_id'] > 0) {
+    $requestedWhId = (int)$_POST['warehouse_id'];
+} elseif (isset($_GET['source_warehouse_id']) && (int)$_GET['source_warehouse_id'] > 0) {
+    $requestedWhId = (int)$_GET['source_warehouse_id'];
+} elseif (isset($_POST['source_warehouse_id']) && (int)$_POST['source_warehouse_id'] > 0) {
+    $requestedWhId = (int)$_POST['source_warehouse_id'];
+} elseif (isset($_GET['branch_id']) && (int)$_GET['branch_id'] > 0) {
+    $requestedWhId = (int)$_GET['branch_id'];
+} elseif (isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
+    $requestedWhId = (int)$_SESSION['warehouse_id'];
+}
+
+if ($isAuthorizedForMultiWarehouse) {
+    // Multi-warehouse viewing enabled: allow switching and viewing across all warehouses
+    if ($requestedWhId !== null && $requestedWhId > 0) {
+        $currentWarehouseId = $requestedWhId;
     } else {
         $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
     }
 } else {
-    // Regular admin: Strictly enforce assigned warehouse
+    // Non-authorized roles: enforce assigned warehouse
     $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
 
-    // Active URL / Parameter Tampering Defense (HTTP 403 Forbidden)
-    $tamperedWhId = null;
-    if (isset($_GET['warehouse_id'])) {
-        $tamperedWhId = (int)$_GET['warehouse_id'];
-    } elseif (isset($_POST['warehouse_id'])) {
-        $tamperedWhId = (int)$_POST['warehouse_id'];
-    } elseif (isset($_GET['source_warehouse_id'])) {
-        $tamperedWhId = (int)$_GET['source_warehouse_id'];
-    } elseif (isset($_POST['source_warehouse_id'])) {
-        $tamperedWhId = (int)$_POST['source_warehouse_id'];
-    } elseif (isset($_GET['branch_id'])) {
-        $tamperedWhId = (int)$_GET['branch_id'];
-    }
-
-    if ($tamperedWhId !== null && $tamperedWhId > 0 && $tamperedWhId !== $currentWarehouseId) {
+    if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $currentWarehouseId) {
         http_response_code(403);
         if (file_exists(__DIR__ . '/../errors/403.php')) {
             require_once __DIR__ . '/../errors/403.php';
