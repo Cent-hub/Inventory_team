@@ -62,7 +62,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
             <span>Accountability Audit Log</span>
         </h1>
-        <p class="page-subtitle">Granular operational audit trail capturing all user and team activities across inventory touchpoints</p>
+        <p class="page-subtitle">Operational audit trail capturing all user and team activities across inventory touchpoints</p>
     </div>
     <div class="header-actions">
         <!-- Quick Action: Contact Support -->

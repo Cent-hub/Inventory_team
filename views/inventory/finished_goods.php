@@ -72,7 +72,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
         <p class="page-subtitle">Finished goods inventory for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
     </div>
     <div class="header-actions">
-        <a href="<?= BASE_URL ?>views/stock_out/index.php" class="btn btn-primary">
+        <a href="<?= BASE_URL ?>views/inbound_outbound/index.php?tab=outbound" class="btn btn-primary">
             <!-- Lucide Truck Icon -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                 <rect width="16" height="13" x="1" y="5" rx="2"/>

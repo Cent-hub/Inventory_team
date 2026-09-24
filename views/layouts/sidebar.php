@@ -12,16 +12,12 @@ $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
 $isInventoryActive = in_array($activePage, [
     'raw_materials', 'finished_goods', 'items', 'stock_in', 'stock_out', 
-    'stock_transfer', 'stock_adjustment', 'stock_card', 'movement'
+    'stock_transfer', 'stock_adjustment', 'stock_card', 'movement', 'stock_operations', 'inbound_outbound'
 ], true);
 
-$isReportsActive = ($activePage === 'reports' || $activeGroup === 'reports');
-$validReportTypes = [
-    'raw_materials', 'finished_goods', 'current_stock', 
-    'stock_movements', 'stock_ins', 'stock_outs', 
-    'stock_transfers', 'stock_adjustments'
-];
-$currentReportType = $isReportsActive ? (isset($_GET['type']) && in_array(trim($_GET['type']), $validReportTypes, true) ? trim($_GET['type']) : 'current_stock') : '';
+$isReportsActive = in_array($activePage, ['reports', 'inventory_reports', 'stock_transactions'], true) || ($activeGroup === 'reports');
+$isStockTransactionsActive = ($activePage === 'stock_transactions');
+$isInventoryReportsActive = ($isReportsActive && !$isStockTransactionsActive);
 
 $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
     'settings', 'my_account', 'change_password', 'notifications', 'security', 'backup_export'
@@ -47,7 +43,7 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
     <!-- Navigation Scroll Area -->
     <nav class="sidebar-nav">
         <!-- Main Section -->
-        <span class="nav-section-label">Operations</span>
+        <span class="nav-section-label">Overview</span>
 
         <!-- Dashboard -->
         <div class="nav-item">
@@ -62,6 +58,8 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
                 <span>Dashboard</span>
             </a>
         </div>
+
+        <span class="nav-section-label">Operations</span>
 
         <!-- Inventory Dropdown Group -->
         <div class="nav-group <?= $isInventoryActive ? 'open has-active' : '' ?>" id="group-inventory">
@@ -98,30 +96,15 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
                     <span class="sub-bullet"></span>
                     <span>Finished Goods</span>
                 </a>
-                <!-- Inbound / Stock In -->
-                <a href="<?= BASE_URL ?>views/stock_in/index.php" class="nav-sub-link <?= $activePage === 'stock_in' ? 'active' : '' ?>">
+                <!-- Inbound & Outbound (Unified Hub) -->
+                <a href="<?= BASE_URL ?>views/inbound_outbound/index.php" class="nav-sub-link <?= in_array($activePage, ['inbound_outbound', 'stock_in', 'stock_out'], true) ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Inbound / Stock In</span>
+                    <span>Inbound &amp; Outbound</span>
                 </a>
-                <!-- Outbound / Stock Out -->
-                <a href="<?= BASE_URL ?>views/stock_out/index.php" class="nav-sub-link <?= $activePage === 'stock_out' ? 'active' : '' ?>">
+                <!-- Stock Operations (Unified Hub: Transfer, Adjustment, Stock Card) -->
+                <a href="<?= BASE_URL ?>views/stock_operations/index.php" class="nav-sub-link <?= in_array($activePage, ['stock_operations', 'stock_transfer', 'stock_adjustment', 'stock_card'], true) ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Outbound / Stock Out</span>
-                </a>
-                <!-- Stock Transfer -->
-                <a href="<?= BASE_URL ?>views/stock_transfer/index.php" class="nav-sub-link <?= $activePage === 'stock_transfer' ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Stock Transfer</span>
-                </a>
-                <!-- Stock Adjustment -->
-                <a href="<?= BASE_URL ?>views/stock_adjustment/index.php" class="nav-sub-link <?= $activePage === 'stock_adjustment' ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Stock Adjustment</span>
-                </a>
-                <!-- Stock Card -->
-                <a href="<?= BASE_URL ?>views/inventory/stock_card.php" class="nav-sub-link <?= $activePage === 'stock_card' ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Stock Card</span>
+                    <span>Stock Operations</span>
                 </a>
             </div>
         </div>
@@ -145,42 +128,16 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
                 </svg>
             </button>
             <div class="nav-sub-list">
-                <!-- Group 1: Inventory Reports -->
-                <span class="nav-sub-group-title">Inventory Reports</span>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=raw_materials" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'raw_materials') ? 'active' : '' ?>">
+                <!-- Group 1: Inventory Reports (Unified Hub) -->
+                <a href="<?= BASE_URL ?>views/reports/index.php" class="nav-sub-link <?= $isInventoryReportsActive ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Raw Materials Stock Report</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=finished_goods" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'finished_goods') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Finished Goods Stock Report</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=current_stock" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'current_stock') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Current Inventory Balance</span>
+                    <span>Inventory Reports</span>
                 </a>
 
-                <!-- Group 2: Transaction & Movement Reports -->
-                <span class="nav-sub-group-title">Transaction &amp; Movement Reports</span>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_movements" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_movements') ? 'active' : '' ?>">
+                <!-- Group 2: Transaction & Movement Reports (Unified Hub) -->
+                <a href="<?= BASE_URL ?>views/reports/stock_transactions.php" class="nav-sub-link <?= $isStockTransactionsActive ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Stock Movement Ledger Report</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_ins" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_ins') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Inbound Stock Receipts</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_outs" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_outs') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Outbound Stock Dispatches</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_transfers" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_transfers') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Inter-Branch Stock Transfers</span>
-                </a>
-                <a href="<?= BASE_URL ?>views/reports/index.php?type=stock_adjustments" class="nav-sub-link <?= ($isReportsActive && $currentReportType === 'stock_adjustments') ? 'active' : '' ?>">
-                    <span class="sub-bullet"></span>
-                    <span>Stock Adjustments &amp; Variances</span>
+                    <span>Stock Transaction Reports</span>
                 </a>
             </div>
         </div>

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * View: Stock Out Dispatch Ledger
  * StockPilot — Liquor Business Inventory Management System
@@ -7,6 +8,17 @@
 $pageTitle   = 'Stock Out Dispatch — StockPilot';
 $activePage  = 'stock_out';
 $activeGroup = 'inventory';
+
+// Forward browser navigation to the unified Inbound & Outbound page
+if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['stay_on_legacy'])) {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
+        $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
+        header("Location: {$projectRoot}/views/inbound_outbound/index.php?tab=outbound");
+        exit;
+    }
+}
 
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
@@ -22,35 +34,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
     } else {
         $sourceType        = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
-    $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
-    $itemId            = (int)($_POST['item_id'] ?? 0);
-    $quantity          = (float)($_POST['quantity'] ?? 0);
-    $remarks           = trim($_POST['remarks'] ?? '');
-    $sourceWhId        = (int)($currentWarehouseId ?: 1);
-    $userId            = (int)($currentUser['id'] ?? 1);
+        $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
+        $itemId            = (int)($_POST['item_id'] ?? 0);
+        $quantity          = (float)($_POST['quantity'] ?? 0);
+        $remarks           = trim($_POST['remarks'] ?? '');
+        $sourceWhId        = (int)($currentWarehouseId ?: 1);
+        $userId            = (int)($currentUser['id'] ?? 1);
 
-    if (empty($sourceReferenceNo)) {
-        $errorMessage = "Reference Number (Sales Order # or Material Request #) is required.";
-    } elseif ($itemId <= 0) {
-        $errorMessage = "Please select an item to dispatch.";
-    } elseif ($quantity <= 0) {
-        $errorMessage = "Quantity dispatched must be greater than zero.";
-    } else {
-        try {
-            $service = new StockService();
-            $res = $service->recordStockOut(
-                $sourceWhId,
-                $sourceType,
-                $sourceReferenceNo,
-                [['item_id' => $itemId, 'quantity' => $quantity]],
-                $userId,
-                $remarks ?: null
-            );
-            $successMessage = "Outbound stock dispatched successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
-        } catch (Exception $e) {
-            $errorMessage = "Stock Out failed: " . $e->getMessage();
+        if (empty($sourceReferenceNo)) {
+            $errorMessage = "Reference Number (Sales Order # or Material Request #) is required.";
+        } elseif ($itemId <= 0) {
+            $errorMessage = "Please select an item to dispatch.";
+        } elseif ($quantity <= 0) {
+            $errorMessage = "Quantity dispatched must be greater than zero.";
+        } else {
+            try {
+                $service = new StockService();
+                $res = $service->recordStockOut(
+                    $sourceWhId,
+                    $sourceType,
+                    $sourceReferenceNo,
+                    [['item_id' => $itemId, 'quantity' => $quantity]],
+                    $userId,
+                    $remarks ?: null
+                );
+                $successMessage = "Outbound stock dispatched successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
+            } catch (Exception $e) {
+                $errorMessage = "Stock Out failed: " . $e->getMessage();
+            }
         }
-    }
     }
 }
 
@@ -137,88 +149,100 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 <!-- Flash Alerts -->
 <?php if ($successMessage): ?>
     <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+        </svg>
         <span><?= htmlspecialchars($successMessage) ?></span>
     </div>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>
     <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
         <span><?= htmlspecialchars($errorMessage) ?></span>
     </div>
 <?php endif; ?>
 
 <style>
-.api-workflow-banner {
-    background: #FFFFFF;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 16px 20px;
-    margin-bottom: 22px;
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-.api-workflow-icon-out {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: #B91C1C;
-    background: #FEE2E2;
-}
-.api-tag-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: #F8FAFC;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 5px 11px;
-    font-size: 12px;
-    color: var(--panel-ink);
-}
-.badge-dest-production {
-    background: #FEF3C7;
-    color: #92400E;
-    border: 1px solid #FDE68A;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-dest-sales {
-    background: #EFF6FF;
-    color: #1D4ED8;
-    border: 1px solid #BFDBFE;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-dest-manual {
-    background: #F1F5F9;
-    color: #475569;
-    border: 1px solid #CBD5E1;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
+    .api-workflow-banner {
+        background: #FFFFFF;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px 20px;
+        margin-bottom: 22px;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .api-workflow-icon-out {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: #B91C1C;
+        background: #FEE2E2;
+    }
+
+    .api-tag-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #F8FAFC;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 11px;
+        font-size: 12px;
+        color: var(--panel-ink);
+    }
+
+    .badge-dest-production {
+        background: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #FDE68A;
+        font-weight: 700;
+        font-size: 11.5px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .badge-dest-sales {
+        background: #EFF6FF;
+        color: #1D4ED8;
+        border: 1px solid #BFDBFE;
+        font-weight: 700;
+        font-size: 11.5px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .badge-dest-manual {
+        background: #F1F5F9;
+        color: #475569;
+        border: 1px solid #CBD5E1;
+        font-weight: 700;
+        font-size: 11.5px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
 </style>
 <!-- KPI Cards -->
 <div class="stats-grid">
@@ -227,8 +251,8 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             <span class="stat-label">Total Outbound</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="7" y1="17" x2="17" y2="7"/>
-                    <polyline points="7 7 17 7 17 17"/>
+                    <line x1="7" y1="17" x2="17" y2="7" />
+                    <polyline points="7 7 17 7 17 17" />
                 </svg>
             </div>
         </div>
@@ -241,10 +265,10 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             <span class="stat-label">Sales (Finished Goods)</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="16" height="13" x="1" y="5" rx="2"/>
-                    <polygon points="17 8 20 8 23 11 23 18 17 18 17 8"/>
-                    <circle cx="5.5" cy="18.5" r="2.5"/>
-                    <circle cx="18.5" cy="18.5" r="2.5"/>
+                    <rect width="16" height="13" x="1" y="5" rx="2" />
+                    <polygon points="17 8 20 8 23 11 23 18 17 18 17 8" />
+                    <circle cx="5.5" cy="18.5" r="2.5" />
+                    <circle cx="18.5" cy="18.5" r="2.5" />
                 </svg>
             </div>
         </div>
@@ -257,9 +281,9 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             <span class="stat-label">Production (Raw Materials)</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-                    <polyline points="2 17 12 22 22 17"/>
-                    <polyline points="2 12 12 17 22 12"/>
+                    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                    <polyline points="2 17 12 22 22 17" />
+                    <polyline points="2 12 12 17 22 12" />
                 </svg>
             </div>
         </div>
@@ -273,15 +297,14 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
     <div class="card-header">
         <div>
             <h2 class="card-title">Outbound / Stock Out Dispatches</h2>
-            <p class="card-desc">Real-time log of stock releases requested through Production and Sales API integrations</p>
         </div>
         <div class="filter-group">
             <!-- Search Filter -->
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
                     </svg>
                 </span>
                 <input type="text" id="stockOutSearch" class="search-box" placeholder="Filter item, ref, SO/MR #..." onkeyup="filterStockOutTable()">
@@ -326,7 +349,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                         </td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($stockOuts as $row): 
+                    <?php foreach ($stockOuts as $row):
                         $lines = $linesByStockOut[(int)$row['stock_out_id']] ?? [];
                         $firstLine = $lines[0] ?? null;
                         $hasMultiple = count($lines) > 1;
@@ -345,12 +368,21 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                             <td>
                                 <?php if ($row['source_type'] === 'SALES_DELIVERY'): ?>
                                     <span class="badge-dest-sales">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="16" height="13" x="1" y="5" rx="2"/><polygon points="17 8 20 8 23 11 23 18 17 18 17 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                            <rect width="16" height="13" x="1" y="5" rx="2" />
+                                            <polygon points="17 8 20 8 23 11 23 18 17 18 17 8" />
+                                            <circle cx="5.5" cy="18.5" r="2.5" />
+                                            <circle cx="18.5" cy="18.5" r="2.5" />
+                                        </svg>
                                         Sales
                                     </span>
                                 <?php elseif ($row['source_type'] === 'MATERIAL_REQUEST'): ?>
                                     <span class="badge-dest-production">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/>    <polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                                            <polyline points="2 17 12 22 22 17" />
+                                            <polyline points="2 12 12 17 22 12" />
+                                        </svg>
                                         Production
                                     </span>
                                 <?php else: ?>
@@ -445,8 +477,8 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             </div>
             <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeOutDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
             </button>
         </div>
@@ -473,74 +505,78 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 </div>
 
 <script>
-const outLinesData = <?= json_encode($linesByStockOut) ?>;
+    const outLinesData = <?= json_encode($linesByStockOut) ?>;
 
-function openOutDetailModal(id, txnNo) {
-    document.getElementById('modalOutTitle').textContent = 'Dispatch: ' + txnNo;
-    const tbody = document.getElementById('modalOutTableBody');
-    tbody.innerHTML = '';
+    function openOutDetailModal(id, txnNo) {
+        document.getElementById('modalOutTitle').textContent = 'Dispatch: ' + txnNo;
+        const tbody = document.getElementById('modalOutTableBody');
+        tbody.innerHTML = '';
 
-    const lines = outLinesData[id] || [];
-    if (lines.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--gray); padding: 16px;">No line items found.</td></tr>';
-    } else {
-        lines.forEach(l => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
+        const lines = outLinesData[id] || [];
+        if (lines.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--gray); padding: 16px;">No line items found.</td></tr>';
+        } else {
+            lines.forEach(l => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
                 <td style="font-weight: 700; color: #B91C1C;">-${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
-            tbody.appendChild(tr);
+                tbody.appendChild(tr);
+            });
+        }
+
+        const modal = document.getElementById('stockOutModal');
+        modal.style.display = 'flex';
+    }
+
+    function closeOutDetailModal() {
+        document.getElementById('stockOutModal').style.display = 'none';
+    }
+
+    function filterStockOutTable() {
+        const term = document.getElementById('stockOutSearch').value.toLowerCase().trim();
+        const destFilter = document.getElementById('stockOutDestFilter').value;
+        const typeFilter = document.getElementById('stockOutTypeFilter').value;
+        const table = document.getElementById('stockOutTable');
+        const rows = table.querySelectorAll('tbody tr');
+
+        rows.forEach(row => {
+            if (row.querySelector('td[colspan]')) return;
+            const text = row.textContent.toLowerCase();
+            const rowDest = row.getAttribute('data-destination') || '';
+            const rowType = row.getAttribute('data-type') || '';
+
+            const matchesText = text.includes(term);
+            const matchesDest = !destFilter || rowDest === destFilter;
+            const matchesType = !typeFilter || rowType === typeFilter;
+
+            if (matchesText && matchesDest && matchesType) {
+                delete row.dataset.filteredOut;
+            } else {
+                row.dataset.filteredOut = 'true';
+            }
+        });
+
+        if (typeof table.paginationUpdate === 'function') {
+            table.paginationUpdate(true);
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>"']/g, function(m) {
+            return {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            } [m];
         });
     }
-
-    const modal = document.getElementById('stockOutModal');
-    modal.style.display = 'flex';
-}
-
-function closeOutDetailModal() {
-    document.getElementById('stockOutModal').style.display = 'none';
-}
-
-function filterStockOutTable() {
-    const term = document.getElementById('stockOutSearch').value.toLowerCase().trim();
-    const destFilter = document.getElementById('stockOutDestFilter').value;
-    const typeFilter = document.getElementById('stockOutTypeFilter').value;
-    const table = document.getElementById('stockOutTable');
-    const rows = table.querySelectorAll('tbody tr');
-
-    rows.forEach(row => {
-        if (row.querySelector('td[colspan]')) return;
-        const text = row.textContent.toLowerCase();
-        const rowDest = row.getAttribute('data-destination') || '';
-        const rowType = row.getAttribute('data-type') || '';
-
-        const matchesText = text.includes(term);
-        const matchesDest = !destFilter || rowDest === destFilter;
-        const matchesType = !typeFilter || rowType === typeFilter;
-
-        if (matchesText && matchesDest && matchesType) {
-            delete row.dataset.filteredOut;
-        } else {
-            row.dataset.filteredOut = 'true';
-        }
-    });
-
-    if (typeof table.paginationUpdate === 'function') {
-        table.paginationUpdate(true);
-    }
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-    });
-}
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
-
-

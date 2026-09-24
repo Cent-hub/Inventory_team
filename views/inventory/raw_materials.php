@@ -72,7 +72,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
         <p class="page-subtitle">Raw materials inventory for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
     </div>
     <div class="header-actions">
-        <a href="<?= BASE_URL ?>views/stock_in/index.php" class="btn btn-primary">
+        <a href="<?= BASE_URL ?>views/inbound_outbound/index.php?tab=inbound" class="btn btn-primary">
             <!-- Lucide PlusCircle Icon -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/>
@@ -88,7 +88,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
 <div class="stats-grid">
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Raw Material SKUs</span>
+            <span class="stat-label">Raw Material</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>

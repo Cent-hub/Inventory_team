@@ -8,6 +8,17 @@ $pageTitle   = 'Stock Adjustment — StockPilot';
 $activePage  = 'stock_adjustment';
 $activeGroup = 'inventory';
 
+// Forward browser navigation to the unified Stock Operations hub
+if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['stay_on_legacy'])) {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
+        $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
+        header("Location: {$projectRoot}/views/stock_operations/index.php?tab=adjustment");
+        exit;
+    }
+}
+
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
@@ -292,22 +303,7 @@ foreach ($adjustments as $a) {
         </div>
         <div class="stat-value"><?= $totalBadProducts ?></div>
         <div class="stat-meta">Damaged / spoiled / broken units</div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-label">Approved Net Variance</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: <?= $netVariance >= 0 ? '#15803D' : '#B91C1C' ?>; background: <?= $netVariance >= 0 ? '#DCFCE7' : '#FEE2E2' ?>;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="1" x2="12" y2="23"/>
-                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                </svg>
-            </div>
         </div>
-        <div class="stat-value" style="color: <?= $netVariance >= 0 ? '#15803D' : '#B91C1C' ?>;">
-            <?= ($netVariance >= 0 ? '+' : '') . formatQty($netVariance) ?>
-        </div>
-        <div class="stat-meta">Cumulative count adjustment diff</div>
     </div>
 </div>
 

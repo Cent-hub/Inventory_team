@@ -8,6 +8,17 @@ $pageTitle   = 'Stock In Receiving — StockPilot';
 $activePage  = 'stock_in';
 $activeGroup = 'inventory';
 
+// Forward browser navigation to the unified Inbound & Outbound page
+if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['stay_on_legacy'])) {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
+        $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
+        header("Location: {$projectRoot}/views/inbound_outbound/index.php?tab=inbound");
+        exit;
+    }
+}
+
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';

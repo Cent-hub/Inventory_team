@@ -138,7 +138,6 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 <div class="page-header">
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
-        <p class="page-subtitle">Central monitoring and integration for Procurement inbounds, Warehouse inventory, and Production outputs</p>
     </div>
     <div class="header-actions">
         <a href="<?= BASE_URL ?>views/inventory/raw_materials.php" class="btn btn-secondary">
@@ -156,7 +155,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </svg>
             <span>Finished Goods</span>
         </a>
-        <a href="<?= BASE_URL ?>views/stock_in/index.php" class="btn btn-primary">
+        <a href="<?= BASE_URL ?>views/inbound_outbound/index.php?tab=inbound" class="btn btn-primary">
             <!-- Lucide ArrowDownLeft Icon -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="17" y1="7" x2="7" y2="17"/>
@@ -275,11 +274,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
     <div class="card-header">
         <div>
             <h2 class="card-title">Recent Inventory Activity</h2>
-            <p class="card-desc">Chronological ledger activity from Procurement receipts, Production, and Sales</p>
         </div>
-        <a href="<?= BASE_URL ?>views/inventory/movement.php" class="btn btn-secondary" style="height: 32px; padding: 0 12px; font-size: 12px;">
-            <span>View Full Ledger</span>
-        </a>
     </div>
     <div class="table-responsive">
         <table id="recentActivityTable">
@@ -347,7 +342,6 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
     <div class="card-header">
         <div>
             <h2 class="card-title">Warehouse Inventory Stock Snapshot</h2>
-            <p class="card-desc">Current physical quantities recorded across all storage facilities</p>
         </div>
         <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
@@ -363,7 +357,6 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
         <table id="dashStockTable">
             <thead>
                 <tr>
-                    <th>Facility</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Type</th>

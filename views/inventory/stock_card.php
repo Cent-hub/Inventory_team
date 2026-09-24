@@ -8,6 +8,18 @@ $pageTitle   = 'Stock Card — StockPilot';
 $activePage  = 'stock_card';
 $activeGroup = 'inventory';
 
+// Forward browser navigation to the unified Stock Operations hub
+if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
+    if (!isset($_GET['stay_on_legacy'])) {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
+        $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
+        $qs = !empty($_SERVER['QUERY_STRING']) ? ('&' . $_SERVER['QUERY_STRING']) : '';
+        header("Location: {$projectRoot}/views/stock_operations/index.php?tab=stock_card{$qs}");
+        exit;
+    }
+}
+
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
