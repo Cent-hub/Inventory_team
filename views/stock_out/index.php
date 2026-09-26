@@ -36,19 +36,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $sourceType        = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
         $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
         $itemId            = (int)($_POST['item_id'] ?? 0);
-        $quantity          = (float)($_POST['quantity'] ?? 0);
+        $rawQuantity       = $_POST['quantity'] ?? null;
         $remarks           = trim($_POST['remarks'] ?? '');
         $sourceWhId        = (int)($currentWarehouseId ?: 1);
         $userId            = (int)($currentUser['id'] ?? 1);
 
-        if (empty($sourceReferenceNo)) {
+        if (!in_array($sourceType, StockService::VALID_STOCK_OUT_SOURCES, true)) {
+            $errorMessage = "Invalid source_type '{$sourceType}'.";
+        } elseif (empty($sourceReferenceNo)) {
             $errorMessage = "Reference Number (Sales Order # or Material Request #) is required.";
+        } elseif (mb_strlen($sourceReferenceNo) > 100) {
+            $errorMessage = "Reference Number cannot exceed 100 characters.";
         } elseif ($itemId <= 0) {
             $errorMessage = "Please select an item to dispatch.";
-        } elseif ($quantity <= 0) {
-            $errorMessage = "Quantity dispatched must be greater than zero.";
         } else {
             try {
+                $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity dispatched');
                 $service = new StockService();
                 $res = $service->recordStockOut(
                     $sourceWhId,

@@ -29,7 +29,7 @@ $payload = getRequestJson();
 $warehouseId   = (int)($payload['warehouse_id'] ?? 0);
 $itemId        = (int)($payload['item_id'] ?? 0);
 $conditionType = trim($payload['condition_type'] ?? 'damaged');
-$quantity      = (float)($payload['quantity'] ?? 0);
+$rawQuantity   = $payload['quantity'] ?? null;
 $reason        = trim($payload['reason'] ?? '');
 
 if ($warehouseId <= 0) {
@@ -46,10 +46,10 @@ if ($itemId <= 0) {
     ], 400);
 }
 
-if ($quantity <= 0) {
+if ($rawQuantity === null || $rawQuantity === '' || is_bool($rawQuantity) || is_array($rawQuantity) || !is_numeric($rawQuantity) || (float)$rawQuantity <= 0) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Validation Error: quantity must be greater than zero.'
+        'error'   => 'Validation Error: quantity must be a valid number greater than zero.'
     ], 400);
 }
 
@@ -60,7 +60,15 @@ if (empty($reason)) {
     ], 400);
 }
 
+if (mb_strlen($reason) > 255) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: reason cannot exceed 255 characters.'
+    ], 400);
+}
+
 try {
+    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity');
     $service = new StockService();
     $result = $service->recordBadProduct(
         $warehouseId,
@@ -87,9 +95,11 @@ try {
         'success' => false,
         'error'   => $e->getMessage()
     ], 422);
+} catch (PDOException $e) {
+    handleDbException($e);
 } catch (Exception $e) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Internal server error occurred: ' . $e->getMessage()
+        'error'   => 'Internal server error occurred.'
     ], 500);
 }

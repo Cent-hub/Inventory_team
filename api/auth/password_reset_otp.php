@@ -1,13 +1,13 @@
 <?php
 /**
  * API: Password Reset with 6-Digit OTP Simulation
- * POST /api/password_reset_otp.php
+ * POST /api/auth/password_reset_otp.php
  */
 
 header('Content-Type: application/json; charset=UTF-8');
 
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../controllers/AuthController.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../controllers/AuthController.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     @session_start();

@@ -53,9 +53,11 @@ try {
         'success' => false,
         'error'   => $e->getMessage()
     ], 422);
+} catch (PDOException $e) {
+    handleDbException($e);
 } catch (Exception $e) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Internal server error occurred: ' . $e->getMessage()
+        'error'   => 'Internal server error occurred.'
     ], 500);
 }

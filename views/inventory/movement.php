@@ -21,8 +21,15 @@ $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
 $movementType = isset($_GET['movement_type']) ? trim($_GET['movement_type']) : '';
 $warehouseId  = $currentWarehouseId;
 $itemType     = isset($_GET['item_type']) ? trim($_GET['item_type']) : '';
-$startDate    = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
-$endDate      = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+$rawEndDate   = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$dtStart      = DateTime::createFromFormat('Y-m-d', $rawStartDate);
+$dtEnd        = DateTime::createFromFormat('Y-m-d', $rawEndDate);
+$startDate    = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : '';
+$endDate      = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : '';
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+    [$startDate, $endDate] = [$endDate, $startDate];
+}
 
 // Build Query matching exact MySQL team_inventory schema strictly for assigned warehouse
 $sql = "

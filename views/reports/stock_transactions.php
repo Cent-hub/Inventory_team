@@ -36,8 +36,15 @@ $assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse :
 $warehouses = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Filters
-$startDate    = isset($_GET['start_date']) && !empty($_GET['start_date']) ? trim($_GET['start_date']) : date('Y-m-01');
-$endDate      = isset($_GET['end_date']) && !empty($_GET['end_date']) ? trim($_GET['end_date']) : date('Y-m-d');
+$rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+$rawEndDate   = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$dtStart      = DateTime::createFromFormat('Y-m-d', $rawStartDate);
+$dtEnd        = DateTime::createFromFormat('Y-m-d', $rawEndDate);
+$startDate    = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : date('Y-m-01');
+$endDate      = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : date('Y-m-d');
+if ($startDate > $endDate) {
+    [$startDate, $endDate] = [$endDate, $startDate];
+}
 $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
 
 // Active Tab Mapping

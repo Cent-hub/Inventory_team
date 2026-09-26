@@ -8,10 +8,102 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/AccountabilityService.php';
 
 class StockService {
+    public const MAX_DECIMAL_QUANTITY = 99999999999.999;
+    public const DISCRETE_UNITS = [
+        'pcs', 'pc', 'piece', 'pieces',
+        'bottle', 'bottles',
+        'box', 'boxes',
+        'case', 'cases',
+        'pack', 'packs',
+        'can', 'cans'
+    ];
+    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RETURN', 'MANUAL'];
+    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'MANUAL'];
+
     private PDO $pdo;
 
     public function __construct() {
         $this->pdo = Database::getConnection();
+    }
+
+    /**
+     * Strictly validate a positive quantity (> 0), enforcing numeric format,
+     * DECIMAL(14,3) bounds, max 3 decimal places, and whole numbers for discrete units.
+     */
+    public static function validatePositiveQuantity($rawQty, ?string $unit = null, string $fieldLabel = 'quantity'): float {
+        if ($rawQty === null || $rawQty === '' || is_bool($rawQty) || is_array($rawQty) || !is_numeric($rawQty)) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: a valid numeric value greater than 0 is required.");
+        }
+        $qty = (float)$rawQty;
+        if (is_nan($qty) || is_infinite($qty) || $qty <= 0) {
+            throw new InvalidArgumentException("Invalid item ID or quantity (must be > 0).");
+        }
+        if ($qty < 0.001) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: minimum allowed positive quantity is 0.001.");
+        }
+        if ($qty > self::MAX_DECIMAL_QUANTITY) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: exceeds maximum database limit (99,999,999,999.999).");
+        }
+        if (abs($qty - round($qty, 3)) > 0.000001) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: maximum of 3 decimal places is allowed.");
+        }
+        if ($unit !== null && in_array(strtolower(trim($unit)), self::DISCRETE_UNITS, true)) {
+            if (abs($qty - round($qty)) > 0.000001) {
+                throw new InvalidArgumentException(
+                    "Fractional quantity ({$qty}) is not allowed for discrete unit '{$unit}'. Quantity must be a whole number."
+                );
+            }
+        }
+        return round($qty, 3);
+    }
+
+    /**
+     * Strictly validate a non-negative quantity (>= 0) for physical stock counts,
+     * enforcing explicit numeric input, DECIMAL(14,3) bounds, and discrete units.
+     */
+    public static function validateNonNegativeQuantity($rawQty, ?string $unit = null, string $fieldLabel = 'adjusted_quantity'): float {
+        if ($rawQty === null || $rawQty === '' || is_bool($rawQty) || is_array($rawQty) || !is_numeric($rawQty)) {
+            throw new InvalidArgumentException("A valid numeric {$fieldLabel} is required.");
+        }
+        $qty = (float)$rawQty;
+        if (is_nan($qty) || is_infinite($qty)) {
+            throw new InvalidArgumentException("Invalid numeric value for {$fieldLabel}.");
+        }
+        if ($qty < 0) {
+            throw new InvalidArgumentException("Physical adjusted count cannot be negative.");
+        }
+        if ($qty > 0 && $qty < 0.001) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: non-zero quantity must be at least 0.001.");
+        }
+        if ($qty > self::MAX_DECIMAL_QUANTITY) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: exceeds maximum database limit (99,999,999,999.999).");
+        }
+        if (abs($qty - round($qty, 3)) > 0.000001) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel}: maximum of 3 decimal places is allowed.");
+        }
+        if ($unit !== null && in_array(strtolower(trim($unit)), self::DISCRETE_UNITS, true)) {
+            if (abs($qty - round($qty)) > 0.000001) {
+                throw new InvalidArgumentException(
+                    "Fractional quantity ({$qty}) is not allowed for discrete unit '{$unit}'. Quantity must be a whole number."
+                );
+            }
+        }
+        return round($qty, 3);
+    }
+
+    /**
+     * Strictly validate a YYYY-MM-DD date string and ensure it is not in the future.
+     */
+    public static function validateDateNotFuture(string $dateStr, string $fieldLabel = 'date'): string {
+        $dateStr = trim($dateStr);
+        $dt = DateTime::createFromFormat('Y-m-d', $dateStr);
+        if (!$dt || $dt->format('Y-m-d') !== $dateStr) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel} format '{$dateStr}'. Expected YYYY-MM-DD.");
+        }
+        if ($dateStr > date('Y-m-d')) {
+            throw new InvalidArgumentException("Invalid {$fieldLabel} '{$dateStr}': future dates are not allowed.");
+        }
+        return $dateStr;
     }
 
     /**
@@ -27,6 +119,14 @@ class StockService {
     ): array {
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for Stock IN.");
+        }
+        if (!in_array($sourceType, self::VALID_STOCK_IN_SOURCES, true)) {
+            throw new InvalidArgumentException(
+                "Invalid source_type '{$sourceType}'. Allowed values: " . implode(', ', self::VALID_STOCK_IN_SOURCES)
+            );
+        }
+        if ($sourceReferenceNo !== null && mb_strlen(trim($sourceReferenceNo)) > 100) {
+            throw new InvalidArgumentException("source_reference_no cannot exceed 100 characters.");
         }
 
         // Validate warehouse exists and is active
@@ -101,19 +201,33 @@ class StockService {
                 FROM items WHERE item_id = ?
             ");
 
+            $seenItemIds = [];
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
-                $qty = (float)($entry['quantity'] ?? 0);
+                $rawItemId = $entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? null;
+                $rawQty = $entry['quantity'] ?? null;
 
-                if ($itemId <= 0 || $qty <= 0) {
+                $itemId = (is_numeric($rawItemId) && (int)$rawItemId == $rawItemId) ? (int)$rawItemId : 0;
+                $qty = self::validatePositiveQuantity($rawQty, null, 'quantity');
+
+                if ($itemId <= 0) {
                     throw new InvalidArgumentException("Invalid item ID or quantity (must be > 0).");
                 }
+
+                if (isset($seenItemIds[$itemId])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate item ID {$itemId} in Stock IN request. Combine quantities into a single line item."
+                    );
+                }
+                $seenItemIds[$itemId] = true;
 
                 $stmtCheckItem->execute([$itemId]);
                 $itemInfo = $stmtCheckItem->fetch();
                 if (!$itemInfo || $itemInfo['status'] !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
+
+                // Validate discrete unit constraint against the item's unit
+                $qty = self::validatePositiveQuantity($rawQty, $itemInfo['unit'], "quantity for item '{$itemInfo['item_code']}'");
 
                 // ERP Business rule: Team 1 Procurement Purchase Orders can ONLY receive raw materials
                 if ($sourceType === 'PURCHASE_ORDER' && $itemInfo['item_type'] !== 'raw_material') {
@@ -198,6 +312,14 @@ class StockService {
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for Stock OUT.");
         }
+        if (!in_array($sourceType, self::VALID_STOCK_OUT_SOURCES, true)) {
+            throw new InvalidArgumentException(
+                "Invalid source_type '{$sourceType}'. Allowed values: " . implode(', ', self::VALID_STOCK_OUT_SOURCES)
+            );
+        }
+        if ($sourceReferenceNo !== null && mb_strlen(trim($sourceReferenceNo)) > 100) {
+            throw new InvalidArgumentException("source_reference_no cannot exceed 100 characters.");
+        }
 
         // Validate warehouse
         $stmtWh = $this->pdo->prepare("SELECT warehouse_name FROM warehouses WHERE warehouse_id = ? AND status = 'active'");
@@ -241,20 +363,34 @@ class StockService {
             ");
 
             $validatedEntries = [];
+            $seenItemIds = [];
 
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
-                $qty = (float)($entry['quantity'] ?? 0);
+                $rawItemId = $entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? null;
+                $rawQty = $entry['quantity'] ?? null;
 
-                if ($itemId <= 0 || $qty <= 0) {
+                $itemId = (is_numeric($rawItemId) && (int)$rawItemId == $rawItemId) ? (int)$rawItemId : 0;
+                $qty = self::validatePositiveQuantity($rawQty, null, 'quantity');
+
+                if ($itemId <= 0) {
                     throw new InvalidArgumentException("Invalid item ID or quantity (must be > 0).");
                 }
+
+                if (isset($seenItemIds[$itemId])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate item ID {$itemId} in Stock OUT request. Combine quantities into a single line item."
+                    );
+                }
+                $seenItemIds[$itemId] = true;
 
                 $stmtCheckItem->execute([$itemId]);
                 $itemInfo = $stmtCheckItem->fetch();
                 if (!$itemInfo || $itemInfo['status'] !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
+
+                // Validate discrete unit constraint against the item's unit
+                $qty = self::validatePositiveQuantity($rawQty, $itemInfo['unit'], "quantity for item '{$itemInfo['item_code']}'");
 
                 // ERP Business rule: Team 3 Material Request must consume raw materials
                 if ($sourceType === 'MATERIAL_REQUEST' && $itemInfo['item_type'] !== 'raw_material') {
@@ -621,8 +757,12 @@ class StockService {
         if ($stockInId <= 0) {
             throw new InvalidArgumentException("Invalid stock_in_id.");
         }
-        if (empty(trim($cancellationReason))) {
+        $cancellationReason = trim($cancellationReason);
+        if (empty($cancellationReason)) {
             throw new InvalidArgumentException("Cancellation reason is required.");
+        }
+        if (mb_strlen($cancellationReason) > 255) {
+            throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -737,8 +877,12 @@ class StockService {
         if ($stockOutId <= 0) {
             throw new InvalidArgumentException("Invalid stock_out_id.");
         }
-        if (empty(trim($cancellationReason))) {
+        $cancellationReason = trim($cancellationReason);
+        if (empty($cancellationReason)) {
             throw new InvalidArgumentException("Cancellation reason is required.");
+        }
+        if (mb_strlen($cancellationReason) > 255) {
+            throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -894,20 +1038,34 @@ class StockService {
             ");
 
             $validatedEntries = [];
+            $seenItemIds = [];
 
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? 0);
-                $qty = (float)($entry['quantity'] ?? 0);
+                $rawItemId = $entry['item_id'] ?? $entry['material_id'] ?? $entry['product_id'] ?? null;
+                $rawQty = $entry['quantity'] ?? null;
 
-                if ($itemId <= 0 || $qty <= 0) {
+                $itemId = (is_numeric($rawItemId) && (int)$rawItemId == $rawItemId) ? (int)$rawItemId : 0;
+                $qty = self::validatePositiveQuantity($rawQty, null, 'quantity');
+
+                if ($itemId <= 0) {
                     throw new InvalidArgumentException("Invalid item ID or quantity (must be > 0).");
                 }
+
+                if (isset($seenItemIds[$itemId])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate item ID {$itemId} in Stock Transfer request. Combine quantities into a single line item."
+                    );
+                }
+                $seenItemIds[$itemId] = true;
 
                 $stmtCheckItem->execute([$itemId]);
                 $itemInfo = $stmtCheckItem->fetch();
                 if (!$itemInfo || $itemInfo['status'] !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
+
+                // Validate discrete unit constraint against the item's unit
+                $qty = self::validatePositiveQuantity($rawQty, $itemInfo['unit'], "quantity for item '{$itemInfo['item_code']}'");
 
                 $stmtLock->execute([$itemId, $sourceWhId]);
                 $currentStock = $stmtLock->fetchColumn();
@@ -997,7 +1155,7 @@ class StockService {
                     'warehouse_id'             => $sourceWhId,
                     'destination_warehouse_id' => $destWhId,
                     'reference_number'         => $txnNumber,
-                    'notes'                    => $remarks ?: "Transfer initiated from {$srcWh['warehouse_name']} to {$destWh['warehouse_name']}"
+                    'notes'                    => $remarks ?: "Transfer initiated from {$whMap[$sourceWhId]['warehouse_name']} to {$whMap[$destWhId]['warehouse_name']}"
                 ]);
             }
 
@@ -1197,8 +1355,12 @@ class StockService {
         if ($stockTransferId <= 0) {
             throw new InvalidArgumentException("Invalid stock_transfer_id.");
         }
-        if (empty(trim($cancellationReason))) {
+        $cancellationReason = trim($cancellationReason);
+        if (empty($cancellationReason)) {
             throw new InvalidArgumentException("Cancellation reason is required.");
+        }
+        if (mb_strlen($cancellationReason) > 255) {
+            throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -1598,9 +1760,15 @@ class StockService {
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for Stock Adjustment.");
         }
-        if (empty(trim($reason))) {
+        $reason = trim($reason);
+        if (empty($reason)) {
             throw new InvalidArgumentException("A valid reason or reconciliation note is required.");
         }
+        if (mb_strlen($reason) > 255) {
+            throw new InvalidArgumentException("Adjustment reason cannot exceed 255 characters.");
+        }
+
+        $adjustmentDate = self::validateDateNotFuture($adjustmentDate, 'adjustment_date');
 
         // Warehouse authorization check
         if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
@@ -1628,7 +1796,7 @@ class StockService {
                     reason, status, created_by
                 ) VALUES (?, ?, ?, ?, 'pending', ?)
             ");
-            $stmtAdj->execute([$txnNumber, $warehouseId, $adjustmentDate, trim($reason), $userId]);
+            $stmtAdj->execute([$txnNumber, $warehouseId, $adjustmentDate, $reason, $userId]);
             $adjId = (int)$this->pdo->lastInsertId();
 
             $stmtCheckItem = $this->pdo->prepare("
@@ -1644,16 +1812,25 @@ class StockService {
             ");
 
             $processedItems = [];
+            $seenItemIds = [];
+
             foreach ($items as $entry) {
-                $itemId = (int)($entry['item_id'] ?? 0);
-                $adjustedQty = (float)($entry['adjusted_quantity'] ?? $entry['quantity'] ?? 0);
+                $rawItemId = $entry['item_id'] ?? null;
+                $itemId = (is_numeric($rawItemId) && (int)$rawItemId == $rawItemId) ? (int)$rawItemId : 0;
 
                 if ($itemId <= 0) {
                     throw new InvalidArgumentException("Invalid item ID provided in adjustment.");
                 }
-                if ($adjustedQty < 0) {
-                    throw new InvalidArgumentException("Physical adjusted count cannot be negative.");
+
+                if (isset($seenItemIds[$itemId])) {
+                    throw new InvalidArgumentException(
+                        "Duplicate item ID {$itemId} in Stock Adjustment request. Each item may only appear once per adjustment."
+                    );
                 }
+                $seenItemIds[$itemId] = true;
+
+                $rawAdjustedQty = $entry['adjusted_quantity'] ?? $entry['quantity'] ?? null;
+                $adjustedQty = self::validateNonNegativeQuantity($rawAdjustedQty, null, 'adjusted_quantity');
 
                 $stmtCheckItem->execute([$itemId]);
                 $itemInfo = $stmtCheckItem->fetch();
@@ -1661,13 +1838,27 @@ class StockService {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
 
+                // Validate discrete unit constraint against the item's unit
+                $adjustedQty = self::validateNonNegativeQuantity(
+                    $rawAdjustedQty,
+                    $itemInfo['unit'],
+                    "adjusted_quantity for item '{$itemInfo['item_code']}'"
+                );
+
                 // Lock inventory row and fetch current quantity
                 $stmtLockInv->execute([$itemId, $warehouseId]);
                 $currentStock = $stmtLockInv->fetchColumn();
                 $previousQty = ($currentStock !== false) ? (float)$currentStock : 0.000;
 
+                // Reject no-op adjustments where physical count equals current system balance
+                if (abs($adjustedQty - $previousQty) < 0.0001) {
+                    throw new InvalidArgumentException(
+                        "No-op stock adjustment rejected for item '{$itemInfo['item_code']}': physical adjusted count ({$adjustedQty}) is identical to current system stock ({$previousQty})."
+                    );
+                }
+
                 $stmtLine->execute([$adjId, $itemId, $previousQty, $adjustedQty]);
-                $diff = $adjustedQty - $previousQty;
+                $diff = round($adjustedQty - $previousQty, 3);
 
                 $processedItems[] = [
                     'item_id'           => $itemId,
@@ -1717,6 +1908,10 @@ class StockService {
      * Approve a pending Stock Adjustment and post ledger movements to adjust inventory
      */
     public function approveStockAdjustment(int $adjustmentId, int $userId, ?array $authUser = null): array {
+        if ($adjustmentId <= 0) {
+            throw new InvalidArgumentException("Invalid stock_adjustment_id.");
+        }
+
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare("
@@ -1759,6 +1954,10 @@ class StockService {
             $stmtLines->execute([$adjustmentId]);
             $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
 
+            $stmtLockInv = $this->pdo->prepare("
+                SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ? FOR UPDATE
+            ");
+
             $stmtMove = $this->pdo->prepare("
                 INSERT INTO stock_movements (
                     item_id, warehouse_id, movement_type, stock_adjustment_id,
@@ -1767,7 +1966,25 @@ class StockService {
             ");
 
             foreach ($lines as $line) {
+                // Lock live inventory row and detect stale previous_quantity race condition
+                $stmtLockInv->execute([$line['item_id'], $adj['warehouse_id']]);
+                $liveStockRaw = $stmtLockInv->fetchColumn();
+                $liveStock = ($liveStockRaw !== false) ? (float)$liveStockRaw : 0.000;
+                $recordedPrev = (float)$line['previous_quantity'];
                 $diff = (float)$line['difference'];
+
+                if (abs($liveStock - $recordedPrev) >= 0.001) {
+                    throw new DomainException(
+                        "Stale stock adjustment error for item '{$line['item_code']}': System inventory changed since this adjustment was requested (Recorded snapshot: {$recordedPrev}, Current live stock: {$liveStock}). Please reject or cancel this adjustment and submit a new physical count."
+                    );
+                }
+
+                if (($liveStock + $diff) < -0.0001) {
+                    throw new DomainException(
+                        "Insufficient inventory to approve shortage adjustment for item '{$line['item_code']}': Current stock is {$liveStock}, cannot deduct " . abs($diff) . "."
+                    );
+                }
+
                 if ($diff > 0) {
                     // Surplus: quantity_in = diff, quantity_out = 0
                     $stmtMove->execute([
@@ -1823,8 +2040,15 @@ class StockService {
      * Reject a pending Stock Adjustment (No stock movements generated)
      */
     public function rejectStockAdjustment(int $adjustmentId, int $userId, string $reason, ?array $authUser = null): array {
-        if (empty(trim($reason))) {
+        if ($adjustmentId <= 0) {
+            throw new InvalidArgumentException("Invalid stock_adjustment_id.");
+        }
+        $reason = trim($reason);
+        if (empty($reason)) {
             throw new InvalidArgumentException("A reason is required when rejecting a stock adjustment.");
+        }
+        if (mb_strlen($reason) > 255) {
+            throw new InvalidArgumentException("Rejection reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -1856,7 +2080,7 @@ class StockService {
                 SET status = 'rejected', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
                 WHERE stock_adjustment_id = ?
             ");
-            $stmtReject->execute([$userId, trim($reason), $adjustmentId]);
+            $stmtReject->execute([$userId, $reason, $adjustmentId]);
 
             AccountabilityService::log([
                 'user_id'          => $userId,
@@ -1865,7 +2089,7 @@ class StockService {
                 'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                 'warehouse_id'     => (int)$adj['warehouse_id'],
                 'reference_number' => $adj['transaction_number'],
-                'notes'            => "Adjustment rejected: " . trim($reason)
+                'notes'            => "Adjustment rejected: " . $reason
             ]);
 
             $this->pdo->commit();
@@ -1888,8 +2112,15 @@ class StockService {
      * Cancel a Stock Adjustment (Pending is cancelled cleanly; Approved reverses movements via MySQL trigger)
      */
     public function cancelStockAdjustment(int $adjustmentId, string $reason, int $userId, ?array $authUser = null): array {
-        if (empty(trim($reason))) {
+        if ($adjustmentId <= 0) {
+            throw new InvalidArgumentException("Invalid stock_adjustment_id.");
+        }
+        $reason = trim($reason);
+        if (empty($reason)) {
             throw new InvalidArgumentException("A reason is required to cancel a stock adjustment.");
+        }
+        if (mb_strlen($reason) > 255) {
+            throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -1926,7 +2157,7 @@ class StockService {
                 SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
                 WHERE stock_adjustment_id = ?
             ");
-            $stmtCancel->execute([$userId, trim($reason), $adjustmentId]);
+            $stmtCancel->execute([$userId, $reason, $adjustmentId]);
 
             AccountabilityService::log([
                 'user_id'          => $userId,
@@ -1935,7 +2166,7 @@ class StockService {
                 'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                 'warehouse_id'     => (int)$adj['warehouse_id'],
                 'reference_number' => $adj['transaction_number'],
-                'notes'            => "Adjustment cancelled: " . trim($reason)
+                'notes'            => "Adjustment cancelled: " . $reason
             ]);
 
             $this->pdo->commit();
@@ -2010,11 +2241,20 @@ class StockService {
         int $userId,
         ?array $authUser = null
     ): array {
+        if ($warehouseId <= 0 || $itemId <= 0) {
+            throw new InvalidArgumentException("Valid warehouse_id and item_id are required.");
+        }
         if ($quantity <= 0) {
             throw new InvalidArgumentException("Quantity of damaged goods must be greater than zero.");
         }
-        if (empty(trim($reason))) {
+        $quantity = self::validatePositiveQuantity($quantity, null, 'quantity');
+
+        $reason = trim($reason);
+        if (empty($reason)) {
             throw new InvalidArgumentException("A detailed reason or defect note is required.");
+        }
+        if (mb_strlen($reason) > 255) {
+            throw new InvalidArgumentException("Defect reason cannot exceed 255 characters.");
         }
 
         $validConditions = ['damaged', 'defective', 'expired', 'spoiled', 'unusable', 'other'];
@@ -2030,6 +2270,13 @@ class StockService {
             }
         }
 
+        // Validate warehouse exists and is active
+        $stmtWh = $this->pdo->prepare("SELECT warehouse_name FROM warehouses WHERE warehouse_id = ? AND status = 'active'");
+        $stmtWh->execute([$warehouseId]);
+        if (!$stmtWh->fetch()) {
+            throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
+        }
+
         $this->pdo->beginTransaction();
         try {
             // Verify item
@@ -2039,6 +2286,9 @@ class StockService {
             if (!$item || $item['status'] !== 'active') {
                 throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
             }
+
+            // Validate discrete unit constraint against the item's unit
+            $quantity = self::validatePositiveQuantity($quantity, $item['unit'], "quantity for item '{$item['item_code']}'");
 
             // Lock inventory row and check current stock
             $stmtLock = $this->pdo->prepare("
@@ -2068,7 +2318,7 @@ class StockService {
                 $warehouseId,
                 strtolower($conditionType),
                 $quantity,
-                trim($reason),
+                $reason,
                 $userId
             ]);
             $badProductId = (int)$this->pdo->lastInsertId();
@@ -2082,7 +2332,7 @@ class StockService {
                 'quantity'         => $quantity,
                 'warehouse_id'     => $warehouseId,
                 'reference_number' => $bpNumber,
-                'notes'            => "Defect write-off: [{$conditionType}] " . trim($reason)
+                'notes'            => "Defect write-off: [{$conditionType}] " . $reason
             ]);
 
             $this->pdo->commit();
@@ -2111,8 +2361,15 @@ class StockService {
      * Cancel a Bad Product report (Restores deducted stock via MySQL trg_bad_products_after_update)
      */
     public function cancelBadProduct(int $badProductId, string $reason, int $userId, ?array $authUser = null): array {
-        if (empty(trim($reason))) {
+        if ($badProductId <= 0) {
+            throw new InvalidArgumentException("Invalid bad_product_id.");
+        }
+        $reason = trim($reason);
+        if (empty($reason)) {
             throw new InvalidArgumentException("A reason is required to cancel a damaged product write-off.");
+        }
+        if (mb_strlen($reason) > 255) {
+            throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
         $this->pdo->beginTransaction();
@@ -2145,7 +2402,7 @@ class StockService {
                 SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW(), cancellation_reason = ?
                 WHERE bad_product_id = ?
             ");
-            $stmtCancel->execute([$userId, trim($reason), $badProductId]);
+            $stmtCancel->execute([$userId, $reason, $badProductId]);
 
             AccountabilityService::log([
                 'user_id'          => $userId,
@@ -2156,7 +2413,7 @@ class StockService {
                 'quantity'         => (float)$bp['quantity'],
                 'warehouse_id'     => (int)$bp['warehouse_id'],
                 'reference_number' => $bp['bad_product_number'],
-                'notes'            => "Defect write-off cancelled: " . trim($reason)
+                'notes'            => "Defect write-off cancelled: " . $reason
             ]);
 
             $this->pdo->commit();

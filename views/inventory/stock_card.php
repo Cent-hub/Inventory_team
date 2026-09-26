@@ -48,8 +48,15 @@ if (empty($items)) {
 $selectedItemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : ($items[0]['item_id'] ?? 0);
 $selectedWhId   = $currentWarehouseId;
 $movementType   = isset($_GET['movement_type']) ? trim($_GET['movement_type']) : '';
-$startDate      = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
-$endDate        = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$rawStartDate   = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+$rawEndDate     = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$dtStart        = DateTime::createFromFormat('Y-m-d', $rawStartDate);
+$dtEnd          = DateTime::createFromFormat('Y-m-d', $rawEndDate);
+$startDate      = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : '';
+$endDate        = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : '';
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+    [$startDate, $endDate] = [$endDate, $startDate];
+}
 
 // Retrieve selected item profile
 $selectedItem = null;

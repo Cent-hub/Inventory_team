@@ -64,17 +64,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sourceType        = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
                     $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
                     $itemId            = (int)($_POST['item_id'] ?? 0);
-                    $quantity          = (float)($_POST['quantity'] ?? 0);
+                    $rawQuantity       = $_POST['quantity'] ?? null;
                     $remarks           = trim($_POST['remarks'] ?? '');
                     $targetWhId        = (int)($currentWarehouseId ?: 1);
 
-                    if (empty($sourceReferenceNo)) {
+                    if (!in_array($sourceType, StockService::VALID_STOCK_IN_SOURCES, true)) {
+                        throw new InvalidArgumentException("Invalid source_type '{$sourceType}'.");
+                    } elseif (empty($sourceReferenceNo)) {
                         throw new InvalidArgumentException("Reference Number (PO # or Work Order #) is required.");
+                    } elseif (mb_strlen($sourceReferenceNo) > 100) {
+                        throw new InvalidArgumentException("Reference Number cannot exceed 100 characters.");
                     } elseif ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select an item to receive.");
-                    } elseif ($quantity <= 0) {
-                        throw new InvalidArgumentException("Quantity received must be greater than zero.");
                     }
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity received');
 
                     $res = $stockService->recordStockIn(
                         $targetWhId,
@@ -95,17 +98,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sourceType        = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
                     $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
                     $itemId            = (int)($_POST['item_id'] ?? 0);
-                    $quantity          = (float)($_POST['quantity'] ?? 0);
+                    $rawQuantity       = $_POST['quantity'] ?? null;
                     $remarks           = trim($_POST['remarks'] ?? '');
                     $sourceWhId        = (int)($currentWarehouseId ?: 1);
 
-                    if (empty($sourceReferenceNo)) {
+                    if (!in_array($sourceType, StockService::VALID_STOCK_OUT_SOURCES, true)) {
+                        throw new InvalidArgumentException("Invalid source_type '{$sourceType}'.");
+                    } elseif (empty($sourceReferenceNo)) {
                         throw new InvalidArgumentException("Reference Number (Sales Order # or Material Request #) is required.");
+                    } elseif (mb_strlen($sourceReferenceNo) > 100) {
+                        throw new InvalidArgumentException("Reference Number cannot exceed 100 characters.");
                     } elseif ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select an item to dispatch.");
-                    } elseif ($quantity <= 0) {
-                        throw new InvalidArgumentException("Quantity dispatched must be greater than zero.");
                     }
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity dispatched');
 
                     $res = $stockService->recordStockOut(
                         $sourceWhId,

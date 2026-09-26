@@ -83,11 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$canInitiateTransfer) {
                         throw new RuntimeException("Stock transfer is disabled because only one active warehouse exists in the system.");
                     }
-                    $sourceWhId = (int)$currentWarehouseId;
-                    $destWhId   = (int)($_POST['destination_warehouse_id'] ?? 0);
-                    $itemId     = (int)($_POST['item_id'] ?? 0);
-                    $quantity   = (float)($_POST['quantity'] ?? 0);
-                    $remarks    = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
+                    $sourceWhId  = (int)$currentWarehouseId;
+                    $destWhId    = (int)($_POST['destination_warehouse_id'] ?? 0);
+                    $itemId      = (int)($_POST['item_id'] ?? 0);
+                    $rawQuantity = $_POST['quantity'] ?? null;
+                    $remarks     = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
 
                     if ($destWhId <= 0) {
                         throw new InvalidArgumentException("Please select a valid destination warehouse.");
@@ -95,9 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new InvalidArgumentException("Destination warehouse cannot be the same as your source warehouse.");
                     } elseif ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select a valid item to transfer.");
-                    } elseif ($quantity <= 0) {
-                        throw new InvalidArgumentException("Transfer quantity must be greater than zero.");
                     }
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'transfer quantity');
 
                     $result = $stockService->recordStockTransfer(
                         $sourceWhId,
@@ -123,21 +122,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 2. Stock Adjustment Actions
                 // -------------------------------------------------------------
                 case 'create_adjustment':
-                    $activeTab    = 'adjustment';
-                    $itemId       = (int)($_POST['item_id'] ?? 0);
-                    $adjustedQty  = (float)($_POST['adjusted_quantity'] ?? 0);
-                    $reason       = trim($_POST['reason'] ?? '');
-                    $adjDate      = !empty($_POST['adjustment_date']) ? trim($_POST['adjustment_date']) : date('Y-m-d');
+                    $activeTab       = 'adjustment';
+                    $itemId          = (int)($_POST['item_id'] ?? 0);
+                    $rawAdjustedQty  = $_POST['adjusted_quantity'] ?? null;
+                    $reason          = trim($_POST['reason'] ?? '');
+                    $adjDate         = !empty($_POST['adjustment_date']) ? trim($_POST['adjustment_date']) : date('Y-m-d');
 
                     if ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select a valid item to adjust.");
                     }
-                    if ($adjustedQty < 0) {
-                        throw new InvalidArgumentException("Physical adjusted count cannot be negative.");
-                    }
+                    $adjustedQty = StockService::validateNonNegativeQuantity($rawAdjustedQty, null, 'adjusted_quantity');
                     if (empty($reason)) {
                         throw new InvalidArgumentException("A reconciliation note or reason is required.");
                     }
+                    if (mb_strlen($reason) > 255) {
+                        throw new InvalidArgumentException("Adjustment reason cannot exceed 255 characters.");
+                    }
+                    $adjDate = StockService::validateDateNotFuture($adjDate, 'adjustment_date');
 
                     $result = $stockService->recordStockAdjustment(
                         $currentWarehouseId,
@@ -186,17 +187,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $activeTab     = 'adjustment';
                     $itemId        = (int)($_POST['item_id'] ?? 0);
                     $conditionType = trim($_POST['condition_type'] ?? 'damaged');
-                    $quantity      = (float)($_POST['quantity'] ?? 0);
+                    $rawQuantity   = $_POST['quantity'] ?? null;
                     $reason        = trim($_POST['reason'] ?? '');
 
                     if ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select a valid item.");
                     }
-                    if ($quantity <= 0) {
-                        throw new InvalidArgumentException("Quantity of damaged stock must be greater than zero.");
-                    }
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity');
                     if (empty($reason)) {
                         throw new InvalidArgumentException("Please provide details or a reason for the damage/defect.");
+                    }
+                    if (mb_strlen($reason) > 255) {
+                        throw new InvalidArgumentException("Defect reason cannot exceed 255 characters.");
                     }
 
                     $result = $stockService->recordBadProduct(
@@ -469,8 +471,15 @@ if (empty($cardItems)) {
 // Selected filters
 $selectedItemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : ($cardItems[0]['item_id'] ?? 0);
 $movementType   = isset($_GET['movement_type']) ? trim($_GET['movement_type']) : '';
-$startDate      = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
-$endDate        = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$rawStartDate   = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+$rawEndDate     = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$dtStart        = DateTime::createFromFormat('Y-m-d', $rawStartDate);
+$dtEnd          = DateTime::createFromFormat('Y-m-d', $rawEndDate);
+$startDate      = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : '';
+$endDate        = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : '';
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+    [$startDate, $endDate] = [$endDate, $startDate];
+}
 
 // Retrieve selected item profile
 $selectedItem = null;

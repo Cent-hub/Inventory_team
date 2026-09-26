@@ -42,20 +42,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             switch ($action) {
                 case 'create_adjustment':
-                    $itemId       = (int)($_POST['item_id'] ?? 0);
-                    $adjustedQty  = (float)($_POST['adjusted_quantity'] ?? 0);
-                    $reason       = trim($_POST['reason'] ?? '');
-                    $adjDate      = !empty($_POST['adjustment_date']) ? trim($_POST['adjustment_date']) : date('Y-m-d');
+                    $itemId         = (int)($_POST['item_id'] ?? 0);
+                    $rawAdjustedQty = $_POST['adjusted_quantity'] ?? null;
+                    $reason         = trim($_POST['reason'] ?? '');
+                    $adjDate        = !empty($_POST['adjustment_date']) ? trim($_POST['adjustment_date']) : date('Y-m-d');
 
                     if ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select a valid item to adjust.");
                     }
-                    if ($adjustedQty < 0) {
-                        throw new InvalidArgumentException("Physical adjusted count cannot be negative.");
-                    }
+                    $adjustedQty = StockService::validateNonNegativeQuantity($rawAdjustedQty, null, 'adjusted_quantity');
                     if (empty($reason)) {
                         throw new InvalidArgumentException("A reconciliation note or reason is required.");
                     }
+                    if (mb_strlen($reason) > 255) {
+                        throw new InvalidArgumentException("Adjustment reason cannot exceed 255 characters.");
+                    }
+                    $adjDate = StockService::validateDateNotFuture($adjDate, 'adjustment_date');
 
                     $result = $stockService->recordStockAdjustment(
                         $currentWarehouseId,
@@ -100,17 +102,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 case 'create_bad_product':
                     $itemId        = (int)($_POST['item_id'] ?? 0);
                     $conditionType = trim($_POST['condition_type'] ?? 'damaged');
-                    $quantity      = (float)($_POST['quantity'] ?? 0);
+                    $rawQuantity   = $_POST['quantity'] ?? null;
                     $reason        = trim($_POST['reason'] ?? '');
 
                     if ($itemId <= 0) {
                         throw new InvalidArgumentException("Please select a valid item.");
                     }
-                    if ($quantity <= 0) {
-                        throw new InvalidArgumentException("Quantity of damaged stock must be greater than zero.");
-                    }
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity');
                     if (empty($reason)) {
                         throw new InvalidArgumentException("Please provide details or a reason for the damage/defect.");
+                    }
+                    if (mb_strlen($reason) > 255) {
+                        throw new InvalidArgumentException("Defect reason cannot exceed 255 characters.");
                     }
 
                     $result = $stockService->recordBadProduct(

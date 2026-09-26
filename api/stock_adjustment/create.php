@@ -35,7 +35,7 @@ $items = $payload['items'] ?? [];
 if (empty($items) && isset($payload['item_id'])) {
     $items = [[
         'item_id'           => $payload['item_id'],
-        'adjusted_quantity' => $payload['adjusted_quantity'] ?? $payload['quantity'] ?? 0
+        'adjusted_quantity' => $payload['adjusted_quantity'] ?? $payload['quantity'] ?? null
     ]];
 }
 
@@ -50,6 +50,13 @@ if (empty($reason)) {
     jsonResponse([
         'success' => false,
         'error'   => 'Validation Error: reason is required.'
+    ], 400);
+}
+
+if (mb_strlen($reason) > 255) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: reason cannot exceed 255 characters.'
     ], 400);
 }
 
@@ -86,9 +93,11 @@ try {
         'success' => false,
         'error'   => $e->getMessage()
     ], 422);
+} catch (PDOException $e) {
+    handleDbException($e);
 } catch (Exception $e) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Internal server error occurred: ' . $e->getMessage()
+        'error'   => 'Internal server error occurred.'
     ], 500);
 }

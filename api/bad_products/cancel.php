@@ -42,6 +42,13 @@ if (empty($reason)) {
     ], 400);
 }
 
+if (mb_strlen($reason) > 255) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Validation Error: cancellation reason cannot exceed 255 characters.'
+    ], 400);
+}
+
 try {
     $service = new StockService();
     $result = $service->cancelBadProduct($badProductId, $reason, $userId, $authUser);
@@ -61,9 +68,11 @@ try {
         'success' => false,
         'error'   => $e->getMessage()
     ], 422);
+} catch (PDOException $e) {
+    handleDbException($e);
 } catch (Exception $e) {
     jsonResponse([
         'success' => false,
-        'error'   => 'Internal server error occurred: ' . $e->getMessage()
+        'error'   => 'Internal server error occurred.'
     ], 500);
 }

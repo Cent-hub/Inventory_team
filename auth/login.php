@@ -1247,7 +1247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     showAlert('success', data.message || 'Login successful! Redirecting...');
                     setTimeout(function () {
-                        window.location.href = data.redirect || '<?= BASE_URL ?>dashboard/index.php';
+                        window.location.href = data.redirect || '<?= BASE_URL ?>views/dashboard/index.php';
                     }, 500);
                 } else {
                     setLoading(false);
@@ -1476,7 +1476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clearOtpAlert();
                 btnResendCode.textContent = 'Sending...';
 
-                fetch('<?= BASE_URL ?>api/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ action: 'send_code', email: currentResetEmail })
@@ -1577,7 +1577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textSend) textSend.textContent = 'Sending Code...';
                 }
 
-                fetch('<?= BASE_URL ?>api/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ action: 'send_code', email: emailVal })
@@ -1632,7 +1632,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textVerify) textVerify.textContent = 'Verifying...';
                 }
 
-                fetch('<?= BASE_URL ?>api/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({
@@ -1699,7 +1699,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textSave) textSave.textContent = 'Saving Password...';
                 }
 
-                fetch('<?= BASE_URL ?>api/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({

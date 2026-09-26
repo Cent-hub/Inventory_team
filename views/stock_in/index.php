@@ -33,35 +33,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
     } else {
         $sourceType        = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
-    $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
-    $itemId            = (int)($_POST['item_id'] ?? 0);
-    $quantity          = (float)($_POST['quantity'] ?? 0);
-    $remarks           = trim($_POST['remarks'] ?? '');
-    $targetWhId        = (int)($currentWarehouseId ?: 1);
-    $userId            = (int)($currentUser['id'] ?? 1);
+        $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
+        $itemId            = (int)($_POST['item_id'] ?? 0);
+        $rawQuantity       = $_POST['quantity'] ?? null;
+        $remarks           = trim($_POST['remarks'] ?? '');
+        $targetWhId        = (int)($currentWarehouseId ?: 1);
+        $userId            = (int)($currentUser['id'] ?? 1);
 
-    if (empty($sourceReferenceNo)) {
-        $errorMessage = "Reference Number (PO # or Work Order #) is required.";
-    } elseif ($itemId <= 0) {
-        $errorMessage = "Please select an item to receive.";
-    } elseif ($quantity <= 0) {
-        $errorMessage = "Quantity received must be greater than zero.";
-    } else {
-        try {
-            $service = new StockService();
-            $res = $service->recordStockIn(
-                $targetWhId,
-                $sourceType,
-                $sourceReferenceNo,
-                [['item_id' => $itemId, 'quantity' => $quantity]],
-                $userId,
-                $remarks ?: null
-            );
-            $successMessage = "Inbound stock received successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
-        } catch (Exception $e) {
-            $errorMessage = "Stock In failed: " . $e->getMessage();
+        if (!in_array($sourceType, StockService::VALID_STOCK_IN_SOURCES, true)) {
+            $errorMessage = "Invalid source_type '{$sourceType}'.";
+        } elseif (empty($sourceReferenceNo)) {
+            $errorMessage = "Reference Number (PO # or Work Order #) is required.";
+        } elseif (mb_strlen($sourceReferenceNo) > 100) {
+            $errorMessage = "Reference Number cannot exceed 100 characters.";
+        } elseif ($itemId <= 0) {
+            $errorMessage = "Please select an item to receive.";
+        } else {
+            try {
+                $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity received');
+                $service = new StockService();
+                $res = $service->recordStockIn(
+                    $targetWhId,
+                    $sourceType,
+                    $sourceReferenceNo,
+                    [['item_id' => $itemId, 'quantity' => $quantity]],
+                    $userId,
+                    $remarks ?: null
+                );
+                $successMessage = "Inbound stock received successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
+            } catch (Exception $e) {
+                $errorMessage = "Stock In failed: " . $e->getMessage();
+            }
         }
-    }
     }
 }
 

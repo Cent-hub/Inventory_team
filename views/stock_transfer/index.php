@@ -63,12 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $errorMessage = "Stock transfer is disabled because only one active warehouse exists in the system.";
     } else {
         // Strictly enforce source warehouse as the admin's assigned warehouse
-        $sourceWhId = (int)$currentWarehouseId;
-        $destWhId   = isset($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : 0;
-        $itemId     = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
-        $quantity   = isset($_POST['quantity']) ? (float)$_POST['quantity'] : 0;
-        $remarks    = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
-        $userId     = (int)($currentUser['id'] ?? 1);
+        $sourceWhId  = (int)$currentWarehouseId;
+        $destWhId    = isset($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : 0;
+        $itemId      = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+        $rawQuantity = $_POST['quantity'] ?? null;
+        $remarks     = isset($_POST['remarks']) ? trim($_POST['remarks']) : null;
+        $userId      = (int)($currentUser['id'] ?? 1);
 
         if ($destWhId <= 0) {
             $errorMessage = "Please select a valid destination warehouse.";
@@ -76,10 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Destination warehouse cannot be the same as your source warehouse.";
         } elseif ($itemId <= 0) {
             $errorMessage = "Please select a valid item to transfer.";
-        } elseif ($quantity <= 0) {
-            $errorMessage = "Transfer quantity must be greater than zero.";
         } else {
             try {
+                $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'transfer quantity');
                 $stockService = new StockService();
                 $result = $stockService->recordStockTransfer(
                     $sourceWhId,

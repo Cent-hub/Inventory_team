@@ -20,74 +20,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!validateCsrfToken()) {
         $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
     } else {
-        $itemCode     = strtoupper(trim($_POST['item_code'] ?? ''));
-        $itemName     = trim($_POST['item_name'] ?? '');
-    $itemType     = trim($_POST['item_type'] ?? '');
-    $categoryId   = (int)($_POST['category_id'] ?? 0);
-    $unit         = strtolower(trim($_POST['unit'] ?? 'pcs'));
-    $reorderLevel = (float)($_POST['default_reorder_level'] ?? 0);
-    $description  = trim($_POST['description'] ?? '');
+        $itemCode        = strtoupper(trim($_POST['item_code'] ?? ''));
+        $itemName        = trim($_POST['item_name'] ?? '');
+        $itemType        = trim($_POST['item_type'] ?? '');
+        $categoryId      = (int)($_POST['category_id'] ?? 0);
+        $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
+        $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
+        $description     = trim($_POST['description'] ?? '');
 
-    if (empty($itemCode)) {
-        $errorMessage = "Item Code (SKU) is required.";
-    } elseif (empty($itemName)) {
-        $errorMessage = "Item Name is required.";
-    } elseif (!in_array($itemType, ['raw_material', 'finished_good'], true)) {
-        $errorMessage = "Item classification must be either 'Raw Material' or 'Finished Good'.";
-    } elseif ($categoryId <= 0) {
-        $errorMessage = "Please select a valid category.";
-    } elseif (empty($unit)) {
-        $errorMessage = "Unit of measurement is required.";
-    } elseif ($reorderLevel < 0) {
-        $errorMessage = "Default reorder level cannot be negative.";
-    } else {
-        try {
-            // Check uniqueness of item code
-            $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE item_code = ?");
-            $stmtChk->execute([$itemCode]);
-            if ((int)$stmtChk->fetchColumn() > 0) {
-                $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
+        if (empty($itemCode)) {
+            $errorMessage = "Item Code (SKU) is required.";
+        } elseif (mb_strlen($itemCode) > 50 || !preg_match('/^[A-Z0-9\-_]+$/', $itemCode)) {
+            $errorMessage = "Item Code (SKU) must be 1–50 characters and contain only letters, numbers, hyphens (-), or underscores (_).";
+        } elseif (empty($itemName)) {
+            $errorMessage = "Item Name is required.";
+        } elseif (mb_strlen($itemName) > 150) {
+            $errorMessage = "Item Name cannot exceed 150 characters.";
+        } elseif (!in_array($itemType, ['raw_material', 'finished_good'], true)) {
+            $errorMessage = "Item classification must be either 'Raw Material' or 'Finished Good'.";
+        } elseif ($categoryId <= 0) {
+            $errorMessage = "Please select a valid category.";
+        } elseif (empty($unit) || mb_strlen($unit) > 20) {
+            $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
+        } elseif ($rawReorderLevel !== '' && !is_numeric($rawReorderLevel)) {
+            $errorMessage = "Default reorder level must be a valid number.";
+        } else {
+            $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
+            if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
+            } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
+                $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
-                $userId = (int)($currentUser['id'] ?? 1);
-                $stmtIns = $pdo->prepare("
-                    INSERT INTO items (
-                        item_code, item_name, description, item_type,
-                        category_id, unit, default_reorder_level, status, created_by
-                    ) VALUES (
-                        ?, ?, ?, ?,
-                        ?, ?, ?, 'active', ?
-                    )
-                ");
-                $stmtIns->execute([
-                    $itemCode,
-                    $itemName,
-                    $description ?: null,
-                    $itemType,
-                    $categoryId,
-                    $unit,
-                    $reorderLevel,
-                    $userId
-                ]);
-                $newId = (int)$pdo->lastInsertId();
+                try {
+                    // Verify active category exists
+                    $stmtCat = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE category_id = ? AND status = 'active'");
+                    $stmtCat->execute([$categoryId]);
+                    if ((int)$stmtCat->fetchColumn() === 0) {
+                        $errorMessage = "Selected category does not exist or is inactive.";
+                    } else {
+                        // Check uniqueness of item code
+                        $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE item_code = ?");
+                        $stmtChk->execute([$itemCode]);
+                        if ((int)$stmtChk->fetchColumn() > 0) {
+                            $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
+                        } else {
+                            $userId = (int)($currentUser['id'] ?? 1);
+                            $stmtIns = $pdo->prepare("
+                                INSERT INTO items (
+                                    item_code, item_name, description, item_type,
+                                    category_id, unit, default_reorder_level, status, created_by
+                                ) VALUES (
+                                    ?, ?, ?, ?,
+                                    ?, ?, ?, 'active', ?
+                                )
+                            ");
+                            $stmtIns->execute([
+                                $itemCode,
+                                $itemName,
+                                $description ?: null,
+                                $itemType,
+                                $categoryId,
+                                $unit,
+                                round($reorderLevel, 3),
+                                $userId
+                            ]);
+                            $newId = (int)$pdo->lastInsertId();
 
-                require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                AccountabilityService::log([
-                    'user_id'          => $userId,
-                    'team'             => 'Inventory',
-                    'action_type'      => 'ITEM_CREATED',
-                    'channel'          => 'UI',
-                    'item_id'          => $newId,
-                    'warehouse_id'     => $currentWarehouseId ?: 1,
-                    'reference_number' => $itemCode,
-                    'notes'            => "Master item created: {$itemName} ({$itemType})"
-                ]);
+                            require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                            AccountabilityService::log([
+                                'user_id'          => $userId,
+                                'team'             => 'Inventory',
+                                'action_type'      => 'ITEM_CREATED',
+                                'channel'          => 'UI',
+                                'item_id'          => $newId,
+                                'warehouse_id'     => $currentWarehouseId ?: 1,
+                                'reference_number' => $itemCode,
+                                'notes'            => "Master item created: {$itemName} ({$itemType})"
+                            ]);
 
-                $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
+                            $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
+                        }
+                    }
+                } catch (Exception $e) {
+                    $errorMessage = "Failed to create item: " . $e->getMessage();
+                }
             }
-        } catch (Exception $e) {
-            $errorMessage = "Failed to create item: " . $e->getMessage();
         }
-    }
     }
 }
 
