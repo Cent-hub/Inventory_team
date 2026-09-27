@@ -698,7 +698,7 @@ if ($selectedItemId > 0) {
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
-    z-index: 1050;
+    z-index: 50;
     padding: 4px 0;
 }
 .searchable-dropdown-list .item-result-row {
@@ -734,7 +734,18 @@ if ($selectedItemId > 0) {
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Operations</h1>
-        <p class="page-subtitle">Unified transaction hub for Transfers, Physical Count Adjustments, and Item Stock Cards &middot; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?>)</strong></p>
+        <p class="page-subtitle">Unified transaction hub for Transfers, Physical Count Adjustments, and Item Stock Cards</p>
+    </div>
+    <div class="header-actions">
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
     </div>
 </div>
 

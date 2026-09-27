@@ -69,18 +69,18 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
 <div class="page-header">
     <div>
         <h1 class="page-title">Raw Materials Inventory</h1>
-        <p class="page-subtitle">Raw materials inventory for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
     </div>
     <div class="header-actions">
-        <a href="<?= BASE_URL ?>views/inbound_outbound/index.php?tab=inbound" class="btn btn-primary">
-            <!-- Lucide PlusCircle Icon -->
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="16"/>
-                <line x1="8" y1="12" x2="16" y2="12"/>
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
             </svg>
-            <span>View Inbound Stock Receipts</span>
-        </a>
+            <span>Refresh</span>
+        </button>
     </div>
 </div>
 

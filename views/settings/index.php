@@ -40,6 +40,15 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
         <p class="page-subtitle">Personal account configuration, cross-team inventory accountability audit log, and administrative support</p>
     </div>
     <div class="header-actions">
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
         <a href="<?= BASE_URL ?>views/settings/accountability.php" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>

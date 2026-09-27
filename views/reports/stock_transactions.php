@@ -334,7 +334,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     .print-banner {
         display: block !important;
     }
-    .page-header, .stock-ops-nav-wrapper, .report-filter-form, .header-actions, .sidebar, .navbar, .btn {
+    .page-header, .stock-ops-nav-wrapper, .report-filter-form, .header-actions, .report-table-footer, .sidebar, .navbar, .btn {
         display: none !important;
     }
     .main-content {
@@ -360,25 +360,18 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     <div>
         <h1 class="page-title">Stock Transaction Reports</h1>
         <p class="page-subtitle">
-            Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments for <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Main Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH-MAIN') ?>)</strong>
+            Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments for
         </p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect width="12" height="8" x="6" y="14"/>
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
             </svg>
-            <span>Print Report</span>
-        </button>
-        <button type="button" class="btn btn-secondary" onclick="exportReportCsv()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            <span>Export CSV</span>
+            <span>Refresh</span>
         </button>
     </div>
 </div>
@@ -473,15 +466,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
             <input type="text" name="search" class="search-box" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" onkeyup="filterActiveTransactionTable()">
         </div>
 
-        <!-- Assigned Facility (Locked) -->
-        <div style="display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; padding: 0 12px; height: 38px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray)" stroke-width="2"><path d="M3 21h18M3 7v14M21 7v14M6 3h12l3 4H3l3-4z"/></svg>
-            <span style="font-size: 13px; font-weight: 600; color: var(--panel-ink);">
-                <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH') ?> — <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Assigned Facility') ?>
-            </span>
-            <span class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Assigned</span>
-        </div>
-
         <!-- Date Range -->
         <div style="display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 12px; color: var(--gray); font-weight: 500;">From</span>
@@ -491,16 +475,29 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
         </div>
 
         <!-- Buttons -->
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button type="submit" class="btn btn-primary" style="height: 38px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                 </svg>
                 <span>Filter</span>
             </button>
-            <a href="stock_transactions.php" id="resetFilterBtn" class="btn btn-secondary" style="height: 38px; display: inline-flex; align-items: center;" title="Reset Filters">
-                <span>Reset</span>
-            </a>
+            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Export CSV</span>
+            </button>
+            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="window.print()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 6 2 18 2 18 9"/>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                    <rect width="12" height="8" x="6" y="14"/>
+                </svg>
+                <span>Print Report</span>
+            </button>
         </div>
     </form>
 </div>

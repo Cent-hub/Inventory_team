@@ -138,31 +138,18 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 <div class="page-header">
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
+        <p class="page-subtitle">Overview, stock levels, and recent warehouse activity</p>
     </div>
     <div class="header-actions">
-        <a href="<?= BASE_URL ?>views/inventory/raw_materials.php" class="btn btn-secondary">
-            <!-- Lucide Boxes Icon -->
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l6 3.43a2 2 0 0 0 2.06 0l6-3.43a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71l-6-3.43a2 2 0 0 0-2.06 0l-6 3.43Z"/>
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
             </svg>
-            <span>Raw Materials</span>
-        </a>
-        <a href="<?= BASE_URL ?>views/inventory/finished_goods.php" class="btn btn-secondary">
-            <!-- Lucide PackageCheck Icon -->
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m16 16 2 2 4-4"/>
-                <path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/>
-            </svg>
-            <span>Finished Goods</span>
-        </a>
-        <a href="<?= BASE_URL ?>views/inbound_outbound/index.php?tab=inbound" class="btn btn-primary">
-            <!-- Lucide ArrowDownLeft Icon -->
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="17" y1="7" x2="7" y2="17"/>
-                <polyline points="17 17 7 17 7 7"/>
-            </svg>
-            <span>Inbound / Stock In</span>
-        </a>
+            <span>Refresh</span>
+        </button>
     </div>
 </div>
 

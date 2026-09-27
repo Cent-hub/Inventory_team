@@ -118,8 +118,17 @@ function getFacilityAssignment($user) {
         <h1 class="page-title"><?= $isSuperAdmin ? 'Users & Account Management' : 'My Account' ?></h1>
         <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery operators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
     </div>
-    <?php if ($isSuperAdmin): ?>
     <div class="header-actions">
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
+        <?php if ($isSuperAdmin): ?>
         <button type="button" class="btn btn-secondary" onclick="window.print()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="6 9 6 2 18 2 18 9"/>
@@ -128,8 +137,8 @@ function getFacilityAssignment($user) {
             </svg>
             <span>Print User Roster</span>
         </button>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>
 
 <!-- My Profile Spotlight Card -->

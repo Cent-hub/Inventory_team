@@ -260,12 +260,21 @@ foreach ($adjustments as $a) {
 <?php endif; ?>
 
 <!-- Page Header & Action Toolbar -->
-<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+<div class="page-header">
     <div>
         <h1 class="page-title">Stock Adjustments &amp; Corrections</h1>
         <p class="page-subtitle">Audited physical count reconciliation &amp; defect write-offs for <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong></p>
     </div>
-    <div style="display: flex; align-items: center; gap: 10px;">
+    <div class="header-actions">
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
         <button type="button" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;" onclick="openReportBadProductModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             <span> Report Damaged Goods</span>

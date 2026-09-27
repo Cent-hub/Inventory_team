@@ -442,7 +442,18 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Inventory Inbound &amp; Outbound</h1>
-        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches &middot; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? 'Main Warehouse') ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? 'WH-MAIN') ?>)</strong></p>
+        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
+    </div>
+    <div class="header-actions">
+        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
     </div>
 </div>
 
