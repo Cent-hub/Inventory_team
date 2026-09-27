@@ -21,8 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reset Password &mdash; Inventory System</title>
+    <title>Reset Password &mdash; StockPilot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
     <style>
+        :root {
+            --panel-ink: #14213D;
+            --accent: #1F7A6C;
+            --accent-hover: #176156;
+            --gray: #64748B;
+            --border: #E2E8F0;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-body: 'DM Sans', sans-serif;
+        }
+
         *, *::before, *::after {
             margin: 0;
             padding: 0;
@@ -34,164 +47,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #f1f5f9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            color: #1e293b;
-            padding: 24px;
+            background: rgba(15, 23, 42, 0.68);
+            backdrop-filter: blur(6px);
+            font-family: var(--font-body);
+            color: var(--panel-ink);
+            padding: 16px;
         }
 
-        .login-card {
+        .modal-card {
             width: 100%;
-            max-width: 420px;
+            max-width: 440px;
             background: #ffffff;
-            border: 1px solid #e2e8f0;
+            border-radius: 24px;
+            padding: 32px 28px;
+            box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--panel-ink);
+        }
+
+        .input-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        .input {
+            width: 100%;
+            padding: 11px 14px;
             border-radius: 12px;
-            padding: 36px 32px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+            border: 1.5px solid var(--border);
+            font-family: var(--font-body);
+            font-size: 14px;
+            color: var(--panel-ink);
+            background: #fff;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
         }
 
-        .brand-header {
-            text-align: center;
-            margin-bottom: 24px;
+        .input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(31, 122, 108, 0.14);
         }
 
-        .brand-icon {
-            width: 44px;
-            height: 44px;
-            margin: 0 auto 10px;
-            background: #e0e7ff;
-            color: #4338ca;
-            border-radius: 10px;
+        .login-btn {
+            margin-top: 4px;
+            width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
-        }
-
-        .brand-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #0f172a;
-        }
-
-        .brand-subtitle {
-            margin-top: 4px;
-            font-size: 13px;
-            color: #64748b;
-        }
-
-        .alert {
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 13.5px;
-            margin-bottom: 18px;
-        }
-
-        .alert-error {
-            background-color: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #991b1b;
-        }
-
-        .alert-success {
-            background-color: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            color: #166534;
-        }
-
-        .form-group {
-            margin-bottom: 18px;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #334155;
-        }
-
-        .form-control {
-            width: 100%;
-            height: 44px;
-            padding: 0 14px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            font-size: 14px;
-            font-family: inherit;
-            color: #0f172a;
-            outline: none;
-            transition: border-color 0.15s ease;
-        }
-
-        .form-control:focus {
-            border-color: #4f46e5;
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
-        }
-
-        .btn-submit {
-            width: 100%;
-            height: 44px;
-            background: #4f46e5;
-            color: #ffffff;
+            gap: 8px;
+            padding: 13px 0;
             border: none;
-            border-radius: 8px;
-            font-size: 14.5px;
-            font-weight: 600;
-            font-family: inherit;
+            border-radius: 14px;
+            background: var(--accent);
+            color: #fff;
+            font-family: var(--font-body);
+            font-size: 15px;
+            font-weight: 700;
             cursor: pointer;
-            transition: background 0.15s ease;
+            transition: background-color .15s ease, transform .1s ease;
         }
 
-        .btn-submit:hover {
-            background: #4338ca;
-        }
-
-        .card-footer {
-            margin-top: 22px;
-            text-align: center;
-            font-size: 13px;
-            color: #64748b;
-        }
-
-        .card-footer a {
-            color: #4f46e5;
-            text-decoration: none;
-            font-weight: 600;
+        .login-btn:hover {
+            background: var(--accent-hover);
         }
     </style>
 </head>
 <body>
 
-    <div class="login-card">
+    <div class="modal-card">
+        <!-- Header with Close Button -->
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+            <div style="display:flex; align-items:center; gap:9px;">
+                <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:10px; background:rgba(31,122,108,0.1); color:var(--accent);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                </span>
+                <span style="font-family:var(--font-display); font-size:16px; font-weight:700; color:var(--panel-ink);">Reset Password</span>
+            </div>
+            <a href="login.php" aria-label="Close" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:center; text-decoration:none;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </a>
+        </div>
 
-        <div class="brand-header">
-            <div class="brand-icon">📦</div>
-            <h1 class="brand-title">Reset Password</h1>
-            <p class="brand-subtitle">Enter your email to receive recovery instructions</p>
+        <!-- Step Indicator Pills -->
+        <div style="display:flex; gap:6px; margin-bottom:20px;">
+            <div style="flex:1; height:4px; border-radius:2px; background:var(--accent);"></div>
+            <div style="flex:1; height:4px; border-radius:2px; background:<?= $isSuccess ? 'var(--accent)' : 'var(--border)' ?>;"></div>
+            <div style="flex:1; height:4px; border-radius:2px; background:var(--border);"></div>
         </div>
 
         <?php if (!empty($msg)): ?>
-            <div class="alert <?= $isSuccess ? 'alert-success' : 'alert-error' ?>">
+            <div style="padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px; <?= $isSuccess ? 'background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;' : 'background:#fef2f2; color:#dc2626; border:1px solid #fecaca;' ?>">
                 <?= htmlspecialchars($msg) ?>
             </div>
         <?php endif; ?>
 
-        <form action="reset-password.php" method="POST">
-            <div class="form-group">
-                <label for="email" class="form-label">Email Address</label>
-                <input type="email" id="email" name="email" class="form-control" placeholder="operator@inventory.local" required autocomplete="email">
-            </div>
+        <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
+        <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your Gmail inbox.</p>
 
-            <button type="submit" class="btn-submit">
-                Send Reset Link
+        <form action="reset-password.php" method="POST">
+            <div class="field" style="margin-bottom:18px;">
+                <label class="label" for="email">Email Address</label>
+                <div class="input-wrap">
+                    <input id="email" name="email" type="email" class="input" placeholder="e.g. storeowner@gmail.com" required autocomplete="email" />
+                </div>
+            </div>
+            <button type="submit" class="login-btn">
+                <span>Send 6-Digit Code</span>
             </button>
         </form>
-
-        <div class="card-footer">
-            Remember your credentials? <a href="login.php">Back to Sign In</a>
-        </div>
-
     </div>
 
 </body>

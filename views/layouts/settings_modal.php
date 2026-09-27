@@ -51,9 +51,9 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
             <!-- ========================================================== -->
             <div id="view-settings-main" class="settings-view active">
                 
-                <!-- Group 1: Profile & Identity (Matches Reference Top Card) -->
+                <!-- Group 1: Profile & Identity (Static Display) -->
                 <div class="settings-group">
-                    <div class="settings-row" onclick="switchSettingsView('account')" role="button" tabindex="0" title="Manage Account Profile">
+                    <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="user-avatar" style="width: 46px; height: 46px; font-size: 18px; background: #14213D; color: #FFFFFF; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;">
                                 <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
@@ -66,33 +66,6 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                     <?= $userRoleDisplay ?> &middot; <?= $userEmailDisplay ?>
                                 </div>
                             </div>
-                        </div>
-                        <div class="settings-row-right">
-                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="9 18 15 12 9 6"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="settings-divider"></div>
-                    <div class="settings-row" onclick="switchSettingsView('account')" role="button" tabindex="0">
-                        <div class="settings-row-left">
-                            <div class="settings-squircle teal" style="width: 28px; height: 28px; border-radius: 7px;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-                                    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-                                    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="settings-row-title">Assigned Branch</div>
-                                <div class="settings-row-subtitle"><?= $currentBranchLabel ?></div>
-                            </div>
-                        </div>
-                        <div class="settings-row-right">
-                            <span class="settings-badge teal" style="font-size: 11px; padding: 2px 8px;">Active</span>
-                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-round="round">
-                                <polyline points="9 18 15 12 9 6"/>
-                            </svg>
                         </div>
                     </div>
                 </div>
@@ -419,7 +392,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 </div>
 
                 <div class="settings-group">
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>auth/reset-password.php'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="openSettingsForgotPassword()" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle bronze">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -440,6 +413,136 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     </div>
                 </div>
 
+            </div>
+
+            <!-- ========================================================== -->
+            <!-- VIEW: SECTION 2B — FORGOT PASSWORD (Login Page Design)     -->
+            <!-- ========================================================== -->
+            <div id="view-settings-forgot-password" class="settings-view">
+                <div style="width:100%; background:#ffffff; border-radius:24px; padding:28px 24px; box-shadow:0 10px 30px -10px rgba(15,23,42,0.12); border:1px solid var(--border); position:relative; overflow:hidden;">
+                    <!-- Header with Icon & Title (Matches Login Page Forgot Password Modal) -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                        <div style="display:flex; align-items:center; gap:9px;">
+                            <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:10px; background:rgba(31,122,108,0.1); color:var(--accent);">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                </svg>
+                            </span>
+                            <span style="font-family:var(--font-display); font-size:16px; font-weight:700; color:var(--panel-ink);">Reset Password</span>
+                        </div>
+                        <button type="button" onclick="switchSettingsView('password')" aria-label="Back to Change Password" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:color 0.15s ease;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Step Indicator Pills -->
+                    <div id="settings-otp-step-pills" style="display:flex; gap:6px; margin-bottom:20px;">
+                        <div id="settings-pill-step-1" style="flex:1; height:4px; border-radius:2px; background:var(--accent); transition:background 0.2s ease;"></div>
+                        <div id="settings-pill-step-2" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
+                        <div id="settings-pill-step-3" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
+                    </div>
+
+                    <!-- Dynamic Alert Box -->
+                    <div id="settings-otp-alert" style="display:none; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px;"></div>
+
+                    <!-- STEP 1: Enter Email -->
+                    <div id="settings-otp-step-1" style="display:block;">
+                        <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
+                        <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your Gmail inbox.</p>
+
+                        <form id="settings-form-otp-step-1" onsubmit="event.preventDefault(); handleSettingsOtpStep1();">
+                            <div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:18px;">
+                                <label style="font-size:13px; font-weight:600; color:var(--panel-ink);" for="settings-otp-input-email">Email Address</label>
+                                <div style="position:relative; width:100%;">
+                                    <input id="settings-otp-input-email" type="email" value="<?= $userEmailDisplay ?>" placeholder="e.g. storeowner@gmail.com" required autocomplete="email" style="width:100%; padding:11px 14px; border-radius:12px; border:1.5px solid var(--border); font-family:var(--font-body); font-size:14px; color:var(--panel-ink); background:#fff; outline:none; transition:border-color .15s ease, box-shadow .15s ease;" onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(31, 122, 108, 0.14)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none';" />
+                                </div>
+                            </div>
+                            <button type="submit" id="settings-btn-send-otp" style="margin-top:4px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px 0; border:none; border-radius:14px; background:var(--accent); color:#fff; font-family:var(--font-body); font-size:15px; font-weight:700; cursor:pointer; transition:background-color .15s ease, transform .1s ease;" onmouseover="this.style.background='var(--accent-hover)'" onmouseout="this.style.background='var(--accent)'">
+                                <span id="settings-text-send-otp">Send 6-Digit Code</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- STEP 2: Enter 6-Digit Code -->
+                    <div id="settings-otp-step-2" style="display:none;">
+                        <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Enter 6-Digit Code</h3>
+                        <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 16px 0;">
+                            We sent a 6-digit code to <strong id="settings-otp-target-email" style="color:var(--panel-ink);"><?= $userEmailDisplay ?></strong>. It expires in 15 minutes.
+                        </p>
+
+                        <form id="settings-form-otp-step-2" onsubmit="event.preventDefault(); handleSettingsOtpStep2();">
+                            <!-- 6-digit OTP Box Inputs -->
+                            <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:16px;">
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="0" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="1" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="2" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="3" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="4" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="5" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                            </div>
+
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; font-size:12.5px;">
+                                <button type="button" onclick="setSettingsOtpStep(1)" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:0; text-decoration:underline; font-size:12.5px; font-family:var(--font-body);">Change email</button>
+                                <button type="button" id="settings-btn-otp-resend" onclick="handleSettingsOtpResend()" style="background:none; border:none; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; font-family:var(--font-body);">Resend code</button>
+                            </div>
+
+                            <button type="submit" id="settings-btn-verify-otp" style="margin-top:4px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px 0; border:none; border-radius:14px; background:var(--accent); color:#fff; font-family:var(--font-body); font-size:15px; font-weight:700; cursor:pointer; transition:background-color .15s ease, transform .1s ease;" onmouseover="this.style.background='var(--accent-hover)'" onmouseout="this.style.background='var(--accent)'">
+                                <span id="settings-text-verify-otp">Verify Code</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- STEP 3: Set New Password -->
+                    <div id="settings-otp-step-3" style="display:none;">
+                        <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Create New Password</h3>
+                        <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Code verified! Enter your new password below (minimum 6 characters).</p>
+
+                        <form id="settings-form-otp-step-3" onsubmit="event.preventDefault(); handleSettingsOtpStep3();">
+                            <div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:14px;">
+                                <label style="font-size:13px; font-weight:600; color:var(--panel-ink);" for="settings-otp-input-pwd">New Password</label>
+                                <div style="position:relative; width:100%;">
+                                    <input id="settings-otp-input-pwd" type="password" placeholder="Enter new password" required minlength="6" style="width:100%; padding:11px 40px 11px 14px; border-radius:12px; border:1.5px solid var(--border); font-family:var(--font-body); font-size:14px; color:var(--panel-ink); background:#fff; outline:none; transition:border-color .15s ease, box-shadow .15s ease;" onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(31, 122, 108, 0.14)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none';" />
+                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-pwd', this)" tabindex="-1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                                        <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:20px;">
+                                <label style="font-size:13px; font-weight:600; color:var(--panel-ink);" for="settings-otp-input-confirm-pwd">Confirm New Password</label>
+                                <div style="position:relative; width:100%;">
+                                    <input id="settings-otp-input-confirm-pwd" type="password" placeholder="Re-enter your new password" required minlength="6" style="width:100%; padding:11px 40px 11px 14px; border-radius:12px; border:1.5px solid var(--border); font-family:var(--font-body); font-size:14px; color:var(--panel-ink); background:#fff; outline:none; transition:border-color .15s ease, box-shadow .15s ease;" onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(31, 122, 108, 0.14)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none';" />
+                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-confirm-pwd', this)" tabindex="-1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                                        <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button type="submit" id="settings-btn-save-new-pwd" style="margin-top:4px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px 0; border:none; border-radius:14px; background:var(--accent); color:#fff; font-family:var(--font-body); font-size:15px; font-weight:700; cursor:pointer; transition:background-color .15s ease, transform .1s ease;" onmouseover="this.style.background='var(--accent-hover)'" onmouseout="this.style.background='var(--accent)'">
+                                <span id="settings-text-save-pwd">Save New Password</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- STEP 4: Success View -->
+                    <div id="settings-otp-step-success" style="display:none; text-align:center; padding:12px 0;">
+                        <div style="width:60px; height:60px; border-radius:50%; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; margin:0 auto 16px auto;">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 6 9 17l-5-5"/>
+                            </svg>
+                        </div>
+                        <h3 style="font-family:var(--font-display); font-size:20px; font-weight:700; color:var(--panel-ink); margin:0 0 8px 0;">Password Reset Complete!</h3>
+                        <p style="font-size:13.5px; color:var(--gray); line-height:1.5; margin:0 0 22px 0;">
+                            Your password has been successfully updated. You can now sign in with your new credentials.
+                        </p>
+                        <button type="button" onclick="switchSettingsView('password')" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px 0; border:none; border-radius:14px; background:var(--accent); color:#fff; font-family:var(--font-body); font-size:15px; font-weight:700; cursor:pointer; transition:background-color .15s ease;">
+                            <span>Back to Change Password</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- ========================================================== -->
@@ -1107,14 +1210,15 @@ function closeSettingsModal() {
 
 function switchSettingsView(sectionId) {
     const views = {
-        'main':            { id: 'view-settings-main',            title: 'Settings',            showBack: false, wide: false },
-        'account':         { id: 'view-settings-account',         title: 'My Account',          showBack: true,  wide: false },
-        'password':        { id: 'view-settings-password',        title: 'Change Password',     showBack: true,  wide: false },
-        'notifications':   { id: 'view-settings-notifications',   title: 'Notifications',       showBack: true,  wide: false },
-        'security':        { id: 'view-settings-security',        title: 'Security',            showBack: true,  wide: false },
-        'backup':          { id: 'view-settings-backup',          title: 'Backup & Export',     showBack: true,  wide: false },
-        'contact_support': { id: 'view-settings-contact-support', title: 'Contact Support',     showBack: true,  wide: false },
-        'accountability':  { id: 'view-settings-accountability',  title: 'Accountability Log',  showBack: true,  wide: true  }
+        'main':            { id: 'view-settings-main',            title: 'Settings',            showBack: false, wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'account':         { id: 'view-settings-account',         title: 'My Account',          showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'password':        { id: 'view-settings-password',        title: 'Change Password',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'forgot_password': { id: 'view-settings-forgot-password', title: 'Reset Password',      showBack: true,  wide: false, backTo: 'password', backLabel: 'Change Password' },
+        'notifications':   { id: 'view-settings-notifications',   title: 'Notifications',       showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'security':        { id: 'view-settings-security',        title: 'Security',            showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'backup':          { id: 'view-settings-backup',          title: 'Backup & Export',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'contact_support': { id: 'view-settings-contact-support', title: 'Contact Support',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
+        'accountability':  { id: 'view-settings-accountability',  title: 'Accountability Log',  showBack: true,  wide: true,  backTo: 'main',     backLabel: 'Settings' }
     };
 
     const target = views[sectionId] || views['main'];
@@ -1148,6 +1252,9 @@ function switchSettingsView(sectionId) {
     const backBtn = document.getElementById('settingsBtnBack');
     if (backBtn) {
         backBtn.style.display = target.showBack ? 'inline-flex' : 'none';
+        backBtn.setAttribute('onclick', `switchSettingsView('${target.backTo || 'main'}')`);
+        const backSpan = backBtn.querySelector('span');
+        if (backSpan) backSpan.textContent = target.backLabel || 'Settings';
     }
 
     // Scroll body back to top
@@ -1156,6 +1263,316 @@ function switchSettingsView(sectionId) {
         modalBody.scrollTop = 0;
     }
 }
+
+// =========================================================================
+// 3-STEP 6-DIGIT OTP FORGOT PASSWORD CONTROLLER (Matches Login Page Design)
+// =========================================================================
+let settingsResetEmail = '';
+let settingsResetToken = '';
+let settingsResendCountdown = 0;
+let settingsResendInterval = null;
+
+function openSettingsForgotPassword() {
+    setSettingsOtpStep(1);
+    switchSettingsView('forgot_password');
+}
+
+function showSettingsOtpAlert(type, message) {
+    const alertEl = document.getElementById('settings-otp-alert');
+    if (!alertEl) return;
+    alertEl.textContent = message;
+    alertEl.style.display = 'block';
+    if (type === 'success') {
+        alertEl.style.background = '#dcfce7';
+        alertEl.style.color = '#15803d';
+        alertEl.style.border = '1px solid #bbf7d0';
+    } else {
+        alertEl.style.background = '#fef2f2';
+        alertEl.style.color = '#dc2626';
+        alertEl.style.border = '1px solid #fecaca';
+    }
+}
+
+function clearSettingsOtpAlert() {
+    const alertEl = document.getElementById('settings-otp-alert');
+    if (alertEl) {
+        alertEl.style.display = 'none';
+        alertEl.textContent = '';
+    }
+}
+
+function setSettingsOtpStep(step) {
+    clearSettingsOtpAlert();
+    const stepPills = document.getElementById('settings-otp-step-pills');
+    const pill1 = document.getElementById('settings-pill-step-1');
+    const pill2 = document.getElementById('settings-pill-step-2');
+    const pill3 = document.getElementById('settings-pill-step-3');
+    const step1 = document.getElementById('settings-otp-step-1');
+    const step2 = document.getElementById('settings-otp-step-2');
+    const step3 = document.getElementById('settings-otp-step-3');
+    const stepSuccess = document.getElementById('settings-otp-step-success');
+    const otpBoxes = Array.from(document.querySelectorAll('.settings-otp-box'));
+
+    if (stepPills) stepPills.style.display = (step === 4) ? 'none' : 'flex';
+
+    if (step === 1) {
+        if (pill1) pill1.style.background = 'var(--accent)';
+        if (pill2) pill2.style.background = 'var(--border)';
+        if (pill3) pill3.style.background = 'var(--border)';
+        if (step1) step1.style.display = 'block';
+        if (step2) step2.style.display = 'none';
+        if (step3) step3.style.display = 'none';
+        if (stepSuccess) stepSuccess.style.display = 'none';
+        const emailInput = document.getElementById('settings-otp-input-email');
+        setTimeout(() => emailInput && emailInput.focus(), 100);
+    } else if (step === 2) {
+        if (pill1) pill1.style.background = 'var(--accent)';
+        if (pill2) pill2.style.background = 'var(--accent)';
+        if (pill3) pill3.style.background = 'var(--border)';
+        if (step1) step1.style.display = 'none';
+        if (step2) step2.style.display = 'block';
+        if (step3) step3.style.display = 'none';
+        if (stepSuccess) stepSuccess.style.display = 'none';
+        otpBoxes.forEach(b => b.value = '');
+        setTimeout(() => otpBoxes[0] && otpBoxes[0].focus(), 100);
+    } else if (step === 3) {
+        if (pill1) pill1.style.background = 'var(--accent)';
+        if (pill2) pill2.style.background = 'var(--accent)';
+        if (pill3) pill3.style.background = 'var(--accent)';
+        if (step1) step1.style.display = 'none';
+        if (step2) step2.style.display = 'none';
+        if (step3) step3.style.display = 'block';
+        if (stepSuccess) stepSuccess.style.display = 'none';
+        const pwdInput = document.getElementById('settings-otp-input-pwd');
+        setTimeout(() => pwdInput && pwdInput.focus(), 100);
+    } else if (step === 4) {
+        if (step1) step1.style.display = 'none';
+        if (step2) step2.style.display = 'none';
+        if (step3) step3.style.display = 'none';
+        if (stepSuccess) stepSuccess.style.display = 'block';
+    }
+}
+
+function startSettingsOtpResendTimer() {
+    const btnResend = document.getElementById('settings-btn-otp-resend');
+    if (!btnResend) return;
+    if (settingsResendInterval) clearInterval(settingsResendInterval);
+    settingsResendCountdown = 60;
+    btnResend.disabled = true;
+    btnResend.style.opacity = '0.6';
+    btnResend.style.cursor = 'default';
+    btnResend.textContent = `Resend code (${settingsResendCountdown}s)`;
+
+    settingsResendInterval = setInterval(() => {
+        settingsResendCountdown--;
+        if (settingsResendCountdown <= 0) {
+            clearInterval(settingsResendInterval);
+            settingsResendInterval = null;
+            btnResend.disabled = false;
+            btnResend.style.opacity = '1';
+            btnResend.style.cursor = 'pointer';
+            btnResend.textContent = 'Resend code';
+        } else {
+            btnResend.textContent = `Resend code (${settingsResendCountdown}s)`;
+        }
+    }, 1000);
+}
+
+function handleSettingsOtpStep1() {
+    clearSettingsOtpAlert();
+    const emailInput = document.getElementById('settings-otp-input-email');
+    const btnSend = document.getElementById('settings-btn-send-otp');
+    const textSend = document.getElementById('settings-text-send-otp');
+    const targetEmailText = document.getElementById('settings-otp-target-email');
+
+    const emailVal = emailInput ? emailInput.value.trim() : '';
+    if (!emailVal) {
+        showSettingsOtpAlert('danger', 'Please enter your email address.');
+        return;
+    }
+
+    if (btnSend) {
+        btnSend.disabled = true;
+        if (textSend) textSend.textContent = 'Sending Code...';
+    }
+
+    fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ action: 'send_code', email: emailVal })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btnSend) {
+            btnSend.disabled = false;
+            if (textSend) textSend.textContent = 'Send 6-Digit Code';
+        }
+        if (data.success) {
+            settingsResetEmail = emailVal;
+            if (targetEmailText) targetEmailText.textContent = data.masked_email || emailVal;
+            setSettingsOtpStep(2);
+            showSettingsOtpAlert('success', data.message || 'Verification code dispatched to your inbox.');
+            startSettingsOtpResendTimer();
+        } else {
+            showSettingsOtpAlert('danger', data.message || 'Unable to send verification code.');
+        }
+    })
+    .catch(() => {
+        if (btnSend) {
+            btnSend.disabled = false;
+            if (textSend) textSend.textContent = 'Send 6-Digit Code';
+        }
+        showSettingsOtpAlert('danger', 'A network error occurred. Please try again.');
+    });
+}
+
+function handleSettingsOtpResend() {
+    const btnResend = document.getElementById('settings-btn-otp-resend');
+    if (settingsResendCountdown > 0 || !settingsResetEmail) return;
+    clearSettingsOtpAlert();
+    if (btnResend) btnResend.textContent = 'Sending...';
+
+    fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ action: 'send_code', email: settingsResetEmail })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showSettingsOtpAlert('success', data.message || 'New 6-digit verification code sent!');
+            startSettingsOtpResendTimer();
+        } else {
+            if (btnResend) btnResend.textContent = 'Resend code';
+            showSettingsOtpAlert('danger', data.message || 'Failed to resend code.');
+        }
+    })
+    .catch(() => {
+        if (btnResend) btnResend.textContent = 'Resend code';
+        showSettingsOtpAlert('danger', 'Network error. Please try again.');
+    });
+}
+
+function handleSettingsOtpStep2() {
+    clearSettingsOtpAlert();
+    const otpBoxes = Array.from(document.querySelectorAll('.settings-otp-box'));
+    const btnVerify = document.getElementById('settings-btn-verify-otp');
+    const textVerify = document.getElementById('settings-text-verify-otp');
+
+    const code = otpBoxes.map(b => b.value.trim()).join('');
+    if (code.length !== 6) {
+        showSettingsOtpAlert('danger', 'Please enter all 6 digits of the verification code.');
+        return;
+    }
+
+    if (btnVerify) {
+        btnVerify.disabled = true;
+        if (textVerify) textVerify.textContent = 'Verifying...';
+    }
+
+    fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            action: 'verify_code',
+            email: settingsResetEmail,
+            code: code
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btnVerify) {
+            btnVerify.disabled = false;
+            if (textVerify) textVerify.textContent = 'Verify Code';
+        }
+        if (data.success && data.reset_token) {
+            settingsResetToken = data.reset_token;
+            setSettingsOtpStep(3);
+            showSettingsOtpAlert('success', data.message || 'Code verified successfully!');
+        } else {
+            showSettingsOtpAlert('danger', data.message || 'Invalid code. Please try again.');
+        }
+    })
+    .catch(() => {
+        if (btnVerify) {
+            btnVerify.disabled = false;
+            if (textVerify) textVerify.textContent = 'Verify Code';
+        }
+        showSettingsOtpAlert('danger', 'A network error occurred while verifying the code.');
+    });
+}
+
+function handleSettingsOtpStep3() {
+    clearSettingsOtpAlert();
+    const inputPwd = document.getElementById('settings-otp-input-pwd');
+    const inputConfirmPwd = document.getElementById('settings-otp-input-confirm-pwd');
+    const btnSave = document.getElementById('settings-btn-save-new-pwd');
+    const textSave = document.getElementById('settings-text-save-pwd');
+
+    const newPwd = inputPwd ? inputPwd.value : '';
+    const confirmPwd = inputConfirmPwd ? inputConfirmPwd.value : '';
+
+    if (!newPwd || !confirmPwd) {
+        showSettingsOtpAlert('danger', 'Please fill in both password fields.');
+        return;
+    }
+    if (newPwd.length < 6) {
+        showSettingsOtpAlert('danger', 'Password must be at least 6 characters.');
+        return;
+    }
+    if (newPwd !== confirmPwd) {
+        showSettingsOtpAlert('danger', 'Passwords do not match. Please re-enter.');
+        return;
+    }
+
+    if (btnSave) {
+        btnSave.disabled = true;
+        if (textSave) textSave.textContent = 'Saving Password...';
+    }
+
+    fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            action: 'reset_password',
+            email: settingsResetEmail,
+            reset_token: settingsResetToken,
+            password: newPwd,
+            confirm_password: confirmPwd
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btnSave) {
+            btnSave.disabled = false;
+            if (textSave) textSave.textContent = 'Save New Password';
+        }
+        if (data.success) {
+            setSettingsOtpStep(4);
+        } else {
+            showSettingsOtpAlert('danger', data.message || 'Failed to update password.');
+        }
+    })
+    .catch(() => {
+        if (btnSave) {
+            btnSave.disabled = false;
+            if (textSave) textSave.textContent = 'Save New Password';
+        }
+        showSettingsOtpAlert('danger', 'A network error occurred while updating password.');
+    });
+}
+
+function toggleSettingsOtpPwdVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input || !btn) return;
+    const isPwd = input.type === 'password';
+    input.type = isPwd ? 'text' : 'password';
+    const eyeOn = btn.querySelector('.eye-on');
+    const eyeOff = btn.querySelector('.eye-off');
+    if (eyeOn) eyeOn.style.display = isPwd ? 'none' : 'block';
+    if (eyeOff) eyeOff.style.display = isPwd ? 'block' : 'none';
+}
+
 
 function handleSimulateSupportSend() {
     const subject = document.getElementById('supportSubject');
@@ -1217,6 +1634,48 @@ document.addEventListener('keydown', function(e) {
 
 // Auto-open settings modal if URL hash or query parameter requests it
 document.addEventListener('DOMContentLoaded', function() {
+    // OTP Box Input Group Logic (Auto-Advance, Backspace, Paste)
+    const settingsOtpBoxes = Array.from(document.querySelectorAll('.settings-otp-box'));
+    settingsOtpBoxes.forEach((box, idx) => {
+        box.addEventListener('focus', function () {
+            box.style.borderColor = 'var(--accent)';
+            box.style.boxShadow = '0 0 0 3px rgba(31,122,108,0.15)';
+            box.select();
+        });
+        box.addEventListener('blur', function () {
+            box.style.borderColor = 'var(--border)';
+            box.style.boxShadow = 'none';
+        });
+        box.addEventListener('input', function () {
+            const val = box.value.replace(/[^0-9]/g, '');
+            box.value = val ? val[0] : '';
+            if (box.value && idx < settingsOtpBoxes.length - 1) {
+                settingsOtpBoxes[idx + 1].focus();
+            }
+        });
+        box.addEventListener('keydown', function (e) {
+            if (e.key === 'Backspace' && !box.value && idx > 0) {
+                settingsOtpBoxes[idx - 1].focus();
+            } else if (e.key === 'ArrowLeft' && idx > 0) {
+                settingsOtpBoxes[idx - 1].focus();
+            } else if (e.key === 'ArrowRight' && idx < settingsOtpBoxes.length - 1) {
+                settingsOtpBoxes[idx + 1].focus();
+            }
+        });
+        box.addEventListener('paste', function (e) {
+            e.preventDefault();
+            const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+            if (!pasteData) return;
+            for (let i = 0; i < settingsOtpBoxes.length; i++) {
+                if (pasteData[i]) {
+                    settingsOtpBoxes[i].value = pasteData[i];
+                }
+            }
+            const nextIdx = Math.min(pasteData.length, settingsOtpBoxes.length - 1);
+            settingsOtpBoxes[nextIdx].focus();
+        });
+    });
+
     const hash = window.location.hash;
     const urlParams = new URLSearchParams(window.location.search);
     
@@ -1227,6 +1686,8 @@ document.addEventListener('DOMContentLoaded', function() {
         openSettingsModal('account');
     } else if (hash === '#settings-password' || hash === '#password') {
         openSettingsModal('password');
+    } else if (hash === '#settings-forgot-password' || urlParams.get('section') === 'forgot_password') {
+        openSettingsModal('forgot_password');
     } else if (hash === '#settings-notifications' || hash === '#notifications') {
         openSettingsModal('notifications');
     } else if (hash === '#settings-security' || hash === '#security') {

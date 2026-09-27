@@ -246,72 +246,90 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 <style>
 /* Tab Navigation Bar */
 .stock-ops-nav-wrapper {
-    background: #FFFFFF;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 14px 18px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #E2E8F0;
+    border-radius: 0;
+    padding: 0;
     margin-bottom: 24px;
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
 }
 .stock-ops-nav-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--gray);
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: none;
 }
 .stock-ops-tabs {
     display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
+    align-items: center;
+    width: 100%;
+    gap: 0;
+    flex-wrap: nowrap;
+    margin-bottom: -1px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.stock-ops-tabs::-webkit-scrollbar {
+    display: none;
 }
 .stock-tab-btn {
     appearance: none;
-    background: #F8FAFC;
-    border: 1.5px solid #E2E8F0;
-    color: #475569;
-    padding: 10px 18px;
-    border-radius: 9px;
+    flex: 1 1 0%;
+    min-width: max-content;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: #64748B;
+    padding: 14px 24px;
     font-family: var(--font-body);
     font-weight: 600;
     font-size: 13.5px;
+    line-height: 1.25;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    transition: all 0.16s ease;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
     user-select: none;
+    box-shadow: none;
+}
+.stock-tab-btn svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: currentColor;
+    stroke: currentColor;
+    transition: color 0.2s ease, stroke 0.2s ease;
 }
 .stock-tab-btn:hover {
-    background: #F1F5F9;
-    color: var(--panel-ink);
-    border-color: #CBD5E1;
-    transform: translateY(-1px);
+    background: transparent;
+    color: #334155;
+    border-bottom-color: #CBD5E1;
+    transform: none;
 }
-.stock-tab-btn.active {
-    background: var(--panel-ink);
-    color: #FFFFFF;
-    border-color: var(--panel-ink);
-    box-shadow: 0 4px 14px rgba(20, 33, 61, 0.20);
-    font-weight: 700;
+.stock-tab-btn.active,
+.stock-tab-btn.active:hover {
+    background: transparent;
+    color: #2563EB;
+    border-bottom-color: #2563EB;
+    box-shadow: none;
+    font-weight: 600;
     transform: none;
 }
 .stock-tab-btn .tab-badge-count {
-    background: #E2E8F0;
-    color: #475569;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 10px;
-    transition: all 0.16s ease;
+    display: none;
 }
-.stock-tab-btn.active .tab-badge-count {
-    background: rgba(255, 255, 255, 0.22);
-    color: #FFFFFF;
+@media (max-width: 768px) {
+    .stock-ops-tabs {
+        justify-content: flex-start;
+    }
+    .stock-tab-btn {
+        flex: 1 0 auto;
+        padding: 12px 18px;
+        font-size: 13px;
+    }
 }
 
 /* Tab Panes */
