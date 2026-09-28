@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Raw Materials (Procurement Inbound Monitoring)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Raw Materials — StockPilot';
+$pageTitle   = 'Raw Materials — InventoryTeam';
 $activePage  = 'raw_materials';
 $activeGroup = 'inventory';
 

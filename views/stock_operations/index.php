@@ -1,7 +1,7 @@
 <?php
 /**
  * View: Stock Operations (Unified Transaction Hub)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Unifies three core inventory transaction functions into a single interface:
  * 1. Stock Transfer (Inter-facility warehouse transfer ledger)
@@ -9,7 +9,7 @@
  * 3. Stock Card (Item-level chronological debit/credit ledger)
  */
 
-$pageTitle   = 'Stock Operations — StockPilot';
+$pageTitle   = 'Stock Operations — InventoryTeam';
 $activePage  = 'stock_operations';
 $activeGroup = 'inventory';
 

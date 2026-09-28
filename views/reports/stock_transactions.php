@@ -1,7 +1,7 @@
 <?php
 /**
  * View: Stock Transaction Reports (Unified Transaction Ledger Hub)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Unifies 5 core inventory transaction and movement reports into one page with 5 tabs:
  * 1. Stock Movement Ledger
@@ -11,7 +11,7 @@
  * 5. Stock Adjustments & Variances
  */
 
-$pageTitle   = 'Stock Transaction Reports — StockPilot';
+$pageTitle   = 'Stock Transaction Reports — InventoryTeam';
 $activePage  = 'stock_transactions';
 $activeGroup = 'reports';
 
@@ -257,7 +257,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 <div class="print-banner">
     <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div>
-            <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">StockPilot Inventory Management System</h2>
+            <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">InventoryTeam Inventory Management System</h2>
             <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">Stock Movement Ledger Report</h3>
         </div>
         <div style="text-align: right; font-size: 11px; color: var(--gray);">

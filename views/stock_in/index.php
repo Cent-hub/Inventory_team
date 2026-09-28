@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Stock In Receiving Ledger
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Stock In Receiving — StockPilot';
+$pageTitle   = 'Stock In Receiving — InventoryTeam';
 $activePage  = 'stock_in';
 $activeGroup = 'inventory';
 

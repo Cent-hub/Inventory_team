@@ -1,5 +1,5 @@
 /**
- * StockPilot — Core Master Stylesheet
+ * InventoryTeam — Core Master Stylesheet
  * Extracted from views/layouts/header.php
  */
 
@@ -1389,7 +1389,7 @@
         }
 
 /* ==========================================================================
-   iOS-Inspired Grouped Settings Modal & Section Design System (StockPilot)
+   iOS-Inspired Grouped Settings Modal & Section Design System (InventoryTeam)
    ========================================================================== */
 .settings-modal-backdrop {
     display: none;
@@ -1510,7 +1510,7 @@
     gap: 16px;
 }
 
-/* Inset Grouped Card (iOS style in StockPilot Palette) */
+/* Inset Grouped Card (iOS style in InventoryTeam Palette) */
 .settings-group {
     background: #ffffff;
     border: 1px solid var(--border);
@@ -1655,7 +1655,7 @@
     background: #D97706;
 }
 
-/* iOS Style Switch in StockPilot Teal */
+/* iOS Style Switch in InventoryTeam Teal */
 .ios-switch {
     position: relative;
     display: inline-block;
@@ -1827,7 +1827,7 @@
 }
 
 /* ==========================================================================
-   User Management & Summary KPI Cards / Badges (StockPilot)
+   User Management & Summary KPI Cards / Badges (InventoryTeam)
    ========================================================================== */
 .kpi-grid,
 .summary-grid {

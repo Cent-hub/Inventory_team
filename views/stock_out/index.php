@@ -2,10 +2,10 @@
 
 /**
  * View: Stock Out Dispatch Ledger
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Stock Out Dispatch — StockPilot';
+$pageTitle   = 'Stock Out Dispatch — InventoryTeam';
 $activePage  = 'stock_out';
 $activeGroup = 'inventory';
 

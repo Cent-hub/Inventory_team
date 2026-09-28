@@ -1,7 +1,7 @@
 <?php
 /**
  * View: Full Page Accountability Audit Log
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Whole-page audit ledger showing who performed inventory-related actions,
  * what they did, when they did it, and which warehouse was affected.
@@ -43,7 +43,7 @@ $logs = AccountabilityService::getLogs($currentWarehouseId, [
     'end_date'   => $_GET['end_date'] ?? '',
 ]);
 
-$pageTitle   = 'Accountability Audit Log — Settings — StockPilot';
+$pageTitle   = 'Accountability Audit Log — Settings — InventoryTeam';
 $activePage  = 'settings';
 $activeGroup = 'settings';
 
@@ -65,12 +65,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <p class="page-subtitle">Operational audit trail capturing all user and team activities across inventory touchpoints</p>
     </div>
     <div class="header-actions">
-        <a href="<?= BASE_URL ?>views/settings/index.php" class="btn btn-secondary" style="text-decoration: none;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="15 18 9 12 15 6"/>
-            </svg>
-            <span>Back to Settings</span>
-        </a>
         <a href="?export=csv" class="btn btn-primary" style="text-decoration: none;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>

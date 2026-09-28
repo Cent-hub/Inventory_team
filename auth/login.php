@@ -1,6 +1,6 @@
 <?php
 /**
- * StockPilot Login UI
+ * InventoryTeam Login UI
  * Connected to AuthController & Secure Session Engine
  */
 
@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — StockPilot</title>
+    <title>Login — InventoryTeam</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -533,7 +533,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <path d="M12 22V12"/>
                             </svg>
                         </span>
-                        <span class="logo-text">Stock<span>Pilot</span></span>
+                        <span class="logo-text">Inventory<span>Team</span></span>
                     </div>
 
                     <!-- Login Title -->

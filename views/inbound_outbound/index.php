@@ -1,14 +1,14 @@
 <?php
 /**
  * View: Inventory Inbound & Outbound (Unified Movement Hub)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Unifies two core inventory transaction flows into a single interface:
  * 1. Inbound (Stock In receipts from Procurement & Production)
  * 2. Outbound (Stock Out dispatches to Sales & Production)
  */
 
-$pageTitle   = 'Inventory Inbound & Outbound — StockPilot';
+$pageTitle   = 'Inventory Inbound & Outbound — InventoryTeam';
 $activePage  = 'inbound_outbound';
 $activeGroup = 'inventory';
 

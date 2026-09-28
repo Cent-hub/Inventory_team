@@ -1,7 +1,7 @@
 <?php
 /**
  * View: 403 Forbidden - Warehouse Access Denied
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
 if (!headers_sent()) {
@@ -22,7 +22,7 @@ $deniedDetail = $deniedDetail ?? 'You are not authorized to view, filter, or acc
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>403 Access Denied — StockPilot</title>
+    <title>403 Access Denied — InventoryTeam</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">

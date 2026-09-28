@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Stock Adjustment & Discrepancy Corrections
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Stock Adjustment — StockPilot';
+$pageTitle   = 'Stock Adjustment — InventoryTeam';
 $activePage  = 'stock_adjustment';
 $activeGroup = 'inventory';
 

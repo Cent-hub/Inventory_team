@@ -1,7 +1,7 @@
 <?php
 /**
  * Layout: Top Navigation Bar
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 $navbarWarehouses = [];
 if (!empty($isAuthorizedForMultiWarehouse) && isset($pdo)) {
@@ -26,7 +26,7 @@ if (!empty($isAuthorizedForMultiWarehouse) && isset($pdo)) {
                 </svg>
             </button>
             <span style="font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--panel-ink); letter-spacing: -0.3px;">
-                Stock<span style="color: var(--accent);">Pilot</span>
+                Inventory<span style="color: var(--accent);">Team</span>
             </span>
         </div>
         <div class="navbar-right">

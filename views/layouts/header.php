@@ -1,7 +1,7 @@
 <?php
 /**
  * Layout: Header & Master Framework
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
@@ -150,7 +150,7 @@ if (!function_exists('formatQty')) {
     }
 }
 
-$pageTitle   = $pageTitle ?? 'Admin Portal — StockPilot';
+$pageTitle   = $pageTitle ?? 'Admin Portal — InventoryTeam';
 $activePage  = $activePage ?? 'dashboard';
 $activeGroup = $activeGroup ?? '';
 ?>

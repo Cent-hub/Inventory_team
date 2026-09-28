@@ -2,7 +2,7 @@
 /**
  * CSRF Protection Helper
  * Generates, injects, and validates synchronized anti-CSRF tokens for all state-changing operations.
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
 if (session_status() === PHP_SESSION_NONE) {

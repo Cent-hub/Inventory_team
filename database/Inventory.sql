@@ -26,6 +26,7 @@ CREATE TABLE `users` (
     `email` VARCHAR(150) NOT NULL,
     `password` VARCHAR(255) NOT NULL COMMENT 'PHP password_hash() hash',
     `role` ENUM('super_admin', 'admin') NOT NULL DEFAULT 'admin',
+    `team` VARCHAR(50) NOT NULL DEFAULT 'Inventory',
     `warehouse_id` INT(10) UNSIGNED DEFAULT NULL,
     `api_token` VARCHAR(64) DEFAULT NULL,
     `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
@@ -89,6 +90,7 @@ CREATE TABLE `items` (
     `unit` VARCHAR(20) NOT NULL COMMENT 'pcs, kg, box, liter',
     `default_reorder_level` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
     `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+    `created_by` INT(10) UNSIGNED DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`item_id`),
@@ -231,6 +233,8 @@ CREATE TABLE `stock_transfers` (
     `status` ENUM('pending', 'completed', 'cancelled') NOT NULL DEFAULT 'completed',
     `remarks` TEXT DEFAULT NULL,
     `created_by` INT(10) UNSIGNED NOT NULL,
+    `received_by` INT(10) UNSIGNED DEFAULT NULL,
+    `received_at` DATETIME DEFAULT NULL,
     `cancelled_at` DATETIME DEFAULT NULL,
     `cancelled_by` INT(10) UNSIGNED DEFAULT NULL,
     `cancellation_reason` VARCHAR(255) DEFAULT NULL,
@@ -413,7 +417,7 @@ CREATE TABLE `stock_movements` (
         (CASE WHEN `bad_product_id` IS NOT NULL THEN 1 ELSE 0 END) = 1
     ),
     CONSTRAINT `chk_sm_qty_in` CHECK (`quantity_in` >= 0),
-    CONSTRAINT `chk_sm_qty_out` CHECK (`quantity_out` >= 0),
+    CONSTRAINT `chk_sm_qty_out` CHECK (`quantity_out` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -429,6 +433,35 @@ CREATE TABLE `api_rate_limits` (
     PRIMARY KEY (`rate_limit_id`),
     UNIQUE KEY `uq_client_endpoint_window` (`client_key`, `endpoint`, `window_start`),
     KEY `idx_window` (`window_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 15c. Table: accountability_logs (Cross-Team Audit Log)
+-- -----------------------------------------------------------------------------
+DROP TABLE IF EXISTS `accountability_logs`;
+CREATE TABLE `accountability_logs` (
+    `log_id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `user_id` INT UNSIGNED NULL,
+    `user_name` VARCHAR(150) NOT NULL,
+    `user_role` VARCHAR(50) NOT NULL DEFAULT 'admin',
+    `team` VARCHAR(50) NOT NULL DEFAULT 'Inventory',
+    `action_type` VARCHAR(60) NOT NULL,
+    `channel` ENUM('UI', 'API') NOT NULL DEFAULT 'UI',
+    `item_id` INT UNSIGNED NULL,
+    `item_code` VARCHAR(50) NULL,
+    `item_name` VARCHAR(150) NULL,
+    `quantity` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+    `unit` VARCHAR(20) NULL,
+    `warehouse_id` INT UNSIGNED NOT NULL,
+    `destination_warehouse_id` INT UNSIGNED NULL,
+    `reference_number` VARCHAR(100) NULL,
+    `notes` TEXT NULL,
+    INDEX `idx_acc_warehouse` (`warehouse_id`),
+    INDEX `idx_acc_user` (`user_id`),
+    INDEX `idx_acc_team` (`team`),
+    INDEX `idx_acc_action` (`action_type`),
+    INDEX `idx_acc_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

@@ -1,6 +1,6 @@
 # Priority 4 Completion Report: Code Organization & Asset Optimization
 
-**Project:** StockPilot — Liquor Business Inventory Management System  
+**Project:** InventoryTeam — Liquor Business Inventory Management System  
 **Corpus / Repository:** `Cent-hub/Inventory_team` (`c:\xampp\htdocs\Inventory_Team`)  
 **Date:** September 14, 2026  
 **Status:** Completed & Fully Verified  

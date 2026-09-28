@@ -15,14 +15,14 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- User 5: 'proc2_live_sec_112233'-> SHA-256: f41a58e788485883635f7ace4f8dbe67aa1802a638ab4dcb0628ed03f9124be9
 -- User 6: 'sales2_live_sec_445566'-> SHA-256: 7af8a22ee365f996796e1853ea5d69c97ee006d7987c9ca94e04572d4e58366a
 -- Password for all seeded users is: 'admin123'
-INSERT INTO `users` (`user_id`, `name`, `email`, `password`, `role`, `warehouse_id`, `api_token`, `status`) VALUES
-(1, 'System Super Admin', 'admin@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'super_admin', 1, 'd2c89d5e330ef2178ce2c7f275963f2b8563030d0e399ecac4d875107fc20cbb', 'active'),
-(2, 'Procurement Service API', 'procurement@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 1, '8cacfcb41fb35a319472555807be7da7ad2cf0079f2e1ad05e0e85c723dc36f0', 'active'),
-(3, 'Production Service API', 'production@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 3, '13c169097c8071234a9584fdbe0ed3d41c37f4215d9b3c4cb91760800ea1e786', 'active'),
-(4, 'Sales Service API', 'sales@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 1, '1394786dea8f134e70c77e84497bbbd48125e8b5bae7855ccb2d4f8ef5b0f74a', 'active'),
-(5, 'Procurement Secondary Admin', 'proc2@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 2, 'f41a58e788485883635f7ace4f8dbe67aa1802a638ab4dcb0628ed03f9124be9', 'active'),
-(6, 'Sales Secondary Admin', 'sales2@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 2, '7af8a22ee365f996796e1853ea5d69c97ee006d7987c9ca94e04572d4e58366a', 'active')
-ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `password` = VALUES(`password`), `role` = VALUES(`role`), `warehouse_id` = VALUES(`warehouse_id`), `api_token` = VALUES(`api_token`);
+INSERT INTO `users` (`user_id`, `name`, `email`, `password`, `role`, `team`, `warehouse_id`, `api_token`, `status`) VALUES
+(1, 'System Super Admin', 'admin@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'super_admin', 'Administration', 1, 'd2c89d5e330ef2178ce2c7f275963f2b8563030d0e399ecac4d875107fc20cbb', 'active'),
+(2, 'Procurement Service API', 'procurement@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 'Procurement', 1, '8cacfcb41fb35a319472555807be7da7ad2cf0079f2e1ad05e0e85c723dc36f0', 'active'),
+(3, 'Production Service API', 'production@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 'Production', 3, '13c169097c8071234a9584fdbe0ed3d41c37f4215d9b3c4cb91760800ea1e786', 'active'),
+(4, 'Sales Service API', 'sales@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 'Sales', 1, '1394786dea8f134e70c77e84497bbbd48125e8b5bae7855ccb2d4f8ef5b0f74a', 'active'),
+(5, 'Procurement Secondary Admin', 'proc2@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 'Procurement', 2, 'f41a58e788485883635f7ace4f8dbe67aa1802a638ab4dcb0628ed03f9124be9', 'active'),
+(6, 'Sales Secondary Admin', 'sales2@inventory.local', '$2y$10$UH5MIbyhTYTOEiTyOPpgyu54KbT/eNL9SVLktkQFmYxNhPW8/sN8K', 'admin', 'Sales', 2, '7af8a22ee365f996796e1853ea5d69c97ee006d7987c9ca94e04572d4e58366a', 'active')
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `password` = VALUES(`password`), `role` = VALUES(`role`), `team` = VALUES(`team`), `warehouse_id` = VALUES(`warehouse_id`), `api_token` = VALUES(`api_token`);
 
 -- 2. Seed Warehouses
 INSERT INTO `warehouses` (`warehouse_id`, `warehouse_code`, `warehouse_name`, `location`, `description`, `status`) VALUES

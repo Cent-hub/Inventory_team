@@ -1,10 +1,10 @@
 <?php
 /**
  * Layout Component: iOS-Inspired Grouped Settings Modal
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Follows the clean inset-group visual structure of modern iOS settings,
- * faithfully adapted to the StockPilot deep navy, teal, and bronze palette.
+ * faithfully adapted to the InventoryTeam deep navy, teal, and bronze palette.
  */
 
 $currentUser = $currentUser ?? ($auth ? $auth->getCurrentUser() : []);
@@ -249,31 +249,6 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                     </div>
 
-                </div>
-
-                <!-- Group 3: System & Security Status -->
-                <div class="settings-group">
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/settings/index.php'" role="button" tabindex="0">
-                        <div class="settings-row-left">
-                            <div class="settings-squircle blue" style="width: 28px; height: 28px; border-radius: 7px;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="12" y1="16" x2="12" y2="12"/>
-                                    <line x1="12" y1="8" x2="12.01" y2="8"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="settings-row-title">StockPilot Liquor Inventory</div>
-                                <div class="settings-row-subtitle">Open Full System Settings Page &middot; v2.4.0</div>
-                            </div>
-                        </div>
-                        <div class="settings-row-right">
-                            <span class="settings-row-value">Open Page</span>
-                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="9 18 15 12 9 6"/>
-                            </svg>
-                        </div>
-                    </div>
                 </div>
 
             </div>

@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Master Item Catalog & SKU Management
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Item Catalog & SKUs — StockPilot';
+$pageTitle   = 'Item Catalog & SKUs — InventoryTeam';
 $activePage  = 'items';
 $activeGroup = 'inventory';
 

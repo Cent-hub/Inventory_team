@@ -1,7 +1,7 @@
 <?php
 /**
  * View: Users & Account Administration
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
@@ -15,7 +15,7 @@ if (!$auth->isAuthenticated()) {
 $currentUser = $auth->getCurrentUser();
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
-$pageTitle   = $isSuperAdmin ? 'Users & Accounts — StockPilot' : 'My Account — StockPilot';
+$pageTitle   = $isSuperAdmin ? 'Users & Accounts — InventoryTeam' : 'My Account — InventoryTeam';
 $activePage  = $isSuperAdmin ? 'users' : 'my_account';
 $activeGroup = $isSuperAdmin ? 'users' : 'settings';
 
@@ -169,7 +169,7 @@ function getFacilityAssignment($user) {
 </div>
 
 <?php if (!$isSuperAdmin): ?>
-<!-- Settings Sections Grouped Card (Styled after iOS reference in StockPilot theme) -->
+<!-- Settings Sections Grouped Card (Styled after iOS reference in InventoryTeam theme) -->
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 0 4px 6px 4px;">
     <span class="settings-group-label" style="margin: 0;">Settings &amp; Quick Actions</span>
 </div>

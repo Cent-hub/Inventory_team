@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Stock Movement Master Ledger
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Stock Movements — StockPilot';
+$pageTitle   = 'Stock Movements — InventoryTeam';
 $activePage  = 'movement';
 $activeGroup = 'inventory';
 

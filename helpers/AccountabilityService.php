@@ -1,7 +1,7 @@
 <?php
 /**
  * AccountabilityService.php
- * Centralized audit logging service for StockPilot Inventory ERP.
+ * Centralized audit logging service for InventoryTeam Inventory ERP.
  * Records every user, team, and API transaction affecting inventory.
  */
 

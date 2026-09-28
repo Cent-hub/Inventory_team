@@ -1,14 +1,14 @@
 <?php
 /**
  * View: Stock Transfer (Two-Sided Transfer Ledger)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Organizes warehouse-to-warehouse transfers into two distinct ledger sections:
  * 1. Received from Other Warehouse (Inbound destination)
  * 2. Transferred to Other Warehouse (Outbound source)
  */
 
-$pageTitle   = 'Stock Transfer Ledger — StockPilot';
+$pageTitle   = 'Stock Transfer Ledger — InventoryTeam';
 $activePage  = 'stock_transfer';
 $activeGroup = 'inventory';
 

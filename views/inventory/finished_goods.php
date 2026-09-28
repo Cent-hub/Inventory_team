@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Finished Goods (Production Output Monitoring)
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Finished Goods — StockPilot';
+$pageTitle   = 'Finished Goods — InventoryTeam';
 $activePage  = 'finished_goods';
 $activeGroup = 'inventory';
 

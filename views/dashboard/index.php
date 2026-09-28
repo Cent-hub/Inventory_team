@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Central Admin Dashboard
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Admin Dashboard — StockPilot';
+$pageTitle   = 'Admin Dashboard — InventoryTeam';
 $activePage  = 'dashboard';
 $activeGroup = '';
 

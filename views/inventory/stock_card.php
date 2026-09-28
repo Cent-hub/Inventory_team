@@ -1,10 +1,10 @@
 <?php
 /**
  * View: Item Stock Card Ledger
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Stock Card — StockPilot';
+$pageTitle   = 'Stock Card — InventoryTeam';
 $activePage  = 'stock_card';
 $activeGroup = 'inventory';
 

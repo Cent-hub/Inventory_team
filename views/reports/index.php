@@ -1,7 +1,7 @@
 <?php
 /**
  * View: Comprehensive Inventory Reports Suite
- * StockPilot — Liquor Business Inventory Management System
+ * InventoryTeam — Liquor Business Inventory Management System
  * 
  * Restructured Unified Hub for Core Inventory Reports:
  * Section 1: Raw Materials Stock Report
@@ -44,7 +44,7 @@ if ($isTransactionReport) {
     return;
 }
 
-$pageTitle   = 'Inventory Reports — StockPilot';
+$pageTitle   = 'Inventory Reports — InventoryTeam';
 $activePage  = 'reports';
 $activeGroup = 'reports';
 
@@ -120,7 +120,7 @@ $currentBalanceData = $allInventoryData;
 <div class="print-banner">
     <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div>
-            <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">StockPilot Inventory Management System</h2>
+            <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">InventoryTeam Inventory Management System</h2>
             <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">
                 <?= htmlspecialchars($activeTab === 'finished_goods' ? 'Finished Goods Stock Report' : ($activeTab === 'current_balance' ? 'Current Inventory Balance' : 'Raw Materials Stock Report')) ?>
             </h3>
