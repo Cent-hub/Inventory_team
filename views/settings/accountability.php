@@ -65,37 +65,25 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <p class="page-subtitle">Operational audit trail capturing all user and team activities across inventory touchpoints</p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
-        <!-- Quick Action: Contact Support -->
-        <button type="button" class="btn btn-primary" onclick="openSettingsModal('contact_support')" style="display: inline-flex; align-items: center; gap: 6px; background: #7C3AED; border-color: #7C3AED; color: #FFFFFF;">
+        <a href="<?= BASE_URL ?>views/settings/index.php" class="btn btn-secondary" style="text-decoration: none;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                <line x1="8" y1="10" x2="16" y2="10"/>
-                <line x1="8" y1="14" x2="13" y2="14"/>
+                <polyline points="15 18 9 12 15 6"/>
             </svg>
-            <span>Contact Support</span>
-        </button>
-        <!-- Quick Action: Settings Modal Menu -->
-        <button type="button" class="btn btn-secondary" onclick="openSettingsModal('main')">
+            <span>Back to Settings</span>
+        </a>
+        <a href="?export=csv" class="btn btn-primary" style="text-decoration: none;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            <span>Settings Menu</span>
-        </button>
+            <span>Export CSV</span>
+        </a>
     </div>
 </div>
 
 <!-- Accountability KPI Metrics Grid -->
-<div class="stats-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 24px;">
+<div class="stats-grid" style="margin-bottom: 24px;">
     <!-- Metric 1: Total Events -->
     <div class="stat-card">
         <div class="stat-header">
@@ -181,11 +169,11 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="fullLogSearch" class="search-box" placeholder="Filter user, item, team, or warehouse..." oninput="filterFullLogTable()">
+                <input type="text" id="fullLogSearch" class="search-box" aria-label="Filter accountability audit log" placeholder="Filter user, item, team, or warehouse..." oninput="filterFullLogTable()">
             </div>
 
             <!-- Team Filter -->
-            <select id="fullLogTeamFilter" class="select-filter" onchange="filterFullLogTable()">
+            <select id="fullLogTeamFilter" class="select-filter" aria-label="Filter by team" onchange="filterFullLogTable()">
                 <option value="all">All Teams</option>
                 <option value="Procurement">Procurement</option>
                 <option value="Production">Production</option>
@@ -195,7 +183,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </select>
 
             <!-- Action Type Filter -->
-            <select id="fullLogActionFilter" class="select-filter" onchange="filterFullLogTable()">
+            <select id="fullLogActionFilter" class="select-filter" aria-label="Filter by action type" onchange="filterFullLogTable()">
                 <option value="all">All Actions</option>
                 <option value="STOCK_IN">Stock In</option>
                 <option value="STOCK_OUT">Stock Out</option>
@@ -206,7 +194,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </select>
 
             <!-- Warehouse Filter -->
-            <select id="fullLogWarehouseFilter" class="select-filter" onchange="filterFullLogTable()">
+            <select id="fullLogWarehouseFilter" class="select-filter" aria-label="Filter by warehouse" onchange="filterFullLogTable()">
                 <option value="all">All Warehouses</option>
                 <?php foreach ($allWarehouses as $wh): ?>
                     <option value="<?= htmlspecialchars($wh['warehouse_name']) ?>">
@@ -319,31 +307,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </tbody>
         </table>
     </div>
-
-    <!-- Table Pagination / Summary Footer -->
-    <div style="padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 12px; background: #F8FAFC;">
-        <span id="fullLogTableCount" style="font-size: 12.5px; color: var(--gray); font-weight: 500;">
-            Showing <strong id="visibleRowCount"><?= count($logs) ?></strong> of <strong><?= count($logs) ?></strong> total accountability events
-        </span>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <a href="?export=csv<?= !empty($_SERVER['QUERY_STRING']) ? '&' . htmlspecialchars($_SERVER['QUERY_STRING']) : '' ?>" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                <span>Export CSV</span>
-            </a>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 6 2 18 2 18 9"/>
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                    <rect width="12" height="8" x="6" y="14"/>
-                </svg>
-                <span>Print Ledger</span>
-            </button>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -352,8 +315,9 @@ function filterFullLogTable() {
     const team = (document.getElementById('fullLogTeamFilter')?.value || 'all');
     const action = (document.getElementById('fullLogActionFilter')?.value || 'all');
     const warehouse = (document.getElementById('fullLogWarehouseFilter')?.value || 'all');
-    const rows = document.querySelectorAll('#fullLogTable tbody tr');
-    let visible = 0;
+    const table = document.getElementById('fullLogTable');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
 
     rows.forEach(row => {
         // Skip empty placeholder row if present
@@ -368,19 +332,12 @@ function filterFullLogTable() {
         const matchAction = (action === 'all' || rowAction.includes(action.toLowerCase()));
         const matchWarehouse = (warehouse === 'all' || rowWarehouse.includes(warehouse.toLowerCase()));
         const matchQuery = !query || text.includes(query);
+        const match = matchTeam && matchAction && matchWarehouse && matchQuery;
 
-        if (matchTeam && matchAction && matchWarehouse && matchQuery) {
-            row.style.display = '';
-            visible++;
-        } else {
-            row.style.display = 'none';
-        }
+        row.dataset.filteredOut = match ? 'false' : 'true';
     });
 
-    const countEl = document.getElementById('visibleRowCount');
-    if (countEl) {
-        countEl.textContent = visible;
-    }
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 
 function resetFullLogFilters() {

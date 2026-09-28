@@ -69,18 +69,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
 <div class="page-header">
     <div>
         <h1 class="page-title">Finished Goods Inventory</h1>
-        <p class="page-subtitle">adasfasfraswfasdfsdfsdfasdfasdfsdfasdfadsf</p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
+        <p class="page-subtitle">Monitor finished product stock levels, batch readiness, and distribution availability</p>
     </div>
 </div>
 
@@ -146,10 +135,8 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="fgSearch" class="search-box" placeholder="Filter product name or code..." onkeyup="filterFGTable()">
+                <input type="text" id="fgSearch" class="search-box" aria-label="Filter finished goods" placeholder="Filter product name or code..." oninput="filterFGTable()">
             </div>
-
-            
         </div>
     </div>
 
@@ -162,7 +149,6 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                     <th>Category</th>
                     <th>Available Stock</th>
                     <th>Unit</th>
-                    <th>Warehouse Branch</th>
                     <th>Production Batch Ref</th>
                     <th>Production Date</th>
                     <th>Status</th>
@@ -171,7 +157,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
             <tbody>
                 <?php if (empty($finishedGoods)): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No finished products found in database.</td>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No finished products found in database.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($finishedGoods as $item): ?>
@@ -198,14 +184,6 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                             </td>
                             <td>
                                 <span style="color: var(--gray); font-weight: 500;"><?= htmlspecialchars($item['unit']) ?></span>
-                            </td>
-                            <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($item['warehouse_code'] ?? '') ?>">
-                                    <?= htmlspecialchars($item['warehouse_code'] ?? 'WH-BOND') ?>
-                                </span>
-                                <span style="font-size: 12px; color: var(--gray); margin-left: 4px;">
-                                    <?= htmlspecialchars($item['warehouse_name'] ?? 'Warehouse') ?>
-                                </span>
                             </td>
                             <td style="font-family: monospace; font-size: 12px;">
                                 <?php if (!empty($item['batch_reference'])): ?>
@@ -240,13 +218,17 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
 <script>
 function filterFGTable() {
     const term = document.getElementById('fgSearch').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('#finishedGoodsTable tbody tr');
+    const table = document.getElementById('finishedGoodsTable');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
 
     rows.forEach(row => {
         if (row.querySelector('td[colspan]')) return;
         const text = row.textContent.toLowerCase();
-        row.style.display = (!term || text.includes(term)) ? '' : 'none';
+        const match = !term || text.includes(term);
+        row.dataset.filteredOut = match ? 'false' : 'true';
     });
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 </script>
 

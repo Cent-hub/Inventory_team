@@ -12,7 +12,7 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// 1. Total Raw Materials (count of unique active raw materials with inventory > 0)
+// 1. Total Raw Materials (count of unique active raw materials with inventory > 0 in assigned warehouse)
 $stmtRM = $pdo->prepare("
     SELECT COUNT(DISTINCT inv.item_id) 
     FROM inventory inv 
@@ -20,11 +20,12 @@ $stmtRM = $pdo->prepare("
     WHERE i.item_type = 'raw_material' 
       AND i.status = 'active'
       AND inv.quantity > 0
+      AND inv.warehouse_id = :wid
 ");
-$stmtRM->execute();
+$stmtRM->execute([':wid' => $currentWarehouseId]);
 $totalRawMaterials = (int)$stmtRM->fetchColumn();
 
-// 2. Total Finished Goods (count of unique active finished goods with inventory > 0)
+// 2. Total Finished Goods (count of unique active finished goods with inventory > 0 in assigned warehouse)
 $stmtFG = $pdo->prepare("
     SELECT COUNT(DISTINCT inv.item_id) 
     FROM inventory inv 
@@ -32,8 +33,9 @@ $stmtFG = $pdo->prepare("
     WHERE i.item_type = 'finished_good' 
       AND i.status = 'active'
       AND inv.quantity > 0
+      AND inv.warehouse_id = :wid
 ");
-$stmtFG->execute();
+$stmtFG->execute([':wid' => $currentWarehouseId]);
 $totalFinishedGoods = (int)$stmtFG->fetchColumn();
 
 // 3. Total Stock (net physical quantity in assigned warehouse)
@@ -138,18 +140,17 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 <div class="page-header">
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
-        <p class="page-subtitle">Overview, stock levels, and recent warehouse activity</p>
+        <p class="page-subtitle">Overview, stock levels, and recent warehouse activity in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')') ?></strong></p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
+        <a href="index.php" class="btn btn-secondary" aria-label="Refresh dashboard data">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
             </svg>
             <span>Refresh</span>
-        </button>
+        </a>
     </div>
 </div>
 
@@ -169,7 +170,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalRawMaterials) ?></div>
-        <div class="stat-meta">Inbounded from Procurement</div>
+        <div class="stat-meta">Active raw Materials</div>
     </div>
 
     <!-- 2. Total Finished Goods -->
@@ -187,7 +188,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalFinishedGoods) ?></div>
-        <div class="stat-meta">Distillery &amp; packaging output</div>
+        <div class="stat-meta">Active finished Goods</div>
     </div>
 
     <!-- 3. Total Stock -->
@@ -220,7 +221,13 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= $lowStockCount ?></div>
-        <div class="stat-meta"><?= $lowStockCount > 0 ? 'Reorder needed from Procurement' : 'All items at healthy levels' ?></div>
+        <div class="stat-meta">
+            <?php if ($lowStockCount > 0): ?>
+                <a href="<?= BASE_URL ?>views/inbound_outbound/index.php" style="color: var(--error); font-weight: 600; text-decoration: underline;">Replenish via Stock In &rarr;</a>
+            <?php else: ?>
+                All items at healthy levels
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- 5. Recent Stock In -->
@@ -271,14 +278,13 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                     <th>Classification</th>
                     <th>Movement</th>
                     <th>Quantity</th>
-                    <th>Facility</th>
                     <th>Date &amp; Time</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($recentActivities)): ?>
                     <tr>
-                        <td colspan="6" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded yet.</td>
+                        <td colspan="5" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded yet.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($recentActivities as $act): ?>
@@ -310,9 +316,6 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                                 <?php endif; ?>
                                 <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($act['unit']) ?></small>
                             </td>
-                            <td>
-                                <span class="badge-wh"><?= htmlspecialchars($act['warehouse_code']) ?></span>
-                            </td>
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
                                 <?= date('M d, Y H:i', strtotime($act['created_at'])) ?>
                             </td>
@@ -337,7 +340,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
             </span>
-            <input type="text" id="dashSearchInput" class="search-box" placeholder="Search item code or name..." onkeyup="filterTable('dashSearchInput', 'dashStockTable')">
+            <input type="text" id="dashSearchInput" class="search-box" aria-label="Search warehouse inventory" placeholder="Search item code or name..." oninput="filterTable('dashSearchInput', 'dashStockTable')">
         </div>
     </div>
     <div class="table-responsive">
@@ -355,20 +358,12 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             <tbody>
                 <?php if (empty($inventoryRows)): ?>
                     <tr>
-                        <td colspan="7" style="text-align: center; color: var(--gray); padding: 32px;">No inventory records in database.</td>
+                        <td colspan="6" style="text-align: center; color: var(--gray); padding: 32px;">No inventory records in database.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($inventoryRows as $row): ?>
                         <?php $isOptimal = (float)$row['quantity'] > (float)$row['default_reorder_level']; ?>
                         <tr>
-                            <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>">
-                                    <?= htmlspecialchars($row['warehouse_code']) ?>
-                                </span>
-                                <span style="font-size: 12px; color: var(--gray); margin-left: 6px;">
-                                    <?= htmlspecialchars($row['warehouse_name']) ?>
-                                </span>
-                            </td>
                             <td style="font-family: monospace; font-weight: 600; color: var(--panel-ink);">
                                 <?= htmlspecialchars($row['item_code']) ?>
                             </td>

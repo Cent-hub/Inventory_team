@@ -281,197 +281,11 @@ $stmtMat->execute([':wid' => $currentWarehouseId]);
 $materialRequests  = (int)$stmtMat->fetchColumn();
 ?>
 
-<style>
-/* Operations Tab Navigation Bar */
-.stock-ops-nav-wrapper {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #E2E8F0;
-    border-radius: 0;
-    padding: 0;
-    margin-bottom: 24px;
-    box-shadow: none;
-}
-.stock-ops-nav-label {
-    display: none;
-}
-.stock-ops-tabs {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 0;
-    flex-wrap: nowrap;
-    margin-bottom: -1px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-}
-.stock-ops-tabs::-webkit-scrollbar {
-    display: none;
-}
-.stock-tab-btn {
-    appearance: none;
-    flex: 1 1 0%;
-    min-width: max-content;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    color: #64748B;
-    padding: 14px 24px;
-    font-family: var(--font-body);
-    font-weight: 600;
-    font-size: 13.5px;
-    line-height: 1.25;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    white-space: nowrap;
-    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
-    user-select: none;
-    box-shadow: none;
-}
-.stock-tab-btn svg {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    color: currentColor;
-    stroke: currentColor;
-    transition: color 0.2s ease, stroke 0.2s ease;
-}
-.stock-tab-btn:hover {
-    background: transparent;
-    color: #334155;
-    border-bottom-color: #CBD5E1;
-    transform: none;
-}
-.stock-tab-btn.active,
-.stock-tab-btn.active:hover {
-    background: transparent;
-    color: #2563EB;
-    border-bottom-color: #2563EB;
-    box-shadow: none;
-    font-weight: 600;
-    transform: none;
-}
-.stock-tab-btn .tab-badge-count {
-    display: none;
-}
-@media (max-width: 768px) {
-    .stock-ops-tabs {
-        justify-content: flex-start;
-    }
-    .stock-tab-btn {
-        flex: 1 0 auto;
-        padding: 12px 18px;
-        font-size: 13px;
-    }
-}
-
-/* Tab Panes */
-.stock-op-pane {
-    animation: fadeIn 0.18s ease-in-out;
-}
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(3px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Source Badges (Inbound) */
-.badge-source-procurement {
-    background: #FEF3C7;
-    color: #92400E;
-    border: 1px solid #FDE68A;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-source-production {
-    background: #E0F2FE;
-    color: #0369A1;
-    border: 1px solid #BAE6FD;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-source-manual {
-    background: #F1F5F9;
-    color: #475569;
-    border: 1px solid #CBD5E1;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-
-/* Destination Badges (Outbound) */
-.badge-dest-production {
-    background: #FEF3C7;
-    color: #92400E;
-    border: 1px solid #FDE68A;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-dest-sales {
-    background: #EFF6FF;
-    color: #1D4ED8;
-    border: 1px solid #BFDBFE;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-.badge-dest-manual {
-    background: #F1F5F9;
-    color: #475569;
-    border: 1px solid #CBD5E1;
-    font-weight: 700;
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-</style>
-
 <!-- Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Inventory Inbound &amp; Outbound</h1>
         <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
     </div>
 </div>
 
@@ -595,11 +409,11 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                         </svg>
                     </span>
-                    <input type="text" id="stockInSearch" class="search-box" placeholder="Filter item, ref, PO #..." onkeyup="filterStockInTable()">
+                    <input type="text" id="stockInSearch" class="search-box" aria-label="Filter inbound transactions" placeholder="Filter item, ref, PO #..." oninput="filterStockInTable()">
                 </div>
 
                 <!-- Source Filter -->
-                <select id="sourceTypeFilter" class="select-filter" onchange="filterStockInTable()">
+                <select id="sourceTypeFilter" class="select-filter" aria-label="Filter by inbound source" onchange="filterStockInTable()">
                     <option value="">All Sources</option>
                     <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
                     <option value="PRODUCTION_RETURN">Production (Work Orders)</option>
@@ -607,7 +421,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                 </select>
 
                 <!-- Item Type Filter -->
-                <select id="itemTypeFilter" class="select-filter" onchange="filterStockInTable()">
+                <select id="itemTypeFilter" class="select-filter" aria-label="Filter inbound by item classification" onchange="filterStockInTable()">
                     <option value="">All Classifications</option>
                     <option value="raw_material">Raw Materials</option>
                     <option value="finished_good">Finished Goods</option>
@@ -616,7 +430,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         </div>
 
         <div class="table-responsive">
-            <table id="stockInTable">
+            <table id="stockInTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Source</th>
@@ -748,14 +562,14 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 </div>
 
 <!-- Line Item Details Modal (Inbound) -->
-<div id="stockInModal" class="modal-backdrop" onclick="if(event.target === this) closeDetailModal()">
+<div id="stockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle" onclick="if(event.target === this) closeDetailModal()">
     <div class="modal-card">
         <div class="modal-header">
             <div>
                 <h3 id="modalTitle" class="card-title">Transaction Details</h3>
                 <p id="modalSub" class="card-desc">Inbound line items received into warehouse</p>
             </div>
-            <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeDetailModal()">
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -764,7 +578,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         </div>
         <div class="modal-body">
             <div class="table-responsive">
-                <table>
+                <table class="no-paginate">
                     <thead>
                         <tr>
                             <th>Item Code</th>
@@ -777,9 +591,6 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     </tbody>
                 </table>
             </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeDetailModal()">Close</button>
         </div>
     </div>
 </div>
@@ -853,11 +664,11 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                         </svg>
                     </span>
-                    <input type="text" id="stockOutSearch" class="search-box" placeholder="Filter item, ref, SO/MR #..." onkeyup="filterStockOutTable()">
+                    <input type="text" id="stockOutSearch" class="search-box" aria-label="Filter outbound transactions" placeholder="Filter item, ref, SO/MR #..." oninput="filterStockOutTable()">
                 </div>
 
                 <!-- Destination Filter -->
-                <select id="stockOutDestFilter" class="select-filter" onchange="filterStockOutTable()">
+                <select id="stockOutDestFilter" class="select-filter" aria-label="Filter by outbound destination" onchange="filterStockOutTable()">
                     <option value="">All Destinations</option>
                     <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
                     <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
@@ -865,7 +676,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                 </select>
 
                 <!-- Item Type Filter -->
-                <select id="stockOutTypeFilter" class="select-filter" onchange="filterStockOutTable()">
+                <select id="stockOutTypeFilter" class="select-filter" aria-label="Filter outbound by item classification" onchange="filterStockOutTable()">
                     <option value="">All Classifications</option>
                     <option value="finished_good">Finished Goods</option>
                     <option value="raw_material">Raw Materials</option>
@@ -874,7 +685,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         </div>
 
         <div class="table-responsive">
-            <table id="stockOutTable">
+            <table id="stockOutTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Destination</th>
@@ -1006,14 +817,14 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
 </div>
 
 <!-- Line Item Details Modal (Outbound) -->
-<div id="stockOutModal" class="modal-backdrop" onclick="if(event.target === this) closeOutDetailModal()">
+<div id="stockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalOutTitle" onclick="if(event.target === this) closeOutDetailModal()">
     <div class="modal-card">
         <div class="modal-header">
             <div>
                 <h3 id="modalOutTitle" class="card-title">Dispatch Details</h3>
                 <p id="modalOutSub" class="card-desc">Outbound line items released from inventory</p>
             </div>
-            <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeOutDetailModal()">
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeOutDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1022,7 +833,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         </div>
         <div class="modal-body">
             <div class="table-responsive">
-                <table>
+                <table class="no-paginate">
                     <thead>
                         <tr>
                             <th>Item Code</th>
@@ -1036,13 +847,294 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                 </table>
             </div>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeOutDetailModal()">Close</button>
-        </div>
+    </div>
+</div>
+
+<!-- Modal: Record Stock In (Inbound Receipt) -->
+<div id="recordStockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recordStockInModalTitle" onclick="if(event.target === this) handleRecordBackdropClose('recordStockInModal', closeRecordStockInModal)">
+    <div class="modal-card" style="max-width: 540px;">
+        <form method="POST" action="index.php?tab=inbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_stock_in">
+            <input type="hidden" name="active_tab" value="inbound">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="recordStockInModalTitle" class="card-title">Record Stock In (Inbound Receipt)</h3>
+                    <p class="card-desc">Receive inventory into <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeRecordStockInModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Source Type -->
+                <div>
+                    <label for="stockInSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Inbound Source <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="source_type" id="stockInSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockInModalItems()">
+                        <option value="PURCHASE_ORDER">Procurement Purchase Order (Raw Materials)</option>
+                        <option value="PRODUCTION_RETURN">Production Batch Receipt (Finished Goods)</option>
+                        <option value="MANUAL">Internal / Manual Receipt (All Items)</option>
+                    </select>
+                </div>
+
+                <!-- Source Reference Number -->
+                <div>
+                    <label for="stockInRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Reference Number (PO # / Work Order #) <span style="color: #DC2626;">*</span>
+                    </label>
+                    <input type="text" name="source_reference_no" id="stockInRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. PO-2026-001 or WO-2026-001" required>
+                </div>
+
+                <!-- Item Selection -->
+                <div>
+                    <label for="stockInItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Item to Receive <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_id" id="stockInItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleStockInItemChange(this)">
+                        <option value="">-- Select Item to Receive --</option>
+                        <?php foreach ($allItems as $it): ?>
+                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
+                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Quantity Received -->
+                <div>
+                    <label for="stockInQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Quantity Received <span style="color: #DC2626;">*</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" step="any" min="0.001" name="quantity" id="stockInQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
+                        <span id="stockInUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
+                    </div>
+                </div>
+
+                <!-- Remarks -->
+                <div>
+                    <label for="stockInRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Remarks / Receiving Notes
+                    </label>
+                    <textarea name="remarks" id="stockInRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="Optional supplier, delivery, or QC inspection notes..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeRecordStockInModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Record Stock In</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Record Stock Out (Outbound Dispatch) -->
+<div id="recordStockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recordStockOutModalTitle" onclick="if(event.target === this) handleRecordBackdropClose('recordStockOutModal', closeRecordStockOutModal)">
+    <div class="modal-card" style="max-width: 540px;">
+        <form method="POST" action="index.php?tab=outbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_stock_out">
+            <input type="hidden" name="active_tab" value="outbound">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="recordStockOutModalTitle" class="card-title">Record Stock Out (Outbound Dispatch)</h3>
+                    <p class="card-desc">Dispatch inventory from <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeRecordStockOutModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Destination / Source Type -->
+                <div>
+                    <label for="stockOutSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Outbound Destination <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="source_type" id="stockOutSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockOutModalItems()">
+                        <option value="SALES_DELIVERY">Sales Delivery (Finished Goods)</option>
+                        <option value="MATERIAL_REQUEST">Production Material Request (Raw Materials)</option>
+                        <option value="MANUAL">Internal / Manual Dispatch (All Items)</option>
+                    </select>
+                </div>
+
+                <!-- Reference Number -->
+                <div>
+                    <label for="stockOutRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Reference Number (Sales Order # / Material Request #) <span style="color: #DC2626;">*</span>
+                    </label>
+                    <input type="text" name="source_reference_no" id="stockOutRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. SO-2026-001 or MR-2026-001" required>
+                </div>
+
+                <!-- Item Selection -->
+                <div>
+                    <label for="stockOutItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Item to Dispatch <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_id" id="stockOutItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleStockOutItemChange(this)">
+                        <option value="">-- Select Item with Available Stock --</option>
+                        <?php foreach ($availableItems as $it): ?>
+                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>" data-stock="<?= (float)$it['current_stock'] ?>">
+                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> [Stock: <?= formatQty((float)$it['current_stock']) ?> <?= htmlspecialchars($it['unit']) ?>]
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Quantity Dispatched -->
+                <div>
+                    <label for="stockOutQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Quantity to Dispatch <span style="color: #DC2626;">*</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" step="any" min="0.001" name="quantity" id="stockOutQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
+                        <span id="stockOutUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
+                    </div>
+                    <small id="stockOutAvailHint" style="color: var(--gray); font-size: 11.5px; display: block; margin-top: 4px;">Select an item to view maximum available balance.</small>
+                </div>
+
+                <!-- Remarks -->
+                <div>
+                    <label for="stockOutRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Remarks / Dispatch Notes
+                    </label>
+                    <textarea name="remarks" id="stockOutRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="Optional customer delivery or production line notes..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeRecordStockOutModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" <?= empty($availableItems) ? 'disabled' : '' ?>>Record Stock Out</button>
+            </div>
+        </form>
     </div>
 </div>
 
 <script>
+// =============================================================================
+// RECORD STOCK IN & RECORD STOCK OUT MODAL CONTROLLERS
+// =============================================================================
+function handleRecordBackdropClose(modalId, closeFn) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    const inputs = Array.from(modal.querySelectorAll('input[type="text"], input[type="number"], textarea'));
+    const hasUnsaved = inputs.some(el => el.value.trim() !== '');
+    if (hasUnsaved) return;
+    closeFn();
+}
+
+function openRecordStockInModal() {
+    filterStockInModalItems();
+    const modal = document.getElementById('recordStockInModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeRecordStockInModal() {
+    const modal = document.getElementById('recordStockInModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
+function filterStockInModalItems() {
+    const sourceSelect = document.getElementById('stockInSourceType');
+    const itemSelect = document.getElementById('stockInItemSelect');
+    if (!sourceSelect || !itemSelect) return;
+
+    const src = sourceSelect.value;
+    const requiredType = (src === 'PURCHASE_ORDER') ? 'raw_material' : (src === 'PRODUCTION_RETURN' ? 'finished_good' : '');
+
+    Array.from(itemSelect.options).forEach(opt => {
+        if (!opt.value) return;
+        const optType = opt.getAttribute('data-type') || '';
+        const allowed = !requiredType || optType === requiredType;
+        opt.hidden = !allowed;
+        opt.disabled = !allowed;
+    });
+
+    if (itemSelect.selectedOptions[0] && itemSelect.selectedOptions[0].disabled) {
+        itemSelect.value = '';
+        handleStockInItemChange(itemSelect);
+    }
+}
+
+function handleStockInItemChange(selectEl) {
+    const opt = selectEl.selectedOptions[0];
+    const unitLabel = document.getElementById('stockInUnitLabel');
+    if (opt && opt.value) {
+        unitLabel.textContent = opt.getAttribute('data-unit') || '—';
+    } else {
+        unitLabel.textContent = '—';
+    }
+}
+
+function openRecordStockOutModal() {
+    filterStockOutModalItems();
+    const modal = document.getElementById('recordStockOutModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeRecordStockOutModal() {
+    const modal = document.getElementById('recordStockOutModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
+function filterStockOutModalItems() {
+    const sourceSelect = document.getElementById('stockOutSourceType');
+    const itemSelect = document.getElementById('stockOutItemSelect');
+    if (!sourceSelect || !itemSelect) return;
+
+    const src = sourceSelect.value;
+    const requiredType = (src === 'SALES_DELIVERY') ? 'finished_good' : (src === 'MATERIAL_REQUEST' ? 'raw_material' : '');
+
+    Array.from(itemSelect.options).forEach(opt => {
+        if (!opt.value) return;
+        const optType = opt.getAttribute('data-type') || '';
+        const allowed = !requiredType || optType === requiredType;
+        opt.hidden = !allowed;
+        opt.disabled = !allowed;
+    });
+
+    if (itemSelect.selectedOptions[0] && itemSelect.selectedOptions[0].disabled) {
+        itemSelect.value = '';
+        handleStockOutItemChange(itemSelect);
+    }
+}
+
+function handleStockOutItemChange(selectEl) {
+    const opt = selectEl.selectedOptions[0];
+    const unitLabel = document.getElementById('stockOutUnitLabel');
+    const qtyInput = document.getElementById('stockOutQuantity');
+    const hint = document.getElementById('stockOutAvailHint');
+
+    if (opt && opt.value) {
+        const unit = opt.getAttribute('data-unit') || '';
+        const stock = parseFloat(opt.getAttribute('data-stock') || '0');
+        unitLabel.textContent = unit || '—';
+        qtyInput.max = stock;
+        hint.textContent = `Available balance: ${stock} ${unit}`;
+    } else {
+        unitLabel.textContent = '—';
+        qtyInput.removeAttribute('max');
+        hint.textContent = 'Select an item to view maximum available balance.';
+    }
+}
+
 // =============================================================================
 // TAB SWITCHING CONTROLLER
 // =============================================================================

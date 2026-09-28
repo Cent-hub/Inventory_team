@@ -143,18 +143,12 @@ $catCount     = count($categories);
 <div class="page-header">
     <div>
         <h1 class="page-title">Item Catalog</h1>
-        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
+        <p class="page-subtitle">Centralized catalog, unit pricing, and reorder threshold configuration</p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
+        <?php if (empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin', 'operator'], true)): ?>
+            <button type="button" class="btn btn-primary" onclick="openNewItemModal()">+ Add New Item</button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -233,9 +227,9 @@ $catCount     = count($categories);
                 <span class="search-icon" aria-hidden="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 </span>
-                <input type="text" id="itemSearch" class="search-box" placeholder="Filter code, name, unit..." onkeyup="filterItemsTable()">
+                <input type="text" id="itemSearch" class="search-box" aria-label="Filter catalog items" placeholder="Filter code, name, unit..." oninput="filterItemsTable()">
             </div>
-            <select id="typeFilter" class="select-filter" onchange="filterItemsTable()">
+            <select id="typeFilter" class="select-filter" aria-label="Filter by item classification" onchange="filterItemsTable()">
                 <option value="">All Classifications</option>
                 <option value="raw_material">Raw Materials</option>
                 <option value="finished_good">Finished Goods</option>
@@ -279,11 +273,11 @@ $catCount     = count($categories);
                             </td>
                             <td>
                                 <?php if ($row['item_type'] === 'raw_material'): ?>
-                                    <span class="badge" style="background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">
+                                    <span class="badge-type type-raw">
                                         Raw Material
                                     </span>
                                 <?php else: ?>
-                                    <span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #BBF7D0;">
+                                    <span class="badge-type type-fg">
                                         Finished Good
                                     </span>
                                 <?php endif; ?>
@@ -309,17 +303,17 @@ $catCount     = count($categories);
 </div>
 
 <!-- Modal: Add New Item -->
-<div id="newItemModal" class="modal-backdrop" onclick="if(event.target === this) closeNewItemModal()">
+<div id="newItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newItemModalTitle" onclick="if(event.target === this && !document.getElementById('modalItemName').value.trim()) closeNewItemModal()">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create_item">
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title">Add New Catalog Item</h3>
+                    <h3 id="newItemModalTitle" class="card-title">Add New Catalog Item</h3>
                     <p class="card-desc">Define a new raw material ingredient or finished bottle SKU</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewItemModal()">
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewItemModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
@@ -329,35 +323,35 @@ $catCount     = count($categories);
                     <label for="modalItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Classification <span style="color: #DC2626;">*</span>
                     </label>
-                    <select name="item_type" id="modalItemType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="autoSuggestCodePrefix(this.value)">
+                    <select name="item_type" id="modalItemType" class="select-filter" style="width: 100%;" required onchange="autoSuggestCodePrefix(this.value)">
                         <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
                         <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
                     </select>
                 </div>
 
                 <!-- Item Code & Name -->
-                <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1.5fr; gap: 12px;">
                     <div>
                         <label for="modalItemCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Item Code <span style="color: #DC2626;">*</span>
                         </label>
-                        <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; height: 40px; border-radius: 8px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required>
+                        <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; padding-left: 12px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required>
                     </div>
                     <div>
                         <label for="modalItemName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Item Name <span style="color: #DC2626;">*</span>
                         </label>
-                        <input type="text" name="item_name" id="modalItemName" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="e.g. Oak-Aged Whiskey Base" required>
+                        <input type="text" name="item_name" id="modalItemName" class="search-box" style="width: 100%; padding-left: 12px;" placeholder="e.g. Oak-Aged Whiskey Base" required>
                     </div>
                 </div>
 
                 <!-- Category & Unit -->
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px;">
+                <div class="form-grid-2" style="grid-template-columns: 1.5fr 1fr; gap: 12px;">
                     <div>
                         <label for="modalCategory" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Category <span style="color: #DC2626;">*</span>
                         </label>
-                        <select name="category_id" id="modalCategory" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required>
+                        <select name="category_id" id="modalCategory" class="select-filter" style="width: 100%;" required>
                             <?php foreach ($categories as $cat): ?>
                                 <option value="<?= (int)$cat['category_id'] ?>">
                                     <?= htmlspecialchars($cat['category_name']) ?> (<?= htmlspecialchars($cat['category_code']) ?>)
@@ -369,7 +363,7 @@ $catCount     = count($categories);
                         <label for="modalUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Unit <span style="color: #DC2626;">*</span>
                         </label>
-                        <select name="unit" id="modalUnit" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required>
+                        <select name="unit" id="modalUnit" class="select-filter" style="width: 100%;" required>
                             <option value="pcs">pcs (Pieces / Bottles)</option>
                             <option value="liter">liter (Bulk Liquids)</option>
                             <option value="kg">kg (Weight / Botanicals)</option>
@@ -383,7 +377,7 @@ $catCount     = count($categories);
                     <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Default Low Stock Reorder Threshold
                     </label>
-                    <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" value="50" required>
+                    <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" required>
                     <small style="color: var(--gray); font-size: 11px;">Triggers replenishment alert when warehouse quantity drops below this level.</small>
                 </div>
 
@@ -392,7 +386,7 @@ $catCount     = count($categories);
                     <label for="modalDesc" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Description / Specifications
                     </label>
-                    <textarea name="description" id="modalDesc" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px;" placeholder="Optional details (ABV, packaging specs, notes)..."></textarea>
+                    <textarea name="description" id="modalDesc" class="search-box" style="width: 100%; height: 50px; padding: 8px 12px;" placeholder="Optional details (ABV, packaging specs, notes)..."></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -420,16 +414,20 @@ function filterItemsTable() {
     const query = document.getElementById('itemSearch').value.toLowerCase().trim();
     const typeFilter = document.getElementById('typeFilter').value;
     const table = document.getElementById('itemsTable');
+    if (!table) return;
     const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
 
     for (let row of rows) {
+        if (row.cells.length <= 1) continue;
         const rowType = row.getAttribute('data-type') || '';
         const text = row.textContent.toLowerCase();
         const matchesQuery = !query || text.includes(query);
         const matchesType  = !typeFilter || rowType === typeFilter;
+        const match = matchesQuery && matchesType;
 
-        row.style.display = (matchesQuery && matchesType) ? '' : 'none';
+        row.dataset.filteredOut = match ? 'false' : 'true';
     }
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 </script>
 

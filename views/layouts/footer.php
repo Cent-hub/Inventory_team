@@ -9,7 +9,7 @@
     <!-- App Bottom Footer -->
     <footer style="background: #ffffff; border-top: 1px solid var(--border); padding: 16px 28px; text-align: center; font-size: 12.5px; color: var(--gray); margin-top: auto;">
         <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1540px; margin: 0 auto; flex-wrap: wrap; gap: 12px;">
-            <span>&copy; <?= date('Y') ?> InventoryTeam &middot; Liquor Business Inventory Management System</span>
+            <span>&copy; <?= date('Y') ?> StockPilot &middot; Liquor Business Inventory Management System</span>
             <span style="display: flex; align-items: center; gap: 14px;">
                 <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);"></span>
                 <span style="color: var(--accent); font-weight: 600;">System Online</span>
@@ -43,6 +43,10 @@ function toggleMobileSidebar() {
     backdrop.classList.toggle('active');
 }
 
+function toggleSidebar() {
+    toggleMobileSidebar();
+}
+
 // Universal Client-side Table Filter with Pagination Integration
 function filterTable(inputId, tableId) {
     const input = document.getElementById(inputId);
@@ -66,6 +70,77 @@ function filterTable(inputId, tableId) {
     if (typeof table.paginationUpdate === 'function') {
         table.paginationUpdate(true);
     }
+}
+
+// Universal Client-side Column Sorting Engine
+function initTableSorting(table) {
+    if (!table || table.classList.contains('no-sort')) return;
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    if (!thead || !tbody) return;
+
+    const headers = Array.from(thead.querySelectorAll('tr:first-child th'));
+    headers.forEach((th, colIdx) => {
+        const label = th.textContent.trim().toLowerCase();
+        if (!label || label === 'actions' || label === 'action' || label === 'audit access' || th.classList.contains('no-sort')) {
+            return;
+        }
+        th.classList.add('sortable-th');
+        th.setAttribute('tabindex', '0');
+        th.setAttribute('role', 'columnheader');
+        th.setAttribute('aria-sort', 'none');
+
+        const triggerSort = () => {
+            const currentDir = th.classList.contains('sort-asc') ? 'asc' : (th.classList.contains('sort-desc') ? 'desc' : 'none');
+            const nextDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+            headers.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+                if (h.classList.contains('sortable-th')) h.setAttribute('aria-sort', 'none');
+            });
+            th.classList.add(nextDir === 'asc' ? 'sort-asc' : 'sort-desc');
+            th.setAttribute('aria-sort', nextDir === 'asc' ? 'ascending' : 'descending');
+
+            const rows = Array.from(tbody.querySelectorAll('tr')).filter(tr => !tr.querySelector('td[colspan]'));
+            if (rows.length <= 1) return;
+
+            rows.sort((rowA, rowB) => {
+                const cellA = (rowA.children[colIdx]?.innerText || '').trim();
+                const cellB = (rowB.children[colIdx]?.innerText || '').trim();
+
+                const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ''));
+                const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ''));
+                const isNumeric = !isNaN(numA) && !isNaN(numB) && /^[\+\-\$₱]?\s*[\d,]+(\.\d+)?(\s*[a-zA-Z%]+)?$/.test(cellA) && /^[\+\-\$₱]?\s*[\d,]+(\.\d+)?(\s*[a-zA-Z%]+)?$/.test(cellB);
+
+                if (isNumeric) {
+                    return nextDir === 'asc' ? (numA - numB) : (numB - numA);
+                }
+
+                const dateA = Date.parse(cellA);
+                const dateB = Date.parse(cellB);
+                if (!isNaN(dateA) && !isNaN(dateB) && /\d{4}/.test(cellA) && /\d{4}/.test(cellB)) {
+                    return nextDir === 'asc' ? (dateA - dateB) : (dateB - dateA);
+                }
+
+                return nextDir === 'asc'
+                    ? cellA.localeCompare(cellB, undefined, { numeric: true, sensitivity: 'base' })
+                    : cellB.localeCompare(cellA, undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            rows.forEach(r => tbody.appendChild(r));
+            if (typeof table.paginationUpdate === 'function') {
+                table.paginationUpdate(true);
+            }
+        };
+
+        th.addEventListener('click', triggerSort);
+        th.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                triggerSort();
+            }
+        });
+    });
 }
 
 // Universal 10-Rows-Per-Page Table Pagination Engine
@@ -107,7 +182,7 @@ function initTablePagination(table, pageSize = 10) {
         if (totalItems === 0) {
             paginationContainer.style.display = 'flex';
             paginationContainer.innerHTML = `
-                <div class="pagination-info">Showing <strong>0</strong> of <strong>0</strong> records</div>
+                <div class="pagination-info" aria-live="polite">Showing <strong>0</strong> of <strong>0</strong> records</div>
                 <div class="pagination-controls"></div>
             `;
             allRows.forEach(tr => tr.style.display = 'none');
@@ -180,7 +255,7 @@ function initTablePagination(table, pageSize = 10) {
         const filterExtra = (allRows.length !== totalItems) ? ` <span style="color: var(--gray); font-size: 11.5px;">(filtered from ${allRows.length} total)</span>` : '';
 
         paginationContainer.innerHTML = `
-            <div class="pagination-info">
+            <div class="pagination-info" aria-live="polite">
                 Showing <strong>${startIndex + 1}</strong> to <strong>${endIndex}</strong> of <strong>${totalItems}</strong> records${filterExtra}
             </div>
             <div class="pagination-controls">
@@ -217,12 +292,50 @@ function initTablePagination(table, pageSize = 10) {
     renderPagination();
 }
 
-// Auto-initialize pagination on all data tables
+// Auto-initialize pagination & sorting on all data tables, plus global modal Escape & Focus Trap
 document.addEventListener('DOMContentLoaded', function() {
     const tables = document.querySelectorAll('table');
     tables.forEach(table => {
-        if (table.classList.contains('no-paginate') || table.closest('.modal')) return;
+        if (table.classList.contains('no-paginate') || table.closest('.modal, .modal-backdrop, .modal-card, .settings-modal-backdrop')) return;
         initTablePagination(table, 10);
+        initTableSorting(table);
+    });
+
+    // Global Escape key dismissal & Tab focus trapping for all page modals
+    document.addEventListener('keydown', function(e) {
+        const openModals = Array.from(document.querySelectorAll('.modal-backdrop.open, .settings-modal-backdrop.open, .modal[style*="flex"]'));
+        if (openModals.length === 0) return;
+        const activeModal = openModals[openModals.length - 1];
+
+        if (e.key === 'Escape') {
+            const closeBtn = activeModal.querySelector('.modal-close, .settings-btn-close, [onclick*="close"]');
+            if (closeBtn) {
+                closeBtn.click();
+            } else {
+                activeModal.classList.remove('open');
+                if (activeModal.style.display === 'flex') activeModal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+            return;
+        }
+
+        if (e.key === 'Tab') {
+            const focusable = Array.from(activeModal.querySelectorAll(
+                'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )).filter(el => el.offsetParent !== null);
+
+            if (focusable.length === 0) return;
+            const firstEl = focusable[0];
+            const lastEl = focusable[focusable.length - 1];
+
+            if (e.shiftKey && document.activeElement === firstEl) {
+                e.preventDefault();
+                lastEl.focus();
+            } else if (!e.shiftKey && document.activeElement === lastEl) {
+                e.preventDefault();
+                firstEl.focus();
+            }
+        }
     });
 });
 </script>

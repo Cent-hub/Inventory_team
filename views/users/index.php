@@ -119,15 +119,6 @@ function getFacilityAssignment($user) {
         <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery operators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
     </div>
     <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
         <?php if ($isSuperAdmin): ?>
         <button type="button" class="btn btn-secondary" onclick="window.print()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -181,13 +172,6 @@ function getFacilityAssignment($user) {
 <!-- Settings Sections Grouped Card (Styled after iOS reference in StockPilot theme) -->
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 0 4px 6px 4px;">
     <span class="settings-group-label" style="margin: 0;">Settings &amp; Quick Actions</span>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="openSettingsModal('main')" style="height: 28px; padding: 0 10px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-        <span>Open Modal</span>
-    </button>
 </div>
 <div class="settings-group mb-6">
     <!-- Row 1: My Account Profile -->
@@ -423,7 +407,7 @@ function getFacilityAssignment($user) {
 
 <!-- Filters Card -->
 <div class="card">
-    <form method="GET" action="index.php" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <!-- Search -->
         <div class="search-wrap" style="flex: 1; min-width: 220px;">
             <span class="search-icon" aria-hidden="true">
@@ -432,11 +416,11 @@ function getFacilityAssignment($user) {
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
             </span>
-            <input type="text" name="search" class="search-box" placeholder="Search by name or email..." value="<?= htmlspecialchars($search) ?>" id="userSearchInput" onkeyup="filterTable('userSearchInput', 'usersTable')">
+            <input type="text" name="search" class="search-box" aria-label="Search user accounts by name or email" placeholder="Search by name, email, or facility..." value="<?= htmlspecialchars($search) ?>" id="userSearchInput" oninput="filterUsersDirectoryTable()">
         </div>
 
         <!-- Role Filter -->
-        <select name="role" class="select-filter">
+        <select name="role" id="userRoleFilter" class="select-filter" aria-label="Filter users by security role" onchange="filterUsersDirectoryTable()">
             <option value="">All Roles</option>
             <option value="super_admin" <?= $roleFilter === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
             <option value="admin" <?= $roleFilter === 'admin' ? 'selected' : '' ?>>Admin</option>
@@ -445,24 +429,18 @@ function getFacilityAssignment($user) {
 
         <!-- Action Buttons -->
         <div style="display: flex; gap: 8px;">
-            <button type="submit" class="btn btn-primary" style="height: 38px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                </svg>
-                <span>Filter</span>
-            </button>
-            <a href="index.php" class="btn btn-secondary" style="height: 38px; display: inline-flex; align-items: center;" title="Reset Filters">
+            <button type="button" class="btn btn-secondary" style="height: 38px; display: inline-flex; align-items: center;" onclick="resetUsersDirectoryFilters()" title="Reset Filters">
                 <span>Reset</span>
-            </a>
+            </button>
         </div>
-    </form>
+    </div>
 </div>
 
 <!-- Users Table Card -->
 <div class="card">
     <div class="card-header">
         <div class="flex items-center gap-3">
-            <h2 class="card-title">Operator & Service Account Directory</h2>
+            <h2 class="card-title">Operator &amp; Service Account Directory</h2>
             <span class="badge badge-teal"><?= $totalUsers ?> Accounts</span>
         </div>
         <div class="text-xs text-muted">
@@ -470,7 +448,7 @@ function getFacilityAssignment($user) {
         </div>
     </div>
     <div class="table-responsive">
-        <table class="table" id="usersTable">
+        <table class="table table-sticky-actions" id="usersTable">
             <thead>
                 <tr>
                     <th>User / Operator</th>
@@ -495,7 +473,7 @@ function getFacilityAssignment($user) {
                         $facility = getFacilityAssignment($u);
                         $isCurrent = ((int)$u['user_id'] === (int)($currentUser['id'] ?? 0));
                     ?>
-                        <tr style="<?= $isCurrent ? 'background-color: rgba(31, 122, 108, 0.04);' : '' ?>">
+                        <tr data-role="<?= htmlspecialchars($u['role'] ?? '') ?>" style="<?= $isCurrent ? 'background-color: rgba(31, 122, 108, 0.04);' : '' ?>">
                             <td>
                                 <div class="flex items-center gap-3">
                                     <div class="user-avatar" style="width: 34px; height: 34px; font-size: 13px;">
@@ -568,18 +546,18 @@ function getFacilityAssignment($user) {
 </div>
 
 <!-- Modal Drawer for User Account Details -->
-<div id="userModal" class="modal" role="dialog" aria-hidden="true" style="display: none; position: fixed; inset: 0; background: rgba(20, 33, 61, 0.5); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
-    <div class="card" style="width: 100%; max-width: 520px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2); animation: modalFadeIn 0.2s ease;">
-        <div class="card-header flex justify-between items-center">
+<div id="userModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalUserName" aria-hidden="true" onclick="if(event.target === this) closeUserModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-header">
             <h3 class="card-title" id="modalUserName">User Account Profile</h3>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="closeUserModal()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeUserModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
         </div>
-        <div class="card-body">
+        <div class="modal-body">
             <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #E2E8F0;">
                 <div id="modalUserAvatar" class="user-avatar" style="width: 56px; height: 56px; font-size: 22px; background: #14213D; color: #FFFFFF;">
                     U
@@ -590,7 +568,7 @@ function getFacilityAssignment($user) {
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div class="form-grid-2">
                 <div>
                     <label class="form-label" style="font-size: 11px;">System Role</label>
                     <div id="modalRoleText" class="font-semibold text-navy text-sm">—</div>
@@ -607,19 +585,48 @@ function getFacilityAssignment($user) {
                     <label class="form-label" style="font-size: 11px;">Assigned Warehouse</label>
                     <div id="modalFacilityText" class="text-sm font-medium text-navy">—</div>
                 </div>
-                <div style="grid-column: span 2;">
+                <div style="grid-column: 1 / -1;">
                     <label class="form-label" style="font-size: 11px;">Created Timestamp</label>
                     <div id="modalCreatedText" class="font-mono text-xs text-muted">—</div>
                 </div>
             </div>
         </div>
-        <div class="card-footer flex justify-end gap-2" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 12px 20px;">
-            <button type="button" class="btn btn-secondary" onclick="closeUserModal()">Close</button>
-        </div>
     </div>
 </div>
 
 <script>
+function filterUsersDirectoryTable() {
+    const query = (document.getElementById('userSearchInput')?.value || '').toLowerCase().trim();
+    const role = (document.getElementById('userRoleFilter')?.value || '').toLowerCase().trim();
+    const table = document.getElementById('usersTable');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+
+    rows.forEach(row => {
+        if (row.cells.length <= 1) return;
+        const rowRole = (row.getAttribute('data-role') || '').toLowerCase();
+        const text = row.textContent.toLowerCase();
+
+        const matchRole = !role || rowRole === role;
+        const matchQuery = !query || text.includes(query);
+        const match = matchRole && matchQuery;
+
+        row.dataset.filteredOut = match ? 'false' : 'true';
+    });
+
+    if (typeof table.paginationUpdate === 'function') {
+        table.paginationUpdate(true);
+    }
+}
+
+function resetUsersDirectoryFilters() {
+    const searchInput = document.getElementById('userSearchInput');
+    const roleFilter = document.getElementById('userRoleFilter');
+    if (searchInput) searchInput.value = '';
+    if (roleFilter) roleFilter.value = '';
+    filterUsersDirectoryTable();
+}
+
 function showUserDetails(userData) {
     document.getElementById('modalUserName').innerText = userData.name + ' — Details';
     document.getElementById('modalNameText').innerText = userData.name;
@@ -632,19 +639,19 @@ function showUserDetails(userData) {
     document.getElementById('modalCreatedText').innerText = userData.created_at;
 
     const modal = document.getElementById('userModal');
+    modal.classList.add('open');
     modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
 }
 
 function closeUserModal() {
-    document.getElementById('userModal').style.display = 'none';
-}
-
-window.addEventListener('click', function(e) {
     const modal = document.getElementById('userModal');
-    if (e.target === modal) {
-        closeUserModal();
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
     }
-});
+}
 </script>
 <?php endif; // $isSuperAdmin ?>
 

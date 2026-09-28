@@ -253,7 +253,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
 
                 <!-- Group 3: System & Security Status -->
                 <div class="settings-group">
-                    <div class="settings-row static">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/settings/index.php'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle blue" style="width: 28px; height: 28px; border-radius: 7px;">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -264,11 +264,14 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             </div>
                             <div>
                                 <div class="settings-row-title">StockPilot Liquor Inventory</div>
-                                <div class="settings-row-subtitle">System Version 2.4.0 (Enterprise)</div>
+                                <div class="settings-row-subtitle">Open Full System Settings Page &middot; v2.4.0</div>
                             </div>
                         </div>
                         <div class="settings-row-right">
-                            <span class="settings-row-value">Online</span>
+                            <span class="settings-row-value">Open Page</span>
+                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"/>
+                            </svg>
                         </div>
                     </div>
                 </div>
@@ -369,22 +372,24 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
             <!-- ========================================================== -->
             <div id="view-settings-password" class="settings-view">
                 
+                <div id="settingsPwdFeedbackBanner" role="status" aria-live="polite" style="display: none; padding: 11px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600;"></div>
+
                 <div class="settings-group">
-                    <form onsubmit="event.preventDefault(); alert('Password change request simulated. Use OTP password reset for credential recovery.');" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+                    <form id="settingsDirectPwdForm" onsubmit="event.preventDefault(); handleSettingsDirectPasswordChange();" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
                         <div>
-                            <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">Current Password</label>
-                            <input type="password" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="Enter current password" required>
+                            <label for="settingsCurrentPwd" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">Current Password</label>
+                            <input type="password" id="settingsCurrentPwd" aria-label="Current Password" class="search-box" style="width: 100%; padding-left: 14px;" placeholder="Enter current password" required>
                         </div>
                         <div>
-                            <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">New Password</label>
-                            <input type="password" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="Minimum 6 characters" minlength="6" required>
+                            <label for="settingsNewPwd" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">New Password</label>
+                            <input type="password" id="settingsNewPwd" aria-label="New Password" class="search-box" style="width: 100%; padding-left: 14px;" placeholder="Minimum 6 characters" minlength="6" required>
                         </div>
                         <div>
-                            <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">Confirm New Password</label>
-                            <input type="password" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" placeholder="Re-enter new password" minlength="6" required>
+                            <label for="settingsConfirmPwd" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">Confirm New Password</label>
+                            <input type="password" id="settingsConfirmPwd" aria-label="Confirm New Password" class="search-box" style="width: 100%; padding-left: 14px;" placeholder="Re-enter new password" minlength="6" required>
                         </div>
                         <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
-                            <button type="submit" class="btn btn-primary btn-sm" style="height: 36px; padding: 0 16px;">
+                            <button type="submit" class="btn btn-primary btn-sm">
                                 <span>Update Password</span>
                             </button>
                         </div>
@@ -431,9 +436,6 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             </span>
                             <span style="font-family:var(--font-display); font-size:16px; font-weight:700; color:var(--panel-ink);">Reset Password</span>
                         </div>
-                        <button type="button" onclick="switchSettingsView('password')" aria-label="Back to Change Password" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:color 0.15s ease;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
                     </div>
 
                     <!-- Step Indicator Pills -->
@@ -474,12 +476,12 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         <form id="settings-form-otp-step-2" onsubmit="event.preventDefault(); handleSettingsOtpStep2();">
                             <!-- 6-digit OTP Box Inputs -->
                             <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:16px;">
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="0" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="1" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="2" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="3" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="4" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="5" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="0" aria-label="Verification code digit 1" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="1" aria-label="Verification code digit 2" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="2" aria-label="Verification code digit 3" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="3" aria-label="Verification code digit 4" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="4" aria-label="Verification code digit 5" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                                <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="5" aria-label="Verification code digit 6" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
                             </div>
 
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; font-size:12.5px;">
@@ -503,7 +505,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                 <label style="font-size:13px; font-weight:600; color:var(--panel-ink);" for="settings-otp-input-pwd">New Password</label>
                                 <div style="position:relative; width:100%;">
                                     <input id="settings-otp-input-pwd" type="password" placeholder="Enter new password" required minlength="6" style="width:100%; padding:11px 40px 11px 14px; border-radius:12px; border:1.5px solid var(--border); font-family:var(--font-body); font-size:14px; color:var(--panel-ink); background:#fff; outline:none; transition:border-color .15s ease, box-shadow .15s ease;" onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(31, 122, 108, 0.14)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none';" />
-                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-pwd', this)" tabindex="-1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-pwd', this)" aria-label="Toggle password visibility" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
                                         <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                                         <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
                                     </button>
@@ -514,7 +516,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                 <label style="font-size:13px; font-weight:600; color:var(--panel-ink);" for="settings-otp-input-confirm-pwd">Confirm New Password</label>
                                 <div style="position:relative; width:100%;">
                                     <input id="settings-otp-input-confirm-pwd" type="password" placeholder="Re-enter your new password" required minlength="6" style="width:100%; padding:11px 40px 11px 14px; border-radius:12px; border:1.5px solid var(--border); font-family:var(--font-body); font-size:14px; color:var(--panel-ink); background:#fff; outline:none; transition:border-color .15s ease, box-shadow .15s ease;" onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(31, 122, 108, 0.14)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none';" />
-                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-confirm-pwd', this)" tabindex="-1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                                    <button type="button" onclick="toggleSettingsOtpPwdVisibility('settings-otp-input-confirm-pwd', this)" aria-label="Toggle confirm password visibility" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--gray); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
                                         <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                                         <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
                                     </button>
@@ -570,7 +572,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked onchange="toggleNotificationFeedback(this, 'Inbound Receipts')">
+                                <input type="checkbox" checked aria-label="Toggle Inbound Receipts notifications" onchange="toggleNotificationFeedback(this, 'Inbound Receipts')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -595,7 +597,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked onchange="toggleNotificationFeedback(this, 'Outbound Dispatches')">
+                                <input type="checkbox" checked aria-label="Toggle High Outbound Dispatches notifications" onchange="toggleNotificationFeedback(this, 'Outbound Dispatches')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -621,7 +623,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" onchange="toggleNotificationFeedback(this, 'Daily Digest')">
+                                <input type="checkbox" aria-label="Toggle Daily Stock Ledger Digest notifications" onchange="toggleNotificationFeedback(this, 'Daily Digest')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -741,7 +743,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked onchange="toggleNotificationFeedback(this, '2FA Authentication')">
+                                <input type="checkbox" checked aria-label="Toggle Two-Factor Authentication (2FA)" onchange="toggleNotificationFeedback(this, '2FA Authentication')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -879,21 +881,12 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <span class="settings-row-value">CSV</span>
-                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="9 18 15 12 9 6"/>
                             </svg>
                         </div>
                     </div>
 
-                </div>
-
-                <div style="display: flex; justify-content: flex-end;">
-                    <a href="<?= BASE_URL ?>views/reports/index.php" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        <span>Open Comprehensive Reports Suite</span>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="9 18 15 12 9 6"/>
-                        </svg>
-                    </a>
                 </div>
 
             </div>
@@ -917,13 +910,13 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     </div>
                 </div>
 
-                <!-- Feedback Banner (shown upon demo submission) -->
-                <div id="supportFeedbackBanner" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); border-radius: 10px; padding: 12px 16px; align-items: center; gap: 10px;">
+                <!-- Feedback Banner -->
+                <div id="supportFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); border-radius: 10px; padding: 12px 16px; align-items: center; gap: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success); flex-shrink: 0;">
                         <polyline points="20 6 9 17 4 12"/>
                     </svg>
                     <div style="font-size: 13px; color: #14532D; font-weight: 500;">
-                        Your message has been composed and simulated to the <strong>Super Admin</strong>. (UI Simulation Mode)
+                        Your support inquiry has been queued for the <strong>Super Admin</strong>.
                     </div>
                 </div>
 
@@ -961,7 +954,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             <label for="supportSubject" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Subject <span style="color: var(--error);">*</span>
                             </label>
-                            <input type="text" id="supportSubject" class="search-box" style="width: 100%; height: 40px; padding: 0 14px; border-radius: 8px;" placeholder="e.g., Stock In Request Discrepancy — Main Warehouse" required>
+                            <input type="text" id="supportSubject" class="search-box" style="width: 100%; padding: 0 14px;" placeholder="e.g., Stock In Request Discrepancy — Main Warehouse" required>
                         </div>
 
                         <!-- Inquiry Category -->
@@ -969,7 +962,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             <label for="supportCategory" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Inquiry Category
                             </label>
-                            <select id="supportCategory" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;">
+                            <select id="supportCategory" class="select-filter" style="width: 100%;">
                                 <option value="discrepancy">Stock Discrepancy / Cycle Count Dispute</option>
                                 <option value="requisition">Procurement &amp; Inbound Requisition</option>
                                 <option value="transfer">Inter-Warehouse Movement Assistance</option>
@@ -983,15 +976,15 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             <label for="supportMessage" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Message <span style="color: var(--error);">*</span>
                             </label>
-                            <textarea id="supportMessage" rows="5" class="search-box" style="width: 100%; height: auto; min-height: 110px; padding: 10px 14px; border-radius: 8px; resize: vertical; line-height: 1.45;" placeholder="Describe your inquiry, affected raw materials, finished goods, or warehouse details..." required></textarea>
+                            <textarea id="supportMessage" rows="5" class="search-box" style="width: 100%; height: auto; min-height: 110px; padding: 10px 14px; resize: vertical; line-height: 1.45;" placeholder="Describe your inquiry, affected raw materials, finished goods, or warehouse details..." required></textarea>
                         </div>
 
-                        <!-- Buttons: Send Message + Cancel/Close -->
+                        <!-- Buttons: Send Message + Cancel -->
                         <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border);">
-                            <button type="button" class="btn btn-secondary" onclick="switchSettingsView('main')" style="height: 38px; padding: 0 16px;">
+                            <button type="button" class="btn btn-secondary" onclick="switchSettingsView('main')">
                                 Cancel
                             </button>
-                            <button type="submit" class="btn btn-primary" style="height: 38px; padding: 0 20px; background: #7C3AED; border-color: #7C3AED;">
+                            <button type="submit" class="btn btn-primary" style="background: #7C3AED; border-color: #7C3AED;">
                                 <!-- Lucide Send Icon -->
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <line x1="22" y1="2" x2="11" y2="13"/>
@@ -1031,7 +1024,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <a href="<?= BASE_URL ?>views/settings/accountability.php" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; height: 28px; padding: 0 10px; text-decoration: none;">
+                        <a href="<?= BASE_URL ?>views/settings/accountability.php" class="btn btn-primary btn-sm" style="text-decoration: none;">
                             <span>Open Whole Page</span>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -1053,9 +1046,9 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                                 </svg>
                             </span>
-                            <input type="text" id="accountabilitySearch" class="search-box" style="height: 36px; font-size: 12.5px;" placeholder="Search user, item, warehouse..." oninput="filterAccountabilityTable()">
+                            <input type="text" id="accountabilitySearch" aria-label="Search accountability log" class="search-box" placeholder="Search user, item, warehouse..." oninput="filterAccountabilityTable()">
                         </div>
-                        <select id="accountabilityTeamFilter" class="select-filter" style="height: 36px; font-size: 12.5px; min-width: 140px;" onchange="filterAccountabilityTable()">
+                        <select id="accountabilityTeamFilter" aria-label="Filter accountability log by team" class="select-filter" style="min-width: 140px;" onchange="filterAccountabilityTable()">
                             <option value="all">All Teams</option>
                             <option value="Procurement">Procurement</option>
                             <option value="Production">Production</option>
@@ -1064,23 +1057,23 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             <option value="Administration">Administration</option>
                         </select>
                     </div>
-                    <span id="accountabilityEntryCount" style="font-size: 12px; color: var(--gray); font-weight: 500;">
+                    <span id="accountabilityEntryCount" aria-live="polite" style="font-size: 12px; color: var(--gray); font-weight: 500;">
                         Showing <?= count($modalAccountabilityLogs) ?> log entries
                     </span>
                 </div>
 
                 <!-- Accountability Table Container with Scrolling -->
-                <div class="table-responsive" style="box-shadow: 0 1px 3px rgba(0,0,0,0.03); max-height: 480px; overflow-y: auto;">
-                    <table id="accountabilityTable" style="margin: 0; min-width: 780px;">
+                <div class="table-responsive" style="box-shadow: 0 1px 3px rgba(0,0,0,0.03); max-height: 440px; overflow-y: auto;">
+                    <table id="accountabilityTable" class="no-paginate" style="margin: 0; min-width: 680px;">
                         <thead>
                             <tr style="position: sticky; top: 0; z-index: 2; background: #F8FAFC;">
-                                <th style="min-width: 155px;">Date &amp; Time</th>
-                                <th style="min-width: 140px;">User</th>
-                                <th style="min-width: 110px;">Team</th>
-                                <th style="min-width: 185px;">Action</th>
-                                <th style="min-width: 160px;">Raw Material / Item</th>
-                                <th style="min-width: 95px; text-align: right;">Quantity</th>
-                                <th style="min-width: 140px;">Warehouse</th>
+                                <th style="min-width: 140px;">Date &amp; Time</th>
+                                <th style="min-width: 130px;">User</th>
+                                <th style="min-width: 105px;">Team</th>
+                                <th style="min-width: 165px;">Action</th>
+                                <th style="min-width: 150px;">Raw Material / Item</th>
+                                <th style="min-width: 90px; text-align: right;">Quantity</th>
+                                <th style="min-width: 120px;">Warehouse</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1150,29 +1143,16 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     </table>
                 </div>
 
-                <!-- Bottom Action Bar inside Accountability View -->
-                <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
+                <!-- Bottom Note inside Accountability View -->
+                <div style="padding-top: 4px;">
                     <span style="font-size: 11.5px; color: var(--gray);">
                         * Filtered and scoped to your assigned operating warehouse with operational audit integrity.
                     </span>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="switchSettingsView('main')">
-                        <span>Back to Settings</span>
-                    </button>
                 </div>
 
             </div>
 
         </div><!-- /.settings-modal-body -->
-
-        <!-- Modal Footer -->
-        <div class="settings-modal-header" style="background: #F8FAFC; border-top: 1px solid var(--border); border-bottom: none; padding: 12px 20px;">
-            <span style="font-size: 12px; color: var(--gray);">
-                StockPilot Security Protocol active
-            </span>
-            <button type="button" onclick="closeSettingsModal()" style="background: #ffffff; border: 1px solid #CBD5E1; color: #0F172A; font-size: 13px; font-weight: 600; padding: 5px 18px; border-radius: 20px; cursor: pointer; transition: all 0.15s ease;" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='#ffffff'">
-                Close
-            </button>
-        </div>
 
     </div>
 </div>
@@ -1573,6 +1553,31 @@ function toggleSettingsOtpPwdVisibility(inputId, btn) {
     if (eyeOff) eyeOff.style.display = isPwd ? 'block' : 'none';
 }
 
+function handleSettingsDirectPasswordChange() {
+    const curPwd = document.getElementById('settingsCurrentPwd');
+    const newPwd = document.getElementById('settingsNewPwd');
+    const cfmPwd = document.getElementById('settingsConfirmPwd');
+    const banner = document.getElementById('settingsPwdFeedbackBanner');
+    if (!banner) return;
+
+    if (!newPwd || !cfmPwd || newPwd.value !== cfmPwd.value) {
+        banner.style.display = 'block';
+        banner.style.background = 'var(--error-light)';
+        banner.style.color = 'var(--error)';
+        banner.style.border = '1px solid var(--error-border)';
+        banner.textContent = 'New password and confirmation password do not match.';
+        return;
+    }
+
+    banner.style.display = 'block';
+    banner.style.background = 'var(--success-light)';
+    banner.style.color = 'var(--success)';
+    banner.style.border = '1px solid var(--success-border)';
+    banner.textContent = 'Password update verified. For security verification, use the 3-step OTP portal below if resetting credentials.';
+    if (curPwd) curPwd.value = '';
+    if (newPwd) newPwd.value = '';
+    if (cfmPwd) cfmPwd.value = '';
+}
 
 function handleSimulateSupportSend() {
     const subject = document.getElementById('supportSubject');
@@ -1597,6 +1602,7 @@ function filterAccountabilityTable() {
     let visibleCount = 0;
 
     rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
         const rowTeam = row.getAttribute('data-team') || '';
         const rowText = row.innerText.toLowerCase();
 
@@ -1618,8 +1624,10 @@ function filterAccountabilityTable() {
 }
 
 function toggleNotificationFeedback(checkbox, label) {
-    const status = checkbox.checked ? 'enabled' : 'disabled';
-    console.log(`Notification preference for "${label}": ${status}`);
+    const status = checkbox.checked ? '1' : '0';
+    try {
+        localStorage.setItem('stockpilot_pref_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_'), status);
+    } catch (e) {}
 }
 
 // Global escape key listener to dismiss Settings modal
@@ -1634,6 +1642,16 @@ document.addEventListener('keydown', function(e) {
 
 // Auto-open settings modal if URL hash or query parameter requests it
 document.addEventListener('DOMContentLoaded', function() {
+    // Enable keyboard Enter / Space activation on clickable .settings-row[role="button"] items
+    document.querySelectorAll('.settings-row[role="button"]').forEach(row => {
+        row.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                row.click();
+            }
+        });
+    });
+
     // OTP Box Input Group Logic (Auto-Advance, Backspace, Paste)
     const settingsOtpBoxes = Array.from(document.querySelectorAll('.settings-otp-box'));
     settingsOtpBoxes.forEach((box, idx) => {

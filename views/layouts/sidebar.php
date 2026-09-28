@@ -36,7 +36,7 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
             </svg>
         </div>
         <div class="brand-text-wrap">
-            <span class="brand-name">Inventory<span>Team</span></span>
+            <span class="brand-name">Stock<span>Pilot</span></span>
         </div>
     </div>
 
@@ -161,9 +161,9 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
         </div>
         <?php endif; ?>
 
-        <!-- Settings (Opens Settings Modal Popup for Admin) -->
+        <!-- Settings (Opens Settings Modal Popup or navigates to System Settings page) -->
         <div class="nav-item">
-            <a href="javascript:void(0)" class="nav-link <?= $isSettingsActive ? 'active' : '' ?>" id="sidebarSettingsLink" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('main'); } return false;" role="button" aria-haspopup="dialog" title="Settings">
+            <a href="<?= BASE_URL ?>views/settings/index.php" class="nav-link <?= $isSettingsActive ? 'active' : '' ?>" id="sidebarSettingsLink" onclick="if(!event.ctrlKey && !event.metaKey && !event.shiftKey && typeof openSettingsModal === 'function'){ event.preventDefault(); openSettingsModal('main'); }" role="button" aria-haspopup="dialog" title="Settings">
                 <!-- Lucide Settings Icon -->
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
@@ -177,7 +177,7 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
 
     <!-- Sidebar User Footer -->
     <div class="sidebar-footer">
-        <div class="sidebar-user" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); }" style="cursor: pointer;" title="Manage Account Settings">
+        <div class="sidebar-user" role="button" tabindex="0" aria-label="Manage Account Settings" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); }" onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); } }" style="cursor: pointer;" title="Manage Account Settings">
             <div class="user-avatar" aria-hidden="true">
                 <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
             </div>

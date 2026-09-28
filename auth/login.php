@@ -539,21 +539,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <!-- Login Title -->
                     <h2 class="login-title">LOGIN</h2>
 
-                    <!-- Google Sign-in Button -->
-                    <button type="button" id="btn-google-login" class="google-btn">
-                        <!-- Google 4-Color Icon -->
-                        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
-                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
-                            <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.038l3.007-2.332z" />
-                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z" />
-                        </svg>
-                        Continue with Google
-                    </button>
-
-                    <!-- Divider -->
-                    <div class="divider"><span>OR SIGN IN WITH EMAIL</span></div>
-
                     <!-- Pre-rendered Flash / Status Alerts with Auto-Dismiss -->
                     <?php if (isset($_GET['logged_out'])): ?>
                         <div class="alert alert-success" role="alert">
@@ -627,7 +612,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     autocomplete="current-password"
                                     required
                                 />
-                                <button type="button" id="btn-toggle-password" class="toggle-eye" tabindex="-1" aria-label="Show password">
+                                <button type="button" id="btn-toggle-password" class="toggle-eye" aria-label="Show password">
                                     <!-- Lucide Eye Icon -->
                                     <svg id="eye-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
@@ -685,7 +670,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <!-- Forgot Password 3-Step OTP Modal -->
-    <div id="forgot-pwd-modal-backdrop" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
+    <div id="forgot-pwd-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="forgotModalTitle" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
         <div class="modal-card" style="width:100%; max-width:440px; background:#ffffff; border-radius:24px; padding:32px 28px; box-shadow:0 25px 50px -12px rgba(15,23,42,0.35); position:relative; overflow:hidden;">
             <!-- Modal Header with Close Button -->
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
@@ -696,7 +681,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                         </svg>
                     </span>
-                    <span style="font-family:var(--font-display); font-size:16px; font-weight:700; color:var(--panel-ink);">Reset Password</span>
+                    <span id="forgotModalTitle" style="font-family:var(--font-display); font-size:16px; font-weight:700; color:var(--panel-ink);">Reset Password</span>
                 </div>
                 <button type="button" id="btn-close-forgot-modal" aria-label="Close" style="background:none; border:none; color:var(--gray); cursor:pointer; padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:color 0.15s ease;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -711,7 +696,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- Dynamic Modal Alert Box -->
-            <div id="otp-modal-alert" style="display:none; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px;"></div>
+            <div id="otp-modal-alert" role="status" aria-live="polite" style="display:none; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px;"></div>
 
             <!-- STEP 1: Enter Email -->
             <div id="otp-step-1" style="display:block;">
@@ -742,12 +727,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <form id="form-otp-step-2">
                     <!-- 6-digit OTP Box Inputs -->
                     <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:16px;">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="0" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="1" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="2" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="3" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="4" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="5" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="0" aria-label="Verification code digit 1" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="1" aria-label="Verification code digit 2" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="2" aria-label="Verification code digit 3" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="3" aria-label="Verification code digit 4" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="4" aria-label="Verification code digit 5" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="5" aria-label="Verification code digit 6" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
                     </div>
 
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; font-size:12.5px;">
@@ -772,7 +757,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="label" for="otp-input-pwd">New Password</label>
                         <div class="input-wrap">
                             <input id="otp-input-pwd" type="password" class="input" placeholder="Enter new password" required minlength="6" />
-                            <button type="button" class="toggle-eye" id="btn-toggle-otp-pwd" tabindex="-1">
+                            <button type="button" class="toggle-eye" id="btn-toggle-otp-pwd" aria-label="Show new password">
                                 <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                                 <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
                             </button>
@@ -783,7 +768,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="label" for="otp-input-confirm-pwd">Confirm New Password</label>
                         <div class="input-wrap">
                             <input id="otp-input-confirm-pwd" type="password" class="input" placeholder="Re-enter your new password" required minlength="6" />
-                            <button type="button" class="toggle-eye" id="btn-toggle-otp-confirm-pwd" tabindex="-1">
+                            <button type="button" class="toggle-eye" id="btn-toggle-otp-confirm-pwd" aria-label="Show confirm password">
                                 <svg class="eye-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                                 <svg class="eye-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
                             </button>
@@ -816,7 +801,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <!-- Contact Support Modal for Login Page (Direct to Super Admin) -->
-    <div id="login-support-modal-backdrop" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
+    <div id="login-support-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="loginSupportModalTitle" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
         <div class="modal-card" style="width:100%; max-width:500px; background:#ffffff; border-radius:24px; padding:28px 26px; box-shadow:0 25px 50px -12px rgba(15,23,42,0.35); position:relative; overflow:hidden; max-height:92vh; overflow-y:auto;">
             <!-- Header -->
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
@@ -829,7 +814,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </svg>
                     </span>
                     <div>
-                        <h3 style="font-family:var(--font-display); font-size:16.5px; font-weight:700; color:var(--panel-ink); margin:0;">Contact Support</h3>
+                        <h3 id="loginSupportModalTitle" style="font-family:var(--font-display); font-size:16.5px; font-weight:700; color:var(--panel-ink); margin:0;">Contact Support</h3>
                         <p style="font-size:12px; color:var(--gray); margin:0;">Direct inquiry channel to the Super Admin</p>
                     </div>
                 </div>

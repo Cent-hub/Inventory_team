@@ -39,33 +39,6 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
         <h1 class="page-title">Settings &amp; Accountability</h1>
         <p class="page-subtitle">Personal account configuration, cross-team inventory accountability audit log, and administrative support</p>
     </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
-        <a href="<?= BASE_URL ?>views/settings/accountability.php" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
-                <path d="m9 14 2 2 4-4"/>
-            </svg>
-            <span>Whole Page Accountability Log</span>
-        </a>
-        <button type="button" class="btn btn-primary" onclick="openSettingsModal('contact_support')" style="background: #7C3AED; border-color: #7C3AED;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                <line x1="8" y1="10" x2="16" y2="10"/>
-                <line x1="8" y1="14" x2="13" y2="14"/>
-            </svg>
-            <span>Contact Support</span>
-        </button>
-    </div>
 </div>
 
 <!-- KPI Stats Grid -->
@@ -113,7 +86,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
     </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+<div class="grid-2-responsive" style="margin-bottom: 24px;">
     
     <!-- Left Column: Settings Quick Links Card -->
     <div class="card" style="margin-bottom: 0;">
@@ -122,9 +95,6 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 <h2 class="card-title">Settings Navigation</h2>
                 <p class="card-desc">Configure security, notifications, and export warehouse audit sheets</p>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="openSettingsModal('main')">
-                <span>View Full Menu</span>
-            </button>
         </div>
 
         <div class="settings-group" style="box-shadow: none;">
@@ -204,7 +174,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
             <span class="settings-badge" style="background: #7C3AED;">UI Only</span>
         </div>
 
-        <div id="pageSupportFeedback" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); border-radius: 10px; padding: 10px 14px; align-items: center; gap: 8px; margin-bottom: 14px;">
+        <div id="pageSupportFeedback" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); border-radius: 10px; padding: 10px 14px; align-items: center; gap: 8px; margin-bottom: 14px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success);">
                 <polyline points="20 6 9 17 4 12"/>
             </svg>
@@ -222,15 +192,23 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 </div>
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 4px;">Subject</label>
-                <input type="text" class="search-box" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 8px;" placeholder="e.g., Raw material requisition discrepancy" required>
+                <label for="pageSupportCategory" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 4px;">Inquiry Category</label>
+                <select id="pageSupportCategory" class="select-filter" style="width: 100%; height: 36px; border-radius: 8px;">
+                    <option value="warehouse_transfer">Inter-Warehouse Transfer / Stock Adjustment</option>
+                    <option value="account_permissions">Account Role &amp; Facility Assignment</option>
+                    <option value="discrepancy_audit">Inventory Discrepancy / Physical Count Audit</option>
+                    <option value="general_support">General System Support Inquiry</option>
+                </select>
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 4px;">Message</label>
-                <textarea rows="3" class="search-box" style="width: 100%; height: auto; min-height: 80px; padding: 8px 12px; border-radius: 8px; resize: vertical;" placeholder="Type message for Super Admin..." required></textarea>
+                <label for="pageSupportSubject" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 4px;">Subject</label>
+                <input type="text" id="pageSupportSubject" class="search-box" style="width: 100%; height: 36px; padding: 0 12px; border-radius: 8px;" placeholder="e.g., Raw material requisition discrepancy" required>
+            </div>
+            <div>
+                <label for="pageSupportMessage" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 4px;">Message</label>
+                <textarea id="pageSupportMessage" rows="3" class="search-box" style="width: 100%; height: auto; min-height: 80px; padding: 8px 12px; border-radius: 8px; resize: vertical;" placeholder="Type message for Super Admin..." required></textarea>
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
-                <button type="reset" class="btn btn-secondary btn-sm" style="height: 34px;">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm" style="height: 34px; background: #7C3AED; border-color: #7C3AED;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -276,9 +254,9 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="pageAccountabilitySearch" class="search-box" placeholder="Filter user, team, material, or warehouse..." oninput="filterPageAccountability()">
+                <input type="text" id="pageAccountabilitySearch" class="search-box" aria-label="Filter accountability log" placeholder="Filter user, team, material, or warehouse..." oninput="filterPageAccountability()">
             </div>
-            <select id="pageTeamFilter" class="select-filter" onchange="filterPageAccountability()">
+            <select id="pageTeamFilter" class="select-filter" aria-label="Filter accountability log by team" onchange="filterPageAccountability()">
                 <option value="all">All Teams</option>
                 <option value="Procurement">Procurement</option>
                 <option value="Production">Production</option>
@@ -377,17 +355,22 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
 function filterPageAccountability() {
     const query = (document.getElementById('pageAccountabilitySearch')?.value || '').toLowerCase().trim();
     const team = (document.getElementById('pageTeamFilter')?.value || 'all');
-    const rows = document.querySelectorAll('#pageAccountabilityTable tbody tr');
+    const table = document.getElementById('pageAccountabilityTable');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
 
     rows.forEach(row => {
+        if (row.cells.length <= 1) return;
         const rowTeam = row.getAttribute('data-team') || '';
         const rowText = row.innerText.toLowerCase();
 
         const matchesTeam = (team === 'all' || rowTeam.toLowerCase() === team.toLowerCase());
         const matchesQuery = !query || rowText.includes(query);
+        const match = matchesTeam && matchesQuery;
 
-        row.style.display = (matchesTeam && matchesQuery) ? '' : 'none';
+        row.dataset.filteredOut = match ? 'false' : 'true';
     });
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 </script>
 

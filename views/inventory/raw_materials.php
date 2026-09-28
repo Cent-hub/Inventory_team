@@ -69,18 +69,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
 <div class="page-header">
     <div>
         <h1 class="page-title">Raw Materials Inventory</h1>
-        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
+        <p class="page-subtitle">Track raw material stock balances, supplier inputs, and reorder thresholds</p>
     </div>
 </div>
 
@@ -147,17 +136,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="rawSearch" class="search-box" placeholder="Filter material name or code..." onkeyup="filterRawTable()">
-            </div>
-
-            <!-- Assigned Warehouse Branch Badge -->
-            <div class="wh-badge" style="margin: 0; background: var(--gray-light); border: 1px solid var(--border); color: var(--panel-ink); font-weight: 600; padding: 6px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-                    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-                    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-                </svg>
-                <span><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></span>
+                <input type="text" id="rawSearch" class="search-box" aria-label="Filter raw materials" placeholder="Filter material name or code..." oninput="filterRawTable()">
             </div>
         </div>
     </div>
@@ -171,7 +150,6 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
                     <th>Category</th>
                     <th>Current Stock</th>
                     <th>Unit</th>
-                    <th>Warehouse Branch</th>
                     <th>Latest PO / Source Ref</th>
                     <th>Date Received</th>
                     <th>Status</th>
@@ -180,7 +158,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
             <tbody>
                 <?php if (empty($rawMaterials)): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No raw material records found in database.</td>
+                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No raw material records found in database.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($rawMaterials as $item): ?>
@@ -207,14 +185,6 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
                             </td>
                             <td>
                                 <span style="color: var(--gray); font-weight: 500;"><?= htmlspecialchars($item['unit']) ?></span>
-                            </td>
-                            <td>
-                                <span class="badge-wh <?= getWarehouseBadgeClass($item['warehouse_code'] ?? '') ?>">
-                                    <?= htmlspecialchars($item['warehouse_code'] ?? 'WH-MAIN') ?>
-                                </span>
-                                <span style="font-size: 12px; color: var(--gray); margin-left: 4px;">
-                                    <?= htmlspecialchars($item['warehouse_name'] ?? 'Warehouse') ?>
-                                </span>
                             </td>
                             <td style="font-family: monospace; font-size: 12px;">
                                 <?php if (!empty($item['procurement_reference'])): ?>
@@ -249,13 +219,17 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
 <script>
 function filterRawTable() {
     const term = document.getElementById('rawSearch').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('#rawMaterialsTable tbody tr');
+    const table = document.getElementById('rawMaterialsTable');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
 
     rows.forEach(row => {
         if (row.querySelector('td[colspan]')) return;
         const text = row.textContent.toLowerCase();
-        row.style.display = (!term || text.includes(term)) ? '' : 'none';
+        const match = !term || text.includes(term);
+        row.dataset.filteredOut = match ? 'false' : 'true';
     });
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 </script>
 

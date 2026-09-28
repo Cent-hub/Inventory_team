@@ -469,7 +469,9 @@ if (empty($cardItems)) {
 }
 
 // Selected filters
-$selectedItemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : ($cardItems[0]['item_id'] ?? 0);
+$selectedItemId = (isset($_GET['item_id']) && is_numeric($_GET['item_id']) && (int)$_GET['item_id'] > 0)
+    ? (int)$_GET['item_id']
+    : (int)($cardItems[0]['item_id'] ?? 0);
 $movementType   = isset($_GET['movement_type']) ? trim($_GET['movement_type']) : '';
 $rawStartDate   = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
 $rawEndDate     = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
@@ -547,223 +549,11 @@ if ($selectedItemId > 0) {
 }
 ?>
 
-<style>
-/* Operations Tab Navigation Bar */
-.stock-ops-nav-wrapper {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #E2E8F0;
-    border-radius: 0;
-    padding: 0;
-    margin-bottom: 24px;
-    box-shadow: none;
-}
-.stock-ops-nav-label {
-    display: none;
-}
-.stock-ops-tabs {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 0;
-    flex-wrap: nowrap;
-    margin-bottom: -1px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-}
-.stock-ops-tabs::-webkit-scrollbar {
-    display: none;
-}
-.stock-tab-btn {
-    appearance: none;
-    flex: 1 1 0%;
-    min-width: max-content;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    color: #64748B;
-    padding: 14px 24px;
-    font-family: var(--font-body);
-    font-weight: 600;
-    font-size: 13.5px;
-    line-height: 1.25;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    white-space: nowrap;
-    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
-    user-select: none;
-    box-shadow: none;
-}
-.stock-tab-btn svg {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    color: currentColor;
-    stroke: currentColor;
-    transition: color 0.2s ease, stroke 0.2s ease;
-}
-.stock-tab-btn:hover {
-    background: transparent;
-    color: #334155;
-    border-bottom-color: #CBD5E1;
-    transform: none;
-}
-.stock-tab-btn.active,
-.stock-tab-btn.active:hover {
-    background: transparent;
-    color: #2563EB;
-    border-bottom-color: #2563EB;
-    box-shadow: none;
-    font-weight: 600;
-    transform: none;
-}
-.stock-tab-btn .tab-badge-count {
-    display: none;
-}
-@media (max-width: 768px) {
-    .stock-ops-tabs {
-        justify-content: flex-start;
-    }
-    .stock-tab-btn {
-        flex: 1 0 auto;
-        padding: 12px 18px;
-        font-size: 13px;
-    }
-}
-
-/* Tab Panes */
-.stock-op-pane {
-    animation: fadeIn 0.18s ease-in-out;
-}
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(3px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Section Badges */
-.section-badge-recv {
-    background: #DCFCE7;
-    color: #15803D;
-    border: 1px solid #BBF7D0;
-    font-weight: 700;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-.section-badge-send {
-    background: #EFF6FF;
-    color: #1D4ED8;
-    border: 1px solid #BFDBFE;
-    font-weight: 700;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-.modal-meta-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    background: #F8FAFC;
-    border: 1px solid #E2E8F0;
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-}
-.modal-meta-item {
-    font-size: 12.5px;
-}
-.modal-meta-label {
-    color: var(--gray);
-    font-size: 11px;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin-bottom: 2px;
-}
-.modal-meta-val {
-    font-weight: 600;
-    color: var(--panel-ink);
-}
-
-/* Autocomplete Search Dropdown */
-.searchable-select-wrap {
-    position: relative;
-    width: 100%;
-}
-.searchable-dropdown-list {
-    display: none;
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    max-height: 280px;
-    overflow-y: auto;
-    background: #ffffff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
-    z-index: 50;
-    padding: 4px 0;
-}
-.searchable-dropdown-list .item-result-row {
-    padding: 9px 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid #F1F5F9;
-    transition: background 0.12s ease;
-}
-.searchable-dropdown-list .item-result-row:hover,
-.searchable-dropdown-list .item-result-row.highlighted {
-    background-color: #F8FAFC;
-}
-.searchable-dropdown-list .item-result-row.selected {
-    background-color: #EFF6FF;
-    border-left: 3px solid #2563EB;
-}
-.searchable-dropdown-list .item-result-row:last-child {
-    border-bottom: none;
-}
-.search-match-highlight {
-    background-color: #FEF08A;
-    color: #854D0E;
-    font-weight: 700;
-    border-radius: 2px;
-    padding: 0 1px;
-}
-</style>
-
 <!-- Main Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Operations</h1>
         <p class="page-subtitle">Unified transaction hub for Transfers, Physical Count Adjustments, and Item Stock Cards</p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
     </div>
 </div>
 
@@ -956,12 +746,12 @@ if ($selectedItemId > 0) {
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="receivedSearch" class="search-box" placeholder="Filter received transfers..." onkeyup="filterTable('receivedSearch', 'receivedTable')">
+                <input type="text" id="receivedSearch" class="search-box" aria-label="Filter received transfers" placeholder="Filter received transfers..." oninput="filterTable('receivedSearch', 'receivedTable')">
             </div>
         </div>
 
         <div class="table-responsive">
-            <table id="receivedTable">
+            <table id="receivedTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Date &amp; Time</th>
@@ -1086,12 +876,12 @@ if ($selectedItemId > 0) {
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="transferredSearch" class="search-box" placeholder="Filter transferred records..." onkeyup="filterTable('transferredSearch', 'transferredTable')">
+                <input type="text" id="transferredSearch" class="search-box" aria-label="Filter transferred records" placeholder="Filter transferred records..." oninput="filterTable('transferredSearch', 'transferredTable')">
             </div>
         </div>
 
         <div class="table-responsive">
-            <table id="transferredTable">
+            <table id="transferredTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Date &amp; Time</th>
@@ -1253,16 +1043,15 @@ if ($selectedItemId > 0) {
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="adjSearch" class="search-box" placeholder="Filter adjustment ref, item..." onkeyup="filterTable('adjSearch', 'adjustmentsTable')">
+                <input type="text" id="adjSearch" class="search-box" aria-label="Filter stock adjustments" placeholder="Filter adjustment ref, item..." oninput="filterTable('adjSearch', 'adjustmentsTable')">
             </div>
         </div>
 
         <div class="table-responsive">
-            <table id="adjustmentsTable">
+            <table id="adjustmentsTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Adjustment Ref</th>
-                        <th>Facility</th>
                         <th>Item</th>
                         <th>Previous System Qty</th>
                         <th>Adjusted Physical Qty</th>
@@ -1277,7 +1066,7 @@ if ($selectedItemId > 0) {
                 <tbody>
                     <?php if (empty($adjustments)): ?>
                         <tr>
-                            <td colspan="11" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded for this warehouse yet.</td>
+                            <td colspan="10" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded for this warehouse yet.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($adjustments as $row): ?>
@@ -1285,11 +1074,6 @@ if ($selectedItemId > 0) {
                             <tr>
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                     <?= htmlspecialchars($row['transaction_number']) ?>
-                                </td>
-                                <td>
-                                    <span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>">
-                                        <?= htmlspecialchars($row['warehouse_code']) ?>
-                                    </span>
                                 </td>
                                 <td>
                                     <?php if (!empty($row['item_name'])): ?>
@@ -1331,20 +1115,14 @@ if ($selectedItemId > 0) {
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
                                         <?php if ($row['status'] === 'pending'): ?>
-                                            <button type="button" class="btn btn-primary" style="height: 28px; padding: 0 10px; font-size: 11.5px; background: #15803D; border-color: #15803D;" onclick='openApproveModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                                                Approve
+                                            <button type="button" class="btn btn-primary" style="height: 28px; padding: 0 11px; font-size: 11.5px;" onclick='openAdjDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                                Review &amp; Details
                                             </button>
-                                            <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openRejectModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                                                Reject
-                                            </button>
-                                        <?php elseif ($row['status'] === 'approved'): ?>
-                                            <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #475569;" onclick='openCancelAdjModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                                                Cancel
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px;" onclick='openAdjDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                                Details
                                             </button>
                                         <?php endif; ?>
-                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px;" onclick='openAdjDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                                            Details
-                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -1369,15 +1147,14 @@ if ($selectedItemId > 0) {
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="badSearch" class="search-box" placeholder="Filter report ref, item..." onkeyup="filterTable('badSearch', 'badProductsTable')">
+                <input type="text" id="badSearch" class="search-box" aria-label="Filter damaged and defective goods" placeholder="Filter report ref, item..." oninput="filterTable('badSearch', 'badProductsTable')">
             </div>
         </div>
         <div class="table-responsive">
-            <table id="badProductsTable">
+            <table id="badProductsTable" class="table-sticky-actions">
                 <thead>
                     <tr>
                         <th>Report Ref #</th>
-                        <th>Facility</th>
                         <th>Item</th>
                         <th>Condition / Defect</th>
                         <th>Quantity Written Off</th>
@@ -1391,16 +1168,13 @@ if ($selectedItemId > 0) {
                 <tbody>
                     <?php if (empty($badProducts)): ?>
                         <tr>
-                            <td colspan="10" style="text-align: center; color: var(--gray); padding: 36px;">No damaged or defective products reported for this warehouse yet.</td>
+                            <td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No damaged or defective products reported for this warehouse yet.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($badProducts as $bp): ?>
                             <tr>
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                     <?= htmlspecialchars($bp['bad_product_number']) ?>
-                                </td>
-                                <td>
-                                    <span class="badge-wh"><?= htmlspecialchars($bp['warehouse_code']) ?></span>
                                 </td>
                                 <td>
                                     <strong><?= htmlspecialchars($bp['item_name']) ?></strong>
@@ -1475,6 +1249,10 @@ if ($selectedItemId > 0) {
                         <input type="text" 
                                id="itemSearchInput" 
                                class="select-filter" 
+                               role="combobox"
+                               aria-expanded="false"
+                               aria-controls="itemDropdownList"
+                               aria-autocomplete="list"
                                style="width: 100%; font-weight: 600; padding-right: 32px; height: 38px; cursor: text;" 
                                placeholder="Type item name or ID... 🔍" 
                                value="<?= $selectedItem ? htmlspecialchars($selectedItem['item_name'] . ' — ' . $selectedItem['item_code']) : '' ?>" 
@@ -1482,31 +1260,18 @@ if ($selectedItemId > 0) {
                                onfocus="openItemDropdown()"
                                oninput="filterItemDropdown(this.value)"
                                onkeydown="handleItemDropdownKeydown(event)">
-                        <button type="button" id="clearItemSearchBtn" onclick="clearItemSearch()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--gray); font-size: 16px; display: <?= $selectedItem ? 'inline-block' : 'none' ?>; line-height: 1; padding: 2px;" title="Clear search">&times;</button>
+                        <button type="button" id="clearItemSearchBtn" aria-label="Clear item search" onclick="clearItemSearch()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--gray); font-size: 16px; display: <?= $selectedItem ? 'inline-block' : 'none' ?>; line-height: 1; padding: 2px;" title="Clear search">&times;</button>
                     </div>
 
                     <!-- Dropdown Search Results Container -->
-                    <div id="itemDropdownList" class="searchable-dropdown-list"></div>
-                </div>
-            </div>
-
-            <!-- Assigned Warehouse Branch Badge -->
-            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 180px;">
-                <label style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Warehouse Branch:</label>
-                <div class="wh-badge" style="margin: 0; background: var(--gray-light); border: 1px solid var(--border); color: var(--panel-ink); font-weight: 600; padding: 7px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; height: 38px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-                        <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-                        <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-                    </svg>
-                    <span><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></span>
+                    <div id="itemDropdownList" class="searchable-dropdown-list" role="listbox" aria-label="Inventory items"></div>
                 </div>
             </div>
 
             <!-- Movement Type Filter -->
             <div style="display: flex; flex-direction: column; gap: 4px; min-width: 160px;">
                 <label for="movement_type" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Movement Type:</label>
-                <select name="movement_type" id="movement_type" class="select-filter">
+                <select name="movement_type" id="movement_type" class="select-filter" onchange="this.form.submit()">
                     <option value="">All Types</option>
                     <option value="STOCK_IN" <?= $movementType === 'STOCK_IN' ? 'selected' : '' ?>>Stock In</option>
                     <option value="STOCK_OUT" <?= $movementType === 'STOCK_OUT' ? 'selected' : '' ?>>Stock Out</option>
@@ -1520,17 +1285,15 @@ if ($selectedItemId > 0) {
             <!-- Start Date -->
             <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label for="start_date" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">From:</label>
-                <input type="date" id="start_date" name="start_date" class="select-filter" value="<?= htmlspecialchars($startDate) ?>">
+                <input type="date" id="start_date" name="start_date" class="select-filter" value="<?= htmlspecialchars($startDate) ?>" onchange="this.form.submit()">
             </div>
 
             <!-- End Date -->
             <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label for="end_date" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">To:</label>
-                <input type="date" id="end_date" name="end_date" class="select-filter" value="<?= htmlspecialchars($endDate) ?>">
+                <input type="date" id="end_date" name="end_date" class="select-filter" value="<?= htmlspecialchars($endDate) ?>" onchange="this.form.submit()">
             </div>
 
-            <!-- Filter Submit Button -->
-            <button type="submit" class="btn btn-primary" style="height: 38px;">Filter</button>
             <a href="index.php?tab=stock_card&item_id=<?= $selectedItemId ?>" class="btn btn-secondary" style="height: 38px;">Reset</a>
         </form>
     </div>
@@ -1590,14 +1353,13 @@ if ($selectedItemId > 0) {
                         <th style="text-align: right;">Stock In (+)</th>
                         <th style="text-align: right;">Stock Out (-)</th>
                         <th style="text-align: right;">Balance After</th>
-                        <th>Facility</th>
                         <th>Notes / Reason</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($movements)): ?>
                         <tr>
-                            <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;"><?= empty($cardItems) ? 'No inventory items registered in system. Add items to view stock card ledger.' : 'No transactions recorded for this item under the selected filter criteria.' ?></td>
+                            <td colspan="7" style="text-align: center; color: var(--gray); padding: 36px;"><?= empty($cardItems) ? 'No inventory items registered in system. Add items to view stock card ledger.' : 'No transactions recorded for this item under the selected filter criteria.' ?></td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($movements as $m): ?>
@@ -1628,9 +1390,6 @@ if ($selectedItemId > 0) {
                                 <td style="text-align: right; font-weight: 800; font-size: 14px; color: var(--panel-ink); background: #F8FAFC;">
                                     <?= formatQty($m['balance_after'] ?? 0) ?>
                                 </td>
-                                <td>
-                                    <span class="badge-wh"><?= htmlspecialchars($m['warehouse_code']) ?></span>
-                                </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 220px;" title="<?= htmlspecialchars($m['notes']) ?>">
                                     <?= htmlspecialchars($m['notes'] ?: 'Standard movement') ?>
                                 </td>
@@ -1649,14 +1408,16 @@ if ($selectedItemId > 0) {
 <!-- ========================================================================= -->
 
 <!-- 1. Transfer Details Modal -->
-<div id="transferModal" class="modal-backdrop" onclick="if(event.target === this) closeTransferDetailModal()">
+<div id="transferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTrfTitle" onclick="if(event.target === this) closeTransferDetailModal()">
     <div class="modal-card" style="max-width: 620px;">
         <div class="modal-header">
             <div>
                 <h3 id="modalTrfTitle" class="card-title">Transfer Details</h3>
                 <p id="modalTrfSub" class="card-desc">Warehouse-to-warehouse movement record</p>
             </div>
-            <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeTransferDetailModal()">&times;</button>
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeTransferDetailModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
         </div>
         <div class="modal-body">
             <div class="modal-meta-grid">
@@ -1695,7 +1456,7 @@ if ($selectedItemId > 0) {
                 Transferred Items
             </div>
             <div class="table-responsive">
-                <table>
+                <table class="no-paginate">
                     <thead>
                         <tr>
                             <th>SKU / Code</th>
@@ -1708,14 +1469,11 @@ if ($selectedItemId > 0) {
                 </table>
             </div>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeTransferDetailModal()">Close</button>
-        </div>
     </div>
 </div>
 
 <!-- 2. Initiate Transfer Modal -->
-<div id="newTransferModal" class="modal-backdrop" onclick="if(event.target === this) closeNewTransferModal()">
+<div id="newTransferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newTransferModalTitle" onclick="handleOpsBackdropClose(event, this, closeNewTransferModal)">
     <div class="modal-card" style="max-width: 540px;">
         <form method="POST" action="index.php?tab=transfer">
             <?= csrfField() ?>
@@ -1724,10 +1482,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title">Initiate Stock Transfer</h3>
+                    <h3 id="newTransferModalTitle" class="card-title">Initiate Stock Transfer</h3>
                     <p class="card-desc">Transfer inventory from your assigned warehouse to another facility</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewTransferModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewTransferModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
                 <div>
@@ -1803,7 +1563,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 3. Confirm Received Stock Modal -->
-<div id="confirmReceiptModal" class="modal-backdrop" onclick="if(event.target === this) closeConfirmReceiptModal()">
+<div id="confirmReceiptModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmReceiptModalTitle" onclick="if(event.target === this) closeConfirmReceiptModal()">
     <div class="modal-card" style="max-width: 480px;">
         <form method="POST" action="index.php?tab=transfer">
             <?= csrfField() ?>
@@ -1817,11 +1577,13 @@ if ($selectedItemId > 0) {
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                     </div>
                     <div>
-                        <h3 class="card-title" style="margin: 0;">Confirm Received Stock</h3>
+                        <h3 id="confirmReceiptModalTitle" class="card-title" style="margin: 0;">Confirm Received Stock</h3>
                         <p class="card-desc" style="margin: 0;">Verify physical delivery of items into your warehouse</p>
                     </div>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeConfirmReceiptModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeConfirmReceiptModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
 
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
@@ -1862,7 +1624,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 4. New Stock Adjustment Modal -->
-<div id="newAdjustmentModal" class="modal-backdrop" onclick="if(event.target === this) closeNewAdjustmentModal()">
+<div id="newAdjustmentModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newAdjustmentModalTitle" onclick="handleOpsBackdropClose(event, this, closeNewAdjustmentModal)">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -1871,10 +1633,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0;">New Stock Adjustment</h3>
+                    <h3 id="newAdjustmentModalTitle" class="card-title" style="margin: 0;">New Stock Adjustment</h3>
                     <p class="card-desc" style="margin: 0;">Record discrepancy between system records and physical shelf count</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeNewAdjustmentModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewAdjustmentModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <div>
@@ -1896,7 +1660,16 @@ if ($selectedItemId > 0) {
                     </select>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                    <label for="adjEntryMode" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Adjustment Entry Mode</label>
+                    <select id="adjEntryMode" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px;" onchange="handleAdjModeChange()">
+                        <option value="physical">Enter Actual Physical Shelf Count</option>
+                        <option value="add">Add Quantity (+ Surplus)</option>
+                        <option value="deduct">Deduct Quantity (- Shortage)</option>
+                    </select>
+                </div>
+
+                <div class="form-grid-2">
                     <div>
                         <label style="font-size: 12px; font-weight: 600; color: var(--gray); margin-bottom: 4px; display: block;">Previous System Stock</label>
                         <div id="adjPrevStock" style="background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 6px; height: 38px; display: flex; align-items: center; padding: 0 12px; font-weight: 700; color: var(--panel-ink);">
@@ -1904,8 +1677,9 @@ if ($selectedItemId > 0) {
                         </div>
                     </div>
                     <div>
-                        <label for="adjPhysicalCount" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Actual Physical Count <span style="color: #DC2626;">*</span></label>
-                        <input type="number" step="0.01" min="0" name="adjusted_quantity" id="adjPhysicalCount" class="search-box" style="width: 100%; height: 38px; border-radius: 6px;" placeholder="0" required oninput="calcAdjDiff()">
+                        <label id="adjCountLabel" for="adjInputQty" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Actual Physical Count <span style="color: #DC2626;">*</span></label>
+                        <input type="number" step="0.01" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 6px;" placeholder="0" required oninput="calcAdjDiff()">
+                        <input type="hidden" name="adjusted_quantity" id="adjPhysicalCount" value="0">
                     </div>
                 </div>
 
@@ -1936,7 +1710,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 5. Report Damaged Goods Modal -->
-<div id="reportBadProductModal" class="modal-backdrop" onclick="if(event.target === this) closeReportBadProductModal()">
+<div id="reportBadProductModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reportBadProductModalTitle" onclick="handleOpsBackdropClose(event, this, closeReportBadProductModal)">
     <div class="modal-card" style="max-width: 500px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -1945,10 +1719,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0;">Report Damaged / Defective Stock</h3>
+                    <h3 id="reportBadProductModalTitle" class="card-title" style="margin: 0;">Report Damaged / Defective Stock</h3>
                     <p class="card-desc" style="margin: 0;">Immediately write off spoiled, broken, or defective goods</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeReportBadProductModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeReportBadProductModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <div>
@@ -2004,7 +1780,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 6. Approve Adjustment Modal -->
-<div id="confirmApproveModal" class="modal-backdrop" onclick="if(event.target === this) closeApproveModal()">
+<div id="confirmApproveModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmApproveModalTitle" onclick="if(event.target === this) closeApproveModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -2014,10 +1790,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0;">Approve Stock Adjustment</h3>
+                    <h3 id="confirmApproveModalTitle" class="card-title" style="margin: 0;">Approve Stock Adjustment</h3>
                     <p class="card-desc" style="margin: 0;">Confirm variance and update warehouse inventory</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeApproveModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeApproveModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
                 <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
@@ -2040,7 +1818,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 7. Reject Adjustment Modal -->
-<div id="confirmRejectModal" class="modal-backdrop" onclick="if(event.target === this) closeRejectModal()">
+<div id="confirmRejectModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmRejectModalTitle" onclick="if(event.target === this) closeRejectModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -2050,10 +1828,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0; color: #B91C1C;">Reject Stock Adjustment</h3>
+                    <h3 id="confirmRejectModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Reject Stock Adjustment</h3>
                     <p class="card-desc" style="margin: 0;">Decline count discrepancy correction</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeRejectModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeRejectModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
                 <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
@@ -2073,7 +1853,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 8. Cancel Approved Adjustment Modal -->
-<div id="confirmCancelAdjModal" class="modal-backdrop" onclick="if(event.target === this) closeCancelAdjModal()">
+<div id="confirmCancelAdjModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelAdjModalTitle" onclick="if(event.target === this) closeCancelAdjModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -2083,10 +1863,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0; color: #B91C1C;">Cancel Stock Adjustment</h3>
+                    <h3 id="confirmCancelAdjModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Stock Adjustment</h3>
                     <p class="card-desc" style="margin: 0;">Reverse approved adjustment and restore previous balance</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeCancelAdjModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelAdjModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
                 <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
@@ -2098,7 +1880,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeCancelAdjModal()">Go Back</button>
+                <button type="button" class="btn btn-secondary" onclick="closeCancelAdjModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
             </div>
         </form>
@@ -2106,7 +1888,7 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 9. Restore Damaged Product Modal -->
-<div id="confirmCancelBadModal" class="modal-backdrop" onclick="if(event.target === this) closeCancelBadModal()">
+<div id="confirmCancelBadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelBadModalTitle" onclick="if(event.target === this) closeCancelBadModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
@@ -2116,10 +1898,12 @@ if ($selectedItemId > 0) {
             
             <div class="modal-header">
                 <div>
-                    <h3 class="card-title" style="margin: 0; color: #15803D;">Restore Damaged Product Stock</h3>
+                    <h3 id="confirmCancelBadModalTitle" class="card-title" style="margin: 0; color: #15803D;">Restore Damaged Product Stock</h3>
                     <p class="card-desc" style="margin: 0;">Cancel write-off report and return items to inventory</p>
                 </div>
-                <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeCancelBadModal()">&times;</button>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelBadModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
                 <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
@@ -2131,7 +1915,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeCancelBadModal()">Go Back</button>
+                <button type="button" class="btn btn-secondary" onclick="closeCancelBadModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary" style="background: #15803D; border-color: #15803D;">Confirm &amp; Restore Stock</button>
             </div>
         </form>
@@ -2139,17 +1923,19 @@ if ($selectedItemId > 0) {
 </div>
 
 <!-- 10. Adjustment Details Modal -->
-<div id="adjustmentDetailModal" class="modal-backdrop" onclick="if(event.target === this) closeAdjDetailModal()">
+<div id="adjustmentDetailModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalAdjTitle" onclick="if(event.target === this) closeAdjDetailModal()">
     <div class="modal-card" style="max-width: 540px;">
         <div class="modal-header">
             <div>
                 <h3 id="modalAdjTitle" class="card-title" style="margin: 0;">Adjustment Details</h3>
                 <p class="card-desc" style="margin: 0;">Physical count discrepancy audit trail</p>
             </div>
-            <button type="button" class="btn btn-secondary" style="height: 32px; width: 32px; padding: 0;" onclick="closeAdjDetailModal()">&times;</button>
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeAdjDetailModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
         </div>
         <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px;">
+            <div class="form-grid-2" style="gap: 10px; font-size: 13px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px;">
                 <div>
                     <span style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Reference</span>
                     <strong id="modalAdjRef" style="font-family: monospace;">—</strong>
@@ -2191,8 +1977,8 @@ if ($selectedItemId > 0) {
 
             <div id="modalAdjAuditRow" style="font-size: 11.5px; color: var(--gray);"></div>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeAdjDetailModal()">Close</button>
+        <div id="modalAdjFooter" class="modal-footer" style="display: none; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div id="modalAdjActionBtns" style="display: flex; align-items: center; gap: 8px;"></div>
         </div>
     </div>
 </div>
@@ -2201,6 +1987,22 @@ if ($selectedItemId > 0) {
 <!-- JAVASCRIPT LOGIC                                                          -->
 <!-- ========================================================================= -->
 <script>
+// Protect creation modals from accidental backdrop-click dismissal when forms contain unsaved input
+function handleOpsBackdropClose(event, modalEl, closeFn) {
+    if (event.target !== modalEl) return;
+    const form = modalEl.querySelector('form');
+    if (form) {
+        const hasInput = Array.from(form.querySelectorAll('input[type="number"], textarea, select')).some(el => {
+            if (el.id === 'adjEntryMode' || el.id === 'badConditionSelect') return false;
+            return el.value && el.value.trim() !== '';
+        });
+        if (hasInput && !confirm('Discard unsaved entries and close this modal?')) {
+            return;
+        }
+    }
+    closeFn();
+}
+
 // Tab Switching Controller
 function switchStockTab(tabName) {
     const validTabs = ['transfer', 'adjustment', 'stock_card'];
@@ -2358,6 +2160,29 @@ function closeNewAdjustmentModal() {
     document.getElementById('newAdjustmentModal').style.display = 'none';
 }
 
+function handleAdjModeChange() {
+    const modeSelect = document.getElementById('adjEntryMode');
+    const label = document.getElementById('adjCountLabel');
+    const input = document.getElementById('adjInputQty');
+    if (!modeSelect || !label || !input) return;
+
+    const mode = modeSelect.value;
+    if (mode === 'add') {
+        label.innerHTML = 'Quantity to Add (+) <span style="color: #DC2626;">*</span>';
+        input.min = '0.01';
+        input.placeholder = 'Enter surplus quantity';
+    } else if (mode === 'deduct') {
+        label.innerHTML = 'Quantity to Deduct (-) <span style="color: #DC2626;">*</span>';
+        input.min = '0.01';
+        input.placeholder = 'Enter shortage quantity';
+    } else {
+        label.innerHTML = 'Actual Physical Count <span style="color: #DC2626;">*</span>';
+        input.min = '0';
+        input.placeholder = '0';
+    }
+    calcAdjDiff();
+}
+
 function handleAdjItemChange(select) {
     const option = select.options[select.selectedIndex];
     if (!option || !option.value) {
@@ -2375,28 +2200,43 @@ function handleAdjItemChange(select) {
 }
 
 function calcAdjDiff() {
-    const inputVal = document.getElementById('adjPhysicalCount').value;
+    const inputEl = document.getElementById('adjInputQty');
+    const hiddenPhysicalEl = document.getElementById('adjPhysicalCount');
+    const modeSelect = document.getElementById('adjEntryMode');
     const container = document.getElementById('adjDiffContainer');
     const valElem = document.getElementById('adjDiffValue');
     const descElem = document.getElementById('adjDiffDesc');
 
+    const inputVal = inputEl ? inputEl.value : '';
     if (inputVal === '' || isNaN(inputVal)) {
         container.style.display = 'none';
         return;
     }
 
-    const physical = parseFloat(inputVal);
+    const rawQty = parseFloat(inputVal);
+    const mode = modeSelect ? modeSelect.value : 'physical';
+    let physical = rawQty;
+    if (mode === 'add') {
+        physical = currentSelectedStock + rawQty;
+    } else if (mode === 'deduct') {
+        physical = Math.max(0, currentSelectedStock - rawQty);
+    }
+
+    if (hiddenPhysicalEl) {
+        hiddenPhysicalEl.value = Number(physical.toFixed(2));
+    }
+
     const diff = physical - currentSelectedStock;
     container.style.display = 'block';
 
     if (diff > 0) {
         valElem.textContent = '+' + Number(diff.toFixed(2)) + ' ' + currentSelectedUnit;
         valElem.style.color = '#15803D';
-        descElem.textContent = 'Surplus: Stock count will increase available inventory upon approval.';
+        descElem.textContent = 'Surplus: New balance will be ' + Number(physical.toFixed(2)) + ' ' + currentSelectedUnit + ' upon approval.';
     } else if (diff < 0) {
         valElem.textContent = Number(diff.toFixed(2)) + ' ' + currentSelectedUnit;
         valElem.style.color = '#B91C1C';
-        descElem.textContent = 'Shortage / Loss: Stock count will decrease available inventory upon approval.';
+        descElem.textContent = 'Shortage / Loss: New balance will be ' + Number(physical.toFixed(2)) + ' ' + currentSelectedUnit + ' upon approval.';
     } else {
         valElem.textContent = '0.00 ' + currentSelectedUnit;
         valElem.style.color = '#475569';
@@ -2478,8 +2318,11 @@ function closeCancelBadModal() {
     document.getElementById('confirmCancelBadModal').style.display = 'none';
 }
 
+let currentDetailAdjRow = null;
+
 function openAdjDetailModal(row) {
     if (!row) return;
+    currentDetailAdjRow = row;
     document.getElementById('modalAdjTitle').textContent = 'Adjustment ' + row.transaction_number;
     document.getElementById('modalAdjRef').textContent = row.transaction_number;
     
@@ -2509,6 +2352,32 @@ function openAdjDetailModal(row) {
     if (row.approved_by_name) audit += 'Approved by: ' + row.approved_by_name;
     if (row.cancelled_by_name) audit += (audit ? ' &middot; ' : '') + 'Cancelled by: ' + row.cancelled_by_name;
     document.getElementById('modalAdjAuditRow').innerHTML = audit;
+
+    const actionBtns = document.getElementById('modalAdjActionBtns');
+    const footerEl = document.getElementById('modalAdjFooter');
+    if (actionBtns) {
+        if (row.status === 'pending') {
+            actionBtns.innerHTML = `
+                <button type="button" class="btn btn-primary" style="background: #15803D; border-color: #15803D;" onclick="closeAdjDetailModal(); openApproveModal(currentDetailAdjRow);">
+                    Approve
+                </button>
+                <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openRejectModal(currentDetailAdjRow);">
+                    Reject
+                </button>
+            `;
+            if (footerEl) footerEl.style.display = 'flex';
+        } else if (row.status === 'approved') {
+            actionBtns.innerHTML = `
+                <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openCancelAdjModal(currentDetailAdjRow);">
+                    Cancel Adjustment
+                </button>
+            `;
+            if (footerEl) footerEl.style.display = 'flex';
+        } else {
+            actionBtns.innerHTML = '';
+            if (footerEl) footerEl.style.display = 'none';
+        }
+    }
 
     document.getElementById('adjustmentDetailModal').style.display = 'flex';
 }
@@ -2564,6 +2433,8 @@ function renderItemDropdown(matches, query) {
         html += `
             <div class="item-result-row ${isSelected ? 'selected' : ''}" 
                  id="item-opt-${index}"
+                 role="option"
+                 aria-selected="${isSelected ? 'true' : 'false'}"
                  data-index="${index}"
                  onclick="selectInventoryItem(${item.id})">
                 <div style="display: flex; flex-direction: column;">
@@ -2608,6 +2479,7 @@ function filterItemDropdown(query) {
 function openItemDropdown() {
     const input = document.getElementById('itemSearchInput');
     if (!input) return;
+    input.setAttribute('aria-expanded', 'true');
     input.select();
     filterItemDropdown('');
 }
@@ -2616,6 +2488,10 @@ function closeItemDropdown() {
     const list = document.getElementById('itemDropdownList');
     if (list) {
         list.style.display = 'none';
+    }
+    const input = document.getElementById('itemSearchInput');
+    if (input) {
+        input.setAttribute('aria-expanded', 'false');
     }
     currentHighlightedIndex = -1;
 }
@@ -2722,19 +2598,20 @@ function filterTable(inputId, tableId) {
 
     for (let i = 1; i < tr.length; i++) {
         if (tr[i].cells.length <= 1) continue;
-        let visible = false;
+        let match = false;
         const tds = tr[i].getElementsByTagName('td');
         for (let j = 0; j < tds.length; j++) {
             if (tds[j]) {
                 const txt = tds[j].textContent || tds[j].innerText;
                 if (txt.toUpperCase().indexOf(filter) > -1) {
-                    visible = true;
+                    match = true;
                     break;
                 }
             }
         }
-        tr[i].style.display = visible ? '' : 'none';
+        tr[i].dataset.filteredOut = match ? 'false' : 'true';
     }
+    if (table.paginationUpdate) table.paginationUpdate(true);
 }
 
 function escapeHtml(str) {

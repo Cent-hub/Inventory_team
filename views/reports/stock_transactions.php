@@ -243,154 +243,13 @@ $stmtAdj->execute($paramsAdj);
 $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<style>
-/* Tab Navigation Bar */
-.stock-ops-nav-wrapper {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #E2E8F0;
-    border-radius: 0;
-    padding: 0;
-    margin-bottom: 24px;
-    box-shadow: none;
-}
-.stock-ops-nav-label {
-    display: none;
-}
-.stock-ops-tabs {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 0;
-    flex-wrap: nowrap;
-    margin-bottom: -1px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-}
-.stock-ops-tabs::-webkit-scrollbar {
-    display: none;
-}
-.stock-tab-btn {
-    appearance: none;
-    flex: 1 1 0%;
-    min-width: max-content;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    color: #64748B;
-    padding: 14px 24px;
-    font-family: var(--font-body);
-    font-weight: 600;
-    font-size: 13.5px;
-    line-height: 1.25;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    white-space: nowrap;
-    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
-    user-select: none;
-    box-shadow: none;
-}
-.stock-tab-btn svg {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    color: currentColor;
-    stroke: currentColor;
-    transition: color 0.2s ease, stroke 0.2s ease;
-}
-.stock-tab-btn:hover {
-    background: transparent;
-    color: #334155;
-    border-bottom-color: #CBD5E1;
-    transform: none;
-}
-.stock-tab-btn.active,
-.stock-tab-btn.active:hover {
-    background: transparent;
-    color: #2563EB;
-    border-bottom-color: #2563EB;
-    box-shadow: none;
-    font-weight: 600;
-    transform: none;
-}
-.stock-tab-btn .tab-badge-count {
-    display: none;
-}
-@media (max-width: 768px) {
-    .stock-ops-tabs {
-        justify-content: flex-start;
-    }
-    .stock-tab-btn {
-        flex: 1 0 auto;
-        padding: 12px 18px;
-        font-size: 13px;
-    }
-}
-
-/* Tab Panes */
-.stock-op-pane {
-    animation: fadeIn 0.18s ease-in-out;
-}
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(3px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Printable Banner */
-.print-banner {
-    display: none;
-    padding: 16px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid var(--panel-ink);
-}
-@media print {
-    .print-banner {
-        display: block !important;
-    }
-    .page-header, .stock-ops-nav-wrapper, .report-filter-form, .header-actions, .report-table-footer, .sidebar, .navbar, .btn {
-        display: none !important;
-    }
-    .main-content {
-        margin-left: 0 !important;
-        padding: 0 !important;
-    }
-    .card {
-        border: none !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-    }
-    table {
-        font-size: 11px !important;
-    }
-    .stock-op-pane[style*="display: none"] {
-        display: none !important;
-    }
-}
-</style>
-
 <!-- Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Transaction Reports</h1>
         <p class="page-subtitle">
-            Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments for
+            Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments
         </p>
-    </div>
-    <div class="header-actions">
-        <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 21h5v-5"/>
-            </svg>
-            <span>Refresh</span>
-        </button>
     </div>
 </div>
 
@@ -481,25 +340,19 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
             </span>
-            <input type="text" name="search" class="search-box" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" onkeyup="filterActiveTransactionTable()">
+            <input type="text" name="search" class="search-box" aria-label="Search transaction records" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveTransactionTable()" onkeydown="if(event.key==='Enter'){event.preventDefault();filterActiveTransactionTable();}">
         </div>
 
         <!-- Date Range -->
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 12px; color: var(--gray); font-weight: 500;">From</span>
-            <input type="date" name="start_date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($startDate) ?>">
+            <input type="date" name="start_date" aria-label="Start date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($startDate) ?>" onchange="this.form.submit()">
             <span style="font-size: 12px; color: var(--gray); font-weight: 500;">To</span>
-            <input type="date" name="end_date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($endDate) ?>">
+            <input type="date" name="end_date" aria-label="End date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($endDate) ?>" onchange="this.form.submit()">
         </div>
 
         <!-- Buttons -->
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="submit" class="btn btn-primary" style="height: 38px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                </svg>
-                <span>Filter</span>
-            </button>
             <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -528,7 +381,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Stock Movement Ledger Report</h2>
-                <p class="card-desc"> ledger of inventory balance debits and credits &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Chronological ledger of inventory balance debits and credits &middot; Generated on <?= date('M d, Y H:i') ?></p>
             </div>
         </div>
         <div class="table-responsive">
@@ -539,7 +392,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Reference #</th>
                         <th>Product / Item</th>
                         <th>Classification</th>
-                        <th>Facility</th>
                         <th>Movement Type</th>
                         <th style="text-align: right;">In (+)</th>
                         <th style="text-align: right;">Out (-)</th>
@@ -548,7 +400,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody>
                     <?php if (empty($movementData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No stock movement transactions recorded in this period.</td></tr>
+                        <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No stock movement transactions recorded in this period.</td></tr>
                     <?php else: ?>
                         <?php foreach ($movementData as $row): 
                             $type = $row['movement_type'];
@@ -569,7 +421,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                         <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                     </span>
                                 </td>
-                                <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td><span class="badge <?= $pillClass ?>"><?= htmlspecialchars(str_replace('_', ' ', $row['movement_type'])) ?></span></td>
                                 <td style="text-align: right; font-weight: 700; color: #15803D;">
                                     <?= (float)$row['quantity_in'] > 0 ? '+' . formatQty((float)$row['quantity_in']) : '—' ?>
@@ -608,7 +459,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Source PO / Ref #</th>
                         <th>Source Type</th>
                         <th>Date Received</th>
-                        <th>Warehouse Facility</th>
                         <th>Processed By</th>
                         <th style="text-align: right;">Item Lines</th>
                         <th style="text-align: right;">Total Quantity</th>
@@ -617,7 +467,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody>
                     <?php if (empty($inboundData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No inbound stock receipts found in this date range.</td></tr>
+                        <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No inbound stock receipts found in this date range.</td></tr>
                     <?php else: ?>
                         <?php foreach ($inboundData as $row): ?>
                             <tr>
@@ -625,7 +475,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
-                                <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
                                 <td style="text-align: right; font-weight: 700; color: #15803D;">+<?= formatQty((float)$row['total_qty']) ?></td>
@@ -658,7 +507,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Source Order / Ref #</th>
                         <th>Source Type</th>
                         <th>Date Dispatched</th>
-                        <th>Warehouse Facility</th>
                         <th>Issued By</th>
                         <th style="text-align: right;">Item Lines</th>
                         <th style="text-align: right;">Total Quantity</th>
@@ -667,7 +515,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody>
                     <?php if (empty($outboundData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No outbound stock shipments found in this date range.</td></tr>
+                        <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No outbound stock shipments found in this date range.</td></tr>
                     <?php else: ?>
                         <?php foreach ($outboundData as $row): ?>
                             <tr>
@@ -675,7 +523,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
-                                <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
                                 <td style="text-align: right; font-weight: 700; color: #B91C1C;">-<?= formatQty((float)$row['total_qty']) ?></td>
@@ -754,7 +601,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                     <tr>
                         <th>Adjustment Ref</th>
                         <th>Adjustment Date</th>
-                        <th>Warehouse Facility</th>
                         <th>Item Affected</th>
                         <th>Logged By</th>
                         <th style="text-align: right;">Previous Qty</th>
@@ -765,7 +611,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody>
                     <?php if (empty($adjustmentData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded in this date range.</td></tr>
+                        <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded in this date range.</td></tr>
                     <?php else: ?>
                         <?php foreach ($adjustmentData as $row): 
                             $diff = (float)$row['difference'];
@@ -773,7 +619,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             <tr>
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['adjustment_date'])) ?></td>
-                                <td><span class="badge-wh <?= getWarehouseBadgeClass($row['warehouse_code']) ?>"><?= htmlspecialchars($row['warehouse_code']) ?></span></td>
                                 <td>
                                     <strong><?= htmlspecialchars($row['item_name']) ?></strong>
                                     <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
@@ -884,11 +729,7 @@ function filterActiveTransactionTable() {
     rows.forEach(row => {
         if (row.classList.contains('no-filter') || row.querySelector('td[colspan]')) return;
         const text = row.textContent.toLowerCase();
-        if (text.includes(term)) {
-            delete row.dataset.filteredOut;
-        } else {
-            row.dataset.filteredOut = 'true';
-        }
+        row.dataset.filteredOut = text.includes(term) ? 'false' : 'true';
     });
 
     if (typeof table.paginationUpdate === 'function') {
