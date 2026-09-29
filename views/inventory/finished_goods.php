@@ -20,7 +20,7 @@ $stmt = $pdo->prepare("
         i.item_name,
         COALESCE(c.category_name, 'Bottled Spirits & Liquors') AS category_name,
         i.unit,
-        i.default_reorder_level,
+        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level,
         w.warehouse_id,
         w.warehouse_code,
         w.warehouse_name,
@@ -29,9 +29,9 @@ $stmt = $pdo->prepare("
         latest_prod.source_reference_no AS batch_reference,
         latest_prod.last_produced_qty
     FROM items i
+    JOIN warehouses w ON w.warehouse_id = :wid1
     LEFT JOIN categories c ON i.category_id = c.category_id
-    JOIN inventory inv ON inv.item_id = i.item_id
-    JOIN warehouses w ON inv.warehouse_id = w.warehouse_id
+    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = w.warehouse_id
     LEFT JOIN (
         SELECT 
             sii.item_id,
@@ -41,26 +41,35 @@ $stmt = $pdo->prepare("
             sii.quantity AS last_produced_qty
         FROM stock_in_items sii
         JOIN stock_ins si ON sii.stock_in_id = si.stock_in_id
-        WHERE si.status = 'completed' AND si.warehouse_id = :wid1
-        ORDER BY si.transaction_date DESC, si.stock_in_id DESC
+        JOIN (
+            SELECT sii2.item_id, si2.warehouse_id, MAX(sii2.stock_in_item_id) AS max_sii_id
+            FROM stock_in_items sii2
+            JOIN stock_ins si2 ON sii2.stock_in_id = si2.stock_in_id
+            WHERE si2.status = 'completed' AND si2.warehouse_id = :wid2
+            GROUP BY sii2.item_id, si2.warehouse_id
+        ) latest_id ON sii.stock_in_item_id = latest_id.max_sii_id
     ) latest_prod ON latest_prod.item_id = i.item_id AND latest_prod.warehouse_id = w.warehouse_id
-    WHERE i.item_type = 'finished_good' AND i.status = 'active' AND inv.warehouse_id = :wid2
-    GROUP BY i.item_id, w.warehouse_id
+    WHERE i.item_type = 'finished_good' AND i.status = 'active'
     ORDER BY i.item_name ASC, w.warehouse_code ASC
 ");
 $stmt->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $finishedGoods = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Metrics scoped strictly to assigned warehouse
-$stmtFGSKUs = $pdo->prepare("SELECT COUNT(DISTINCT inv.item_id) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'finished_good' AND i.status = 'active' AND inv.warehouse_id = :wid");
-$stmtFGSKUs->execute([':wid' => $currentWarehouseId]);
-$totalFGSKUs = (int)$stmtFGSKUs->fetchColumn();
+$totalFGSKUs = count($finishedGoods);
 
-$stmtFGQty = $pdo->prepare("SELECT COALESCE(SUM(inv.quantity), 0) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'finished_good' AND inv.warehouse_id = :wid");
+$stmtFGQty = $pdo->prepare("SELECT COALESCE(SUM(inv.quantity), 0) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'finished_good' AND i.status = 'active' AND inv.warehouse_id = :wid");
 $stmtFGQty->execute([':wid' => $currentWarehouseId]);
 $totalFGQty = (float)$stmtFGQty->fetchColumn();
 
-$stmtLowFG = $pdo->prepare("SELECT COUNT(*) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'finished_good' AND inv.quantity <= i.default_reorder_level AND i.status = 'active' AND inv.warehouse_id = :wid");
+$stmtLowFG = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM items i
+    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid
+    WHERE i.item_type = 'finished_good'
+      AND i.status = 'active'
+      AND COALESCE(inv.quantity, 0) <= COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level)
+");
 $stmtLowFG->execute([':wid' => $currentWarehouseId]);
 $lowStockFG = (int)$stmtLowFG->fetchColumn();
 ?>

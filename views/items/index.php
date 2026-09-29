@@ -86,6 +86,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             ]);
                             $newId = (int)$pdo->lastInsertId();
 
+                            // Initialize 0-stock inventory snapshot rows across all active warehouses
+                            $stmtSeedInv = $pdo->prepare("
+                                INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
+                                SELECT ?, warehouse_id, 0.000, ?
+                                FROM warehouses
+                                WHERE status = 'active'
+                            ");
+                            $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
+
                             require_once __DIR__ . '/../../helpers/AccountabilityService.php';
                             AccountabilityService::log([
                                 'user_id'          => $userId,
@@ -109,6 +118,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle Existing Item Update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } else {
+        $itemId          = (int)($_POST['item_id'] ?? 0);
+        $itemName        = trim($_POST['item_name'] ?? '');
+        $categoryId      = (int)($_POST['category_id'] ?? 0);
+        $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
+        $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
+        $description     = trim($_POST['description'] ?? '');
+        $itemStatus      = trim($_POST['status'] ?? 'active');
+
+        if ($itemId <= 0) {
+            $errorMessage = "Invalid item ID selected for update.";
+        } elseif (empty($itemName) || mb_strlen($itemName) > 150) {
+            $errorMessage = "Item Name is required and cannot exceed 150 characters.";
+        } elseif ($categoryId <= 0) {
+            $errorMessage = "Please select a valid category.";
+        } elseif (empty($unit) || mb_strlen($unit) > 20) {
+            $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
+        } elseif (!in_array($itemStatus, ['active', 'inactive'], true)) {
+            $errorMessage = "Item status must be either 'active' or 'inactive'.";
+        } elseif ($rawReorderLevel !== '' && !is_numeric($rawReorderLevel)) {
+            $errorMessage = "Default reorder level must be a valid number.";
+        } else {
+            $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
+            if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
+            } else {
+                try {
+                    $stmtExist = $pdo->prepare("SELECT item_code, item_type FROM items WHERE item_id = ?");
+                    $stmtExist->execute([$itemId]);
+                    $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$existingItem) {
+                        $errorMessage = "Selected catalog item does not exist.";
+                    } else {
+                        $stmtUpd = $pdo->prepare("
+                            UPDATE items
+                            SET item_name = ?,
+                                description = ?,
+                                category_id = ?,
+                                unit = ?,
+                                default_reorder_level = ?,
+                                status = ?
+                            WHERE item_id = ?
+                        ");
+                        $stmtUpd->execute([
+                            $itemName,
+                            $description ?: null,
+                            $categoryId,
+                            $unit,
+                            round($reorderLevel, 3),
+                            $itemStatus,
+                            $itemId
+                        ]);
+
+                        // Keep warehouse inventory reorder levels synchronized with master catalog
+                        $stmtSyncInv = $pdo->prepare("
+                            UPDATE inventory
+                            SET reorder_level = ?
+                            WHERE item_id = ?
+                        ");
+                        $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
+
+                        // Ensure all active warehouses have an inventory row for this item
+                        $stmtSeedMissing = $pdo->prepare("
+                            INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
+                            SELECT ?, warehouse_id, 0.000, ?
+                            FROM warehouses
+                            WHERE status = 'active'
+                        ");
+                        $stmtSeedMissing->execute([$itemId, round($reorderLevel, 3)]);
+
+                        $userId = (int)($currentUser['id'] ?? 1);
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => $userId,
+                            'team'             => 'Inventory',
+                            'action_type'      => 'ITEM_UPDATED',
+                            'channel'          => 'UI',
+                            'item_id'          => $itemId,
+                            'warehouse_id'     => $currentWarehouseId ?: 1,
+                            'reference_number' => $existingItem['item_code'],
+                            'notes'            => "Master item updated: {$itemName} (Status: {$itemStatus}, Reorder: " . round($reorderLevel, 3) . " {$unit})"
+                        ]);
+
+                        $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
+                    }
+                } catch (Exception $e) {
+                    $errorMessage = "Failed to update item: " . $e->getMessage();
+                }
+            }
+        }
+    }
+}
+
 // Fetch all categories for dropdown
 $categories = $pdo->query("SELECT category_id, category_code, category_name FROM categories WHERE status = 'active' ORDER BY category_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -120,6 +227,7 @@ $stmtItems = $pdo->query("
         i.item_name,
         i.description,
         i.item_type,
+        i.category_id,
         i.unit,
         i.default_reorder_level,
         i.status,
@@ -137,16 +245,17 @@ $totalSKUs    = count($itemsList);
 $rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material'));
 $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good'));
 $catCount     = count($categories);
+$canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 ?>
 
 <!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title">Item Catalog</h1>
-        <p class="page-subtitle">Centralized catalog, unit pricing, and reorder threshold configuration</p>
+        <p class="page-subtitle">Centralized catalog and reorder threshold configuration</p>
     </div>
     <div class="header-actions">
-        <?php if (empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin', 'operator'], true)): ?>
+        <?php if ($canManageItems): ?>
             <button type="button" class="btn btn-primary" onclick="openNewItemModal()">+ Add New Item</button>
         <?php endif; ?>
     </div>
@@ -172,7 +281,7 @@ $catCount     = count($categories);
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Registered </span>
+            <span class="stat-label">Total Registered SKUs</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
             </div>
@@ -183,7 +292,7 @@ $catCount     = count($categories);
 
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Raw Material</span>
+            <span class="stat-label">Raw Materials</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
             </div>
@@ -249,12 +358,15 @@ $catCount     = count($categories);
                     <th>Unit</th>
                     <th>Default Reorder Level</th>
                     <th>Status</th>
+                    <?php if ($canManageItems): ?>
+                        <th>Action</th>
+                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($itemsList)): ?>
                     <tr>
-                        <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first SKU.</td>
+                        <td colspan="<?= $canManageItems ? 9 : 8 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first SKU.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
@@ -292,8 +404,27 @@ $catCount     = count($categories);
                                 <?= formatQty($row['default_reorder_level']) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td>
-                                <span class="badge status-completed">Active</span>
+                                <?php if (($row['status'] ?? 'active') === 'active'): ?>
+                                    <span class="badge status-completed">Active</span>
+                                <?php else: ?>
+                                    <span class="badge status-cancelled">Inactive</span>
+                                <?php endif; ?>
                             </td>
+                            <?php if ($canManageItems): ?>
+                                <td>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openEditItemModal(<?= htmlspecialchars(json_encode([
+                                        'item_id'               => (int)$row['item_id'],
+                                        'item_code'             => $row['item_code'],
+                                        'item_name'             => $row['item_name'],
+                                        'item_type'             => $row['item_type'],
+                                        'category_id'           => (int)$row['category_id'],
+                                        'unit'                  => $row['unit'],
+                                        'default_reorder_level' => (float)$row['default_reorder_level'],
+                                        'description'           => (string)($row['description'] ?? ''),
+                                        'status'                => $row['status'] ?? 'active'
+                                    ])) ?>)">Edit</button>
+                                </td>
+                            <?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -397,12 +528,117 @@ $catCount     = count($categories);
     </div>
 </div>
 
+<!-- Modal: Edit Existing Item -->
+<div id="editItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editItemModalTitle" onclick="if(event.target === this) closeEditItemModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <form method="POST" action="index.php">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="update_item">
+            <input type="hidden" name="item_id" id="editItemId" value="">
+            <div class="modal-header">
+                <div>
+                    <h3 id="editItemModalTitle" class="card-title">Edit Catalog Item</h3>
+                    <p class="card-desc">Update item details, reorder threshold, or active status</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeEditItemModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                    <div>
+                        <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Item Code (SKU)
+                        </label>
+                        <input type="text" id="editItemCode" class="search-box" style="width: 100%; padding-left: 12px; background: #F1F5F9; color: var(--gray);" readonly>
+                    </div>
+                    <div>
+                        <label for="editItemName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Item Name <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="text" name="item_name" id="editItemName" class="search-box" style="width: 100%; padding-left: 12px;" required>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1.5fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="editCategory" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Category <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="category_id" id="editCategory" class="select-filter" style="width: 100%;" required>
+                            <?php foreach ($categories as $cat): ?>
+                                <option value="<?= (int)$cat['category_id'] ?>">
+                                    <?= htmlspecialchars($cat['category_name']) ?> (<?= htmlspecialchars($cat['category_code']) ?>)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="editUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Unit <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="unit" id="editUnit" class="select-filter" style="width: 100%;" required>
+                            <option value="pcs">pcs (Pieces / Bottles)</option>
+                            <option value="liter">liter (Bulk Liquids)</option>
+                            <option value="kg">kg (Weight / Botanicals)</option>
+                            <option value="box">box (Cases / Cartons)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1.3fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="editReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Default Reorder Threshold <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="number" step="0.01" min="0" name="default_reorder_level" id="editReorder" class="search-box" style="width: 100%; padding-left: 12px;" required>
+                    </div>
+                    <div>
+                        <label for="editStatus" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Catalog Status <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="status" id="editStatus" class="select-filter" style="width: 100%;" required>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="editDesc" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Description / Specifications
+                    </label>
+                    <textarea name="description" id="editDesc" class="search-box" style="width: 100%; height: 50px; padding: 8px 12px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeEditItemModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function openNewItemModal() {
     document.getElementById('newItemModal').classList.add('open');
 }
 function closeNewItemModal() {
     document.getElementById('newItemModal').classList.remove('open');
+}
+function openEditItemModal(item) {
+    document.getElementById('editItemId').value = item.item_id;
+    document.getElementById('editItemCode').value = item.item_code;
+    document.getElementById('editItemName').value = item.item_name;
+    document.getElementById('editCategory').value = item.category_id;
+    document.getElementById('editUnit').value = item.unit;
+    document.getElementById('editReorder').value = item.default_reorder_level;
+    document.getElementById('editStatus').value = item.status || 'active';
+    document.getElementById('editDesc').value = item.description || '';
+    document.getElementById('editItemModal').classList.add('open');
+}
+function closeEditItemModal() {
+    document.getElementById('editItemModal').classList.remove('open');
 }
 function autoSuggestCodePrefix(type) {
     const codeInput = document.getElementById('modalItemCode');

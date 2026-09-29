@@ -38,21 +38,24 @@ $stmtFG = $pdo->prepare("
 $stmtFG->execute([':wid' => $currentWarehouseId]);
 $totalFinishedGoods = (int)$stmtFG->fetchColumn();
 
-// 3. Total Stock (net physical quantity in assigned warehouse)
+// 3. Total Stock (net physical quantity of active items in assigned warehouse)
 $stmtStock = $pdo->prepare("
-    SELECT COALESCE(SUM(quantity), 0) 
-    FROM inventory
-    WHERE warehouse_id = :wid
+    SELECT COALESCE(SUM(inv.quantity), 0) 
+    FROM inventory inv
+    JOIN items i ON inv.item_id = i.item_id
+    WHERE inv.warehouse_id = :wid
+      AND i.status = 'active'
 ");
 $stmtStock->execute([':wid' => $currentWarehouseId]);
 $totalStock = (float)$stmtStock->fetchColumn();
 
-// 4. Low Stock Items count in assigned warehouse
+// 4. Low Stock Items count in assigned warehouse (active items only)
 $stmtLow = $pdo->prepare("
     SELECT COUNT(*) 
-    FROM inventory inv 
-    JOIN items i ON inv.item_id = i.item_id 
-    WHERE inv.quantity <= i.default_reorder_level AND i.status = 'active' AND inv.warehouse_id = :wid
+    FROM items i
+    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid
+    WHERE i.status = 'active'
+      AND COALESCE(inv.quantity, 0) <= COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level)
 ");
 $stmtLow->execute([':wid' => $currentWarehouseId]);
 $lowStockCount = (int)$stmtLow->fetchColumn();
@@ -115,7 +118,7 @@ $stmtRecent = $pdo->prepare("
 $stmtRecent->execute([':wid' => $currentWarehouseId]);
 $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
 
-// 8. Primary Inventory Status Table for assigned warehouse
+// 8. Primary Inventory Status Table for assigned warehouse (active catalog items only)
 $stmtInventory = $pdo->prepare("
     SELECT 
         w.warehouse_code,
@@ -124,15 +127,15 @@ $stmtInventory = $pdo->prepare("
         i.item_name,
         i.item_type,
         i.unit,
-        inv.quantity,
-        i.default_reorder_level
-    FROM inventory inv
-    JOIN items i ON inv.item_id = i.item_id
-    JOIN warehouses w ON inv.warehouse_id = w.warehouse_id
-    WHERE inv.warehouse_id = :wid
+        COALESCE(inv.quantity, 0) AS quantity,
+        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level
+    FROM items i
+    JOIN warehouses w ON w.warehouse_id = :wid1
+    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid2
+    WHERE i.status = 'active'
     ORDER BY i.item_type ASC, i.item_name ASC
 ");
-$stmtInventory->execute([':wid' => $currentWarehouseId]);
+$stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -170,7 +173,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalRawMaterials) ?></div>
-        <div class="stat-meta">Active raw Materials</div>
+        <div class="stat-meta">Active Raw Materials</div>
     </div>
 
     <!-- 2. Total Finished Goods -->
@@ -188,7 +191,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalFinishedGoods) ?></div>
-        <div class="stat-meta">Active finished Goods</div>
+        <div class="stat-meta">Active Finished Goods</div>
     </div>
 
     <!-- 3. Total Stock -->

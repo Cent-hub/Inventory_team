@@ -9,39 +9,53 @@
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
+require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/AccountabilityService.php';
 
-$auth = new AuthController();
-if (!$auth->isAuthenticated()) {
-    header('Location: ' . $auth->getLoginRedirectUrl());
-    exit;
-}
-
-$currentUser = $auth->getCurrentUser();
-$isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
-
-$currentWarehouseId = $isSuperAdmin ? (int)($_GET['warehouse_id'] ?? 0) : (int)($currentUser['warehouse_id'] ?? 0);
-
-// Real CSV export
+// Real CSV export (must run before header.php outputs HTML, while enforcing identical warehouse isolation)
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    AccountabilityService::exportCsv($currentWarehouseId, $_GET);
+    $auth = new AuthController();
+    if (!$auth->isAuthenticated()) {
+        header('Location: ' . $auth->getLoginRedirectUrl());
+        exit;
+    }
+
+    $currentUser = $auth->getCurrentUser();
+    $pdo = Database::getConnection();
+    $userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
+    $isSuperAdmin = ($userRole === 'super_admin');
+
+    $userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
+    if (!empty($currentUser['id']) && (!$isSuperAdmin || $userAssignedWhId <= 0)) {
+        $uStmt = $pdo->prepare("SELECT warehouse_id FROM users WHERE user_id = :uid LIMIT 1");
+        $uStmt->execute([':uid' => $currentUser['id']]);
+        $dbWhId = (int)$uStmt->fetchColumn();
+        if ($dbWhId > 0) {
+            $userAssignedWhId = $dbWhId;
+        }
+    }
+
+    $requestedWhId = null;
+    if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
+        $requestedWhId = (int)$_GET['warehouse_id'];
+    } elseif ($isSuperAdmin && isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
+        $requestedWhId = (int)$_SESSION['warehouse_id'];
+    }
+
+    if ($isSuperAdmin) {
+        $exportWarehouseId = ($requestedWhId !== null && $requestedWhId > 0)
+            ? $requestedWhId
+            : ($userAssignedWhId > 0 ? $userAssignedWhId : 1);
+    } else {
+        $exportWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
+        if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $exportWarehouseId) {
+            http_response_code(403);
+            exit('403 Forbidden: Access Denied to another warehouse facility.');
+        }
+    }
+
+    AccountabilityService::exportCsv($exportWarehouseId, $_GET);
 }
-
-// Fetch live KPIs and warehouses
-$kpis = AccountabilityService::getKpis($currentWarehouseId);
-
-$pdo = Database::getConnection();
-$warehousesStmt = $pdo->query("SELECT warehouse_id, warehouse_name, warehouse_code FROM warehouses ORDER BY warehouse_name ASC");
-$allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Fetch logs with initial warehouse scope
-$logs = AccountabilityService::getLogs($currentWarehouseId, [
-    'team'       => $_GET['team'] ?? '',
-    'action'     => $_GET['action'] ?? '',
-    'search'     => $_GET['search'] ?? '',
-    'start_date' => $_GET['start_date'] ?? '',
-    'end_date'   => $_GET['end_date'] ?? '',
-]);
 
 $pageTitle   = 'Accountability Audit Log — Settings — InventoryTeam';
 $activePage  = 'settings';
@@ -50,6 +64,21 @@ $activeGroup = 'settings';
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
+
+// Fetch live KPIs, warehouses, and logs AFTER header.php has resolved and enforced $currentWarehouseId
+$kpis = AccountabilityService::getKpis($currentWarehouseId);
+
+$warehousesStmt = $pdo->query("SELECT warehouse_id, warehouse_name, warehouse_code FROM warehouses ORDER BY warehouse_name ASC");
+$allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch logs with verified warehouse scope
+$logs = AccountabilityService::getLogs($currentWarehouseId, [
+    'team'       => $_GET['team'] ?? '',
+    'action'     => $_GET['action'] ?? '',
+    'search'     => $_GET['search'] ?? '',
+    'start_date' => $_GET['start_date'] ?? '',
+    'end_date'   => $_GET['end_date'] ?? '',
+]);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
 $currentWarehouseName = $assignedWarehouse['warehouse_name'] ?? 'Main Warehouse';
@@ -65,7 +94,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <p class="page-subtitle">Operational audit trail capturing all user and team activities across inventory touchpoints</p>
     </div>
     <div class="header-actions">
-        <a href="?export=csv" class="btn btn-primary" style="text-decoration: none;">
+        <a id="exportCsvBtn" href="?export=csv" class="btn btn-primary" style="text-decoration: none;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
@@ -180,14 +209,25 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             <select id="fullLogActionFilter" class="select-filter" aria-label="Filter by action type" onchange="filterFullLogTable()">
                 <option value="all">All Actions</option>
                 <option value="STOCK_IN">Stock In</option>
+                <option value="STOCK_IN_CANCEL">Stock In Cancelled</option>
                 <option value="STOCK_OUT">Stock Out</option>
+                <option value="STOCK_OUT_CANCEL">Stock Out Cancelled</option>
                 <option value="TRANSFER">Inter-Warehouse Transfer</option>
+                <option value="TRANSFER_CANCELLED">Transfer Cancelled</option>
                 <option value="ADJUSTMENT">Stock Adjustment</option>
+                <option value="ADJUSTMENT_CANCELLED">Adjustment Cancelled</option>
                 <option value="BAD_PRODUCT">Damaged / Bad Stock</option>
                 <option value="ITEM_CREATED">Item Master Created</option>
+                <option value="ITEM_UPDATED">Item Master Updated</option>
+                <option value="STATUS_TOGGLED">Item Status Toggled</option>
+                <option value="USER_CREATED">User Account Created</option>
+                <option value="USER_UPDATED">User Account Updated</option>
+                <option value="USER_STATUS_TOGGLED">User Status Toggled</option>
+                <option value="SUPPORT_INQUIRY">Support Inquiry</option>
             </select>
 
-            <!-- Warehouse Filter -->
+            <?php if ($isSuperAdmin): ?>
+            <!-- Warehouse Filter (Super Admin only) -->
             <select id="fullLogWarehouseFilter" class="select-filter" aria-label="Filter by warehouse" onchange="filterFullLogTable()">
                 <option value="all">All Warehouses</option>
                 <?php foreach ($allWarehouses as $wh): ?>
@@ -196,6 +236,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                     </option>
                 <?php endforeach; ?>
             </select>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -305,13 +346,28 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
 
 <script>
 function filterFullLogTable() {
-    const query = (document.getElementById('fullLogSearch')?.value || '').toLowerCase().trim();
+    const rawQuery = (document.getElementById('fullLogSearch')?.value || '').trim();
+    const query = rawQuery.toLowerCase();
     const team = (document.getElementById('fullLogTeamFilter')?.value || 'all');
     const action = (document.getElementById('fullLogActionFilter')?.value || 'all');
     const warehouse = (document.getElementById('fullLogWarehouseFilter')?.value || 'all');
+
+    // Keep Export CSV link synchronized with active filters
+    const exportBtn = document.getElementById('exportCsvBtn');
+    if (exportBtn) {
+        const params = new URLSearchParams();
+        params.set('export', 'csv');
+        if (rawQuery !== '') params.set('search', rawQuery);
+        if (team !== 'all') params.set('team', team);
+        if (action !== 'all') params.set('action', action);
+        if (warehouse !== 'all') params.set('warehouse', warehouse);
+        exportBtn.href = '?' + params.toString();
+    }
+
     const table = document.getElementById('fullLogTable');
     if (!table) return;
     const rows = table.querySelectorAll('tbody tr');
+    const actionLower = action.toLowerCase();
 
     rows.forEach(row => {
         // Skip empty placeholder row if present
@@ -323,7 +379,10 @@ function filterFullLogTable() {
         const text = row.innerText.toLowerCase();
 
         const matchTeam = (team === 'all' || rowTeam === team.toLowerCase());
-        const matchAction = (action === 'all' || rowAction.includes(action.toLowerCase()));
+        const matchAction = (action === 'all') ||
+            ((actionLower === 'transfer' || actionLower === 'adjustment')
+                ? rowAction.startsWith(actionLower)
+                : rowAction === actionLower);
         const matchWarehouse = (warehouse === 'all' || rowWarehouse.includes(warehouse.toLowerCase()));
         const matchQuery = !query || text.includes(query);
         const match = matchTeam && matchAction && matchWarehouse && matchQuery;

@@ -124,6 +124,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Outbound stock dispatched successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
                     break;
 
+                case 'cancel_stock_in':
+                    $activeTab = 'inbound';
+                    $stockInId = (int)($_POST['stock_in_id'] ?? 0);
+                    $reason    = trim($_POST['cancellation_reason'] ?? '');
+                    if ($stockInId <= 0) {
+                        throw new InvalidArgumentException("Invalid Stock In transaction ID.");
+                    }
+                    $res = $stockService->cancelStockIn($stockInId, $reason, $userId, $currentUser);
+                    $successMessage = "Inbound receipt " . htmlspecialchars($res['transaction_number']) . " has been cancelled and reversed from inventory.";
+                    break;
+
+                case 'cancel_stock_out':
+                    $activeTab  = 'outbound';
+                    $stockOutId = (int)($_POST['stock_out_id'] ?? 0);
+                    $reason     = trim($_POST['cancellation_reason'] ?? '');
+                    if ($stockOutId <= 0) {
+                        throw new InvalidArgumentException("Invalid Stock Out transaction ID.");
+                    }
+                    $res = $stockService->cancelStockOut($stockOutId, $reason, $userId, $currentUser);
+                    $successMessage = "Outbound dispatch " . htmlspecialchars($res['transaction_number']) . " has been cancelled and stock restored to inventory.";
+                    break;
+
                 default:
                     break;
             }
@@ -426,6 +448,10 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     <option value="raw_material">Raw Materials</option>
                     <option value="finished_good">Finished Goods</option>
                 </select>
+
+                <button type="button" class="btn btn-primary" onclick="openRecordStockInModal()">
+                    + Record Stock In
+                </button>
             </div>
         </div>
 
@@ -547,10 +573,17 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                                 </td>
 
                                 <!-- Action -->
-                                <td style="text-align: right;">
-                                    <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                        View Details
-                                    </button>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                                        <?php if ($row['status'] === 'completed'): ?>
+                                            <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick="openCancelStockInModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                                Cancel
+                                            </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                            View Details
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -681,6 +714,10 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     <option value="finished_good">Finished Goods</option>
                     <option value="raw_material">Raw Materials</option>
                 </select>
+
+                <button type="button" class="btn btn-primary" onclick="openRecordStockOutModal()">
+                    + Record Stock Out
+                </button>
             </div>
         </div>
 
@@ -802,10 +839,17 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                                 </td>
 
                                 <!-- Action -->
-                                <td style="text-align: right;">
-                                    <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                        View Details
-                                    </button>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                                        <?php if ($row['status'] === 'completed'): ?>
+                                            <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick="openCancelStockOutModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                                Cancel
+                                            </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
+                                            View Details
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -847,6 +891,76 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                 </table>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Modal: Cancel Stock In (Inbound Receipt) -->
+<div id="cancelStockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelStockInModalTitle" onclick="if(event.target === this) closeCancelStockInModal()">
+    <div class="modal-card" style="max-width: 460px;">
+        <form method="POST" action="index.php?tab=inbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="cancel_stock_in">
+            <input type="hidden" name="active_tab" value="inbound">
+            <input type="hidden" name="stock_in_id" id="cancelStockInId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="cancelStockInModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Inbound Receipt</h3>
+                    <p class="card-desc" style="margin: 0;">Reverse Stock In and deduct received quantity from inventory</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelStockInModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+                <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
+                    Are you sure you want to cancel inbound receipt <strong id="cancelStockInRef" style="font-family: monospace;">—</strong>?
+                </p>
+                <div>
+                    <label for="cancelStockInReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
+                    <textarea name="cancellation_reason" id="cancelStockInReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this inbound receipt..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCancelStockInModal()">Close</button>
+                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Cancel Stock Out (Outbound Dispatch) -->
+<div id="cancelStockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelStockOutModalTitle" onclick="if(event.target === this) closeCancelStockOutModal()">
+    <div class="modal-card" style="max-width: 460px;">
+        <form method="POST" action="index.php?tab=outbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="cancel_stock_out">
+            <input type="hidden" name="active_tab" value="outbound">
+            <input type="hidden" name="stock_out_id" id="cancelStockOutId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="cancelStockOutModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Outbound Dispatch</h3>
+                    <p class="card-desc" style="margin: 0;">Reverse Stock Out and restore dispatched quantity to inventory</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelStockOutModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+                <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
+                    Are you sure you want to cancel outbound dispatch <strong id="cancelStockOutRef" style="font-family: monospace;">—</strong>?
+                </p>
+                <div>
+                    <label for="cancelStockOutReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
+                    <textarea name="cancellation_reason" id="cancelStockOutReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this outbound dispatch..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCancelStockOutModal()">Close</button>
+                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -1210,11 +1324,18 @@ function openDetailModal(id, txnNo) {
     }
 
     const modal = document.getElementById('stockInModal');
-    modal.style.display = 'flex';
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
 }
 
 function closeDetailModal() {
-    document.getElementById('stockInModal').style.display = 'none';
+    const modal = document.getElementById('stockInModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
 }
 
 function filterStockInTable() {
@@ -1273,11 +1394,18 @@ function openOutDetailModal(id, txnNo) {
     }
 
     const modal = document.getElementById('stockOutModal');
-    modal.style.display = 'flex';
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
 }
 
 function closeOutDetailModal() {
-    document.getElementById('stockOutModal').style.display = 'none';
+    const modal = document.getElementById('stockOutModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
 }
 
 function filterStockOutTable() {
@@ -1306,6 +1434,44 @@ function filterStockOutTable() {
 
     if (typeof table.paginationUpdate === 'function') {
         table.paginationUpdate(true);
+    }
+}
+
+function openCancelStockInModal(id, txnNo) {
+    document.getElementById('cancelStockInId').value = id;
+    document.getElementById('cancelStockInRef').textContent = txnNo;
+    document.getElementById('cancelStockInReason').value = '';
+    const modal = document.getElementById('cancelStockInModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeCancelStockInModal() {
+    const modal = document.getElementById('cancelStockInModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
+function openCancelStockOutModal(id, txnNo) {
+    document.getElementById('cancelStockOutId').value = id;
+    document.getElementById('cancelStockOutRef').textContent = txnNo;
+    document.getElementById('cancelStockOutReason').value = '';
+    const modal = document.getElementById('cancelStockOutModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeCancelStockOutModal() {
+    const modal = document.getElementById('cancelStockOutModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
     }
 }
 

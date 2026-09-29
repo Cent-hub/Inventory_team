@@ -98,7 +98,9 @@ CREATE TABLE `items` (
     KEY `idx_items_type` (`item_type`),
     KEY `idx_items_category` (`category_id`),
     KEY `idx_items_status` (`status`),
+    KEY `idx_items_creator` (`created_by`),
     CONSTRAINT `fk_items_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`category_id`) ON UPDATE CASCADE,
+    CONSTRAINT `fk_items_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT `chk_items_def_reorder` CHECK (`default_reorder_level` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -458,10 +460,16 @@ CREATE TABLE `accountability_logs` (
     `reference_number` VARCHAR(100) NULL,
     `notes` TEXT NULL,
     INDEX `idx_acc_warehouse` (`warehouse_id`),
+    INDEX `idx_acc_dest_warehouse` (`destination_warehouse_id`),
     INDEX `idx_acc_user` (`user_id`),
+    INDEX `idx_acc_item` (`item_id`),
     INDEX `idx_acc_team` (`team`),
     INDEX `idx_acc_action` (`action_type`),
-    INDEX `idx_acc_created` (`created_at`)
+    INDEX `idx_acc_created` (`created_at`),
+    CONSTRAINT `fk_acc_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT `fk_acc_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT `fk_acc_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE,
+    CONSTRAINT `fk_acc_dest_warehouse` FOREIGN KEY (`destination_warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

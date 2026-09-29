@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Global Escape key dismissal & Tab focus trapping for all page modals
     document.addEventListener('keydown', function(e) {
-        const openModals = Array.from(document.querySelectorAll('.modal-backdrop.open, .settings-modal-backdrop.open, .modal[style*="flex"]'));
+        const openModals = Array.from(document.querySelectorAll('.modal-backdrop.open, .modal-overlay.open, .settings-modal-backdrop.open, .modal[style*="flex"], .modal-overlay[style*="flex"], .modal-backdrop[style*="flex"]'));
         if (openModals.length === 0) return;
         const activeModal = openModals[openModals.length - 1];
 

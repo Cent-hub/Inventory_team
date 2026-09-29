@@ -23,6 +23,147 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
+$successMessage = null;
+$errorMessage   = null;
+
+// Handle User Creation & Updates (Super Admin only)
+if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } else {
+        $action = $_POST['action'];
+
+        if ($action === 'create_user') {
+            $uName       = trim($_POST['name'] ?? '');
+            $uEmail      = strtolower(trim($_POST['email'] ?? ''));
+            $uPassword   = $_POST['password'] ?? '';
+            $uRole       = trim($_POST['role'] ?? 'admin');
+            $uTeam       = trim($_POST['team'] ?? 'Inventory');
+            $uWarehouse  = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : null;
+            $uStatus     = trim($_POST['status'] ?? 'active');
+
+            if (empty($uName) || mb_strlen($uName) > 100) {
+                $errorMessage = "Full Name is required and cannot exceed 100 characters.";
+            } elseif (empty($uEmail) || !filter_var($uEmail, FILTER_VALIDATE_EMAIL) || mb_strlen($uEmail) > 150) {
+                $errorMessage = "Please enter a valid email address (max 150 characters).";
+            } elseif (strlen($uPassword) < 6) {
+                $errorMessage = "Password must be at least 6 characters long.";
+            } elseif (!in_array($uRole, ['super_admin', 'admin'], true)) {
+                $errorMessage = "Security role must be either 'super_admin' or 'admin'.";
+            } elseif (!in_array($uStatus, ['active', 'inactive'], true)) {
+                $errorMessage = "Account status must be either 'active' or 'inactive'.";
+            } else {
+                try {
+                    $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
+                    $stmtChk->execute([$uEmail]);
+                    if ((int)$stmtChk->fetchColumn() > 0) {
+                        $errorMessage = "An account with email '{$uEmail}' already exists.";
+                    } else {
+                        $passwordHash = password_hash($uPassword, PASSWORD_BCRYPT);
+                        $apiToken     = bin2hex(random_bytes(32));
+
+                        $stmtIns = $pdo->prepare("
+                            INSERT INTO users (name, email, password, role, team, warehouse_id, api_token, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $stmtIns->execute([
+                            $uName,
+                            $uEmail,
+                            $passwordHash,
+                            $uRole,
+                            $uTeam ?: 'Inventory',
+                            $uWarehouse,
+                            $apiToken,
+                            $uStatus
+                        ]);
+                        $newUserId = (int)$pdo->lastInsertId();
+
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => (int)($currentUser['id'] ?? 1),
+                            'team'             => 'Inventory',
+                            'action_type'      => 'USER_CREATED',
+                            'channel'          => 'UI',
+                            'warehouse_id'     => $uWarehouse ?: ($currentWarehouseId ?: 1),
+                            'reference_number' => "USR-{$newUserId}",
+                            'notes'            => "Created user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}"
+                        ]);
+
+                        $successMessage = "User account '{$uName}' ({$uEmail}) created successfully!";
+                    }
+                } catch (Exception $e) {
+                    $errorMessage = "Failed to create user account: " . $e->getMessage();
+                }
+            }
+        } elseif ($action === 'update_user') {
+            $targetUserId = (int)($_POST['user_id'] ?? 0);
+            $uName        = trim($_POST['name'] ?? '');
+            $uEmail       = strtolower(trim($_POST['email'] ?? ''));
+            $uRole        = trim($_POST['role'] ?? 'admin');
+            $uTeam        = trim($_POST['team'] ?? 'Inventory');
+            $uWarehouse   = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : null;
+            $uStatus      = trim($_POST['status'] ?? 'active');
+            $newPassword  = $_POST['new_password'] ?? '';
+
+            if ($targetUserId <= 0) {
+                $errorMessage = "Invalid user account selected for update.";
+            } elseif (empty($uName) || mb_strlen($uName) > 100) {
+                $errorMessage = "Full Name is required and cannot exceed 100 characters.";
+            } elseif (empty($uEmail) || !filter_var($uEmail, FILTER_VALIDATE_EMAIL) || mb_strlen($uEmail) > 150) {
+                $errorMessage = "Please enter a valid email address (max 150 characters).";
+            } elseif (!in_array($uRole, ['super_admin', 'admin'], true)) {
+                $errorMessage = "Security role must be either 'super_admin' or 'admin'.";
+            } elseif (!in_array($uStatus, ['active', 'inactive'], true)) {
+                $errorMessage = "Account status must be either 'active' or 'inactive'.";
+            } elseif ($newPassword !== '' && strlen($newPassword) < 6) {
+                $errorMessage = "New password must be at least 6 characters long.";
+            } elseif ($targetUserId === (int)($currentUser['id'] ?? 0) && ($uStatus !== 'active' || $uRole !== 'super_admin')) {
+                $errorMessage = "You cannot deactivate or demote your own currently active Super Admin session.";
+            } else {
+                try {
+                    $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND user_id != ?");
+                    $stmtChk->execute([$uEmail, $targetUserId]);
+                    if ((int)$stmtChk->fetchColumn() > 0) {
+                        $errorMessage = "Another account is already using email '{$uEmail}'.";
+                    } else {
+                        if ($newPassword !== '') {
+                            $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
+                            $stmtUpd = $pdo->prepare("
+                                UPDATE users
+                                SET name = ?, email = ?, password = ?, role = ?, team = ?, warehouse_id = ?, status = ?
+                                WHERE user_id = ?
+                            ");
+                            $stmtUpd->execute([$uName, $uEmail, $passwordHash, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uStatus, $targetUserId]);
+                        } else {
+                            $stmtUpd = $pdo->prepare("
+                                UPDATE users
+                                SET name = ?, email = ?, role = ?, team = ?, warehouse_id = ?, status = ?
+                                WHERE user_id = ?
+                            ");
+                            $stmtUpd->execute([$uName, $uEmail, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uStatus, $targetUserId]);
+                        }
+
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => (int)($currentUser['id'] ?? 1),
+                            'team'             => 'Inventory',
+                            'action_type'      => 'USER_UPDATED',
+                            'channel'          => 'UI',
+                            'warehouse_id'     => $uWarehouse ?: ($currentWarehouseId ?: 1),
+                            'reference_number' => "USR-{$targetUserId}",
+                            'notes'            => "Updated user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}" . ($newPassword !== '' ? " [Password Reset]" : "")
+                        ]);
+
+                        $successMessage = "User account '{$uName}' updated successfully!";
+                    }
+                } catch (Exception $e) {
+                    $errorMessage = "Failed to update user account: " . $e->getMessage();
+                }
+            }
+        }
+    }
+}
+
 // Filters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $roleFilter = isset($_GET['role']) ? trim($_GET['role']) : '';
@@ -34,12 +175,15 @@ $currentBranch = $assignedWarehouse
     : 'WH-MAIN (Main Warehouse - Laguna)';
 
 $users = [];
+$warehousesList = [];
 $totalUsers = 0;
 $activeCount = 0;
 $adminCount = 0;
 $totalWarehouses = 0;
 
 if ($isSuperAdmin) {
+    $warehousesList = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
+
     // Query users from database with assigned warehouse (Super Admin only)
     $sql = "
         SELECT 
@@ -47,6 +191,7 @@ if ($isSuperAdmin) {
             u.name,
             u.email,
             u.role,
+            u.team,
             u.status,
             u.warehouse_id,
             w.warehouse_code,
@@ -87,11 +232,14 @@ if ($isSuperAdmin) {
         if (in_array($u['role'] ?? '', ['admin', 'super_admin'])) $adminCount++;
     }
 
-    $totalWarehouses = (int)$pdo->query("SELECT COUNT(*) FROM warehouses WHERE status = 'active'")->fetchColumn();
+    $totalWarehouses = count($warehousesList);
 }
 
 // Map functional department/team based on email or role for liquor ERP display
-function getTeamAssignment($email, $role) {
+function getTeamAssignment($email, $role, $teamColumn = '') {
+    if (!empty($teamColumn) && strtolower($teamColumn) !== 'inventory') {
+        return $teamColumn . ' Team';
+    }
     $emailLower = strtolower($email);
     if (str_contains($emailLower, 'procure')) return 'Procurement Team';
     if (str_contains($emailLower, 'prod') || str_contains($emailLower, 'brew') || str_contains($emailLower, 'distill')) return 'Production & Distillation';
@@ -103,6 +251,9 @@ function getTeamAssignment($email, $role) {
 function getFacilityAssignment($user) {
     if (is_array($user) && !empty($user['warehouse_code'])) {
         return $user['warehouse_code'] . ' (' . ($user['warehouse_name'] ?? 'Facility') . ')';
+    }
+    if (is_array($user) && ($user['role'] ?? '') === 'super_admin') {
+        return 'All Facilities (Global Scope)';
     }
     $emailLower = is_array($user) ? strtolower($user['email'] ?? '') : strtolower((string)$user);
     if (str_contains($emailLower, 'procure') || str_contains($emailLower, 'raw')) return 'WH-MAIN (Main Warehouse - Laguna)';
@@ -116,9 +267,9 @@ function getFacilityAssignment($user) {
 <div class="page-header">
     <div>
         <h1 class="page-title"><?= $isSuperAdmin ? 'Users & Account Management' : 'My Account' ?></h1>
-        <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery operators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
+        <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery administrators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
     </div>
-    <div class="header-actions">
+    <div class="header-actions" style="display: flex; gap: 10px;">
         <?php if ($isSuperAdmin): ?>
         <button type="button" class="btn btn-secondary" onclick="window.print()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -128,9 +279,24 @@ function getFacilityAssignment($user) {
             </svg>
             <span>Print User Roster</span>
         </button>
+        <button type="button" class="btn btn-primary" onclick="openCreateUserModal()">+ Add New User</button>
         <?php endif; ?>
     </div>
 </div>
+
+<?php if ($successMessage): ?>
+    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span><?= htmlspecialchars($successMessage) ?></span>
+    </div>
+<?php endif; ?>
+
+<?php if ($errorMessage): ?>
+    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span><?= htmlspecialchars($errorMessage) ?></span>
+    </div>
+<?php endif; ?>
 
 <!-- My Profile Spotlight Card -->
 <div class="card mb-6" id="my-account" style="border-left: 4px solid #1F7A6C;">
@@ -169,179 +335,22 @@ function getFacilityAssignment($user) {
 </div>
 
 <?php if (!$isSuperAdmin): ?>
-<!-- Settings Sections Grouped Card (Styled after iOS reference in InventoryTeam theme) -->
-<div style="display: flex; justify-content: space-between; align-items: center; margin: 0 4px 6px 4px;">
-    <span class="settings-group-label" style="margin: 0;">Settings &amp; Quick Actions</span>
-</div>
-<div class="settings-group mb-6">
-    <!-- Row 1: My Account Profile -->
-    <div class="settings-row" onclick="openSettingsModal('account')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle teal">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">My Account Profile</div>
-                <div class="settings-row-subtitle">Assigned facility, permissions &amp; contact info</div>
-            </div>
+<div class="card mb-6">
+    <div class="card-body" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+        <div>
+            <h3 style="font-size: 16px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">Account &amp; Facility Settings</h3>
+            <p style="font-size: 13px; color: var(--gray); margin: 0;">Manage your password, notifications, security preferences, CSV exports, and support inquiries from the unified Settings panel.</p>
         </div>
-        <div class="settings-row-right">
-            <span class="settings-row-value"><?= htmlspecialchars($currentBranch) ?></span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 2: Change Password -->
-    <div class="settings-row" onclick="openSettingsModal('password')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle bronze">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="7.5" cy="15.5" r="5.5"/>
-                    <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Change Password</div>
-                <div class="settings-row-subtitle">Update credentials or trigger OTP recovery</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 3: Notifications -->
-    <div class="settings-row" onclick="openSettingsModal('notifications')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle amber">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
-                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Notifications</div>
-                <div class="settings-row-subtitle">Low stock replenishment &amp; outbound movement alerts</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <span class="settings-badge" style="background: #D97706;">Live</span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 4: Security -->
-    <div class="settings-row" onclick="openSettingsModal('security')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle navy">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    <path d="m9 12 2 2 4-4"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Security</div>
-                <div class="settings-row-subtitle">Session Guard, cache defenses &amp; rate limiting</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <span class="settings-row-value" style="color: #15803D; font-weight: 500;">Guarded</span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 5: Backup & Export -->
-    <div class="settings-row" onclick="openSettingsModal('backup')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle green">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Backup &amp; Export</div>
-                <div class="settings-row-subtitle">Warehouse CSV exports &amp; audit ledgers</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <span class="settings-row-value">CSV</span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 6: Accountability Log -->
-    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/settings/accountability.php'" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle navy">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                    <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
-                    <path d="m9 14 2 2 4-4"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Accountability Log</div>
-                <div class="settings-row-subtitle">Cross-team activity, operators &amp; warehouse trail</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <span class="settings-badge" style="background: #1F7A6C;">Whole Page</span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- Row 7: Contact Support -->
-    <div class="settings-row" onclick="openSettingsModal('contact_support')" role="button" tabindex="0">
-        <div class="settings-row-left">
-            <div class="settings-squircle purple">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    <line x1="8" y1="10" x2="16" y2="10"/>
-                    <line x1="8" y1="14" x2="13" y2="14"/>
-                </svg>
-            </div>
-            <div>
-                <div class="settings-row-title">Contact Support</div>
-                <div class="settings-row-subtitle">Compose inquiry or message to Super Admin</div>
-            </div>
-        </div>
-        <div class="settings-row-right">
-            <span class="settings-badge" style="background: #7C3AED;">Direct</span>
-            <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
-        </div>
+        <button type="button" class="btn btn-primary" onclick="openSettingsModal('main')">Open Settings</button>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof openSettingsModal === 'function') {
+        openSettingsModal('main');
+    }
+});
+</script>
 <?php else: ?>
 <!-- Summary Metrics -->
 <div class="kpi-grid mb-6">
@@ -424,7 +433,6 @@ function getFacilityAssignment($user) {
             <option value="">All Roles</option>
             <option value="super_admin" <?= $roleFilter === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
             <option value="admin" <?= $roleFilter === 'admin' ? 'selected' : '' ?>>Admin</option>
-            <option value="operator" <?= $roleFilter === 'operator' ? 'selected' : '' ?>>Operator</option>
         </select>
 
         <!-- Action Buttons -->
@@ -440,7 +448,7 @@ function getFacilityAssignment($user) {
 <div class="card">
     <div class="card-header">
         <div class="flex items-center gap-3">
-            <h2 class="card-title">Operator &amp; Service Account Directory</h2>
+            <h2 class="card-title">Administrator &amp; Service Account Directory</h2>
             <span class="badge badge-teal"><?= $totalUsers ?> Accounts</span>
         </div>
         <div class="text-xs text-muted">
@@ -451,13 +459,13 @@ function getFacilityAssignment($user) {
         <table class="table table-sticky-actions" id="usersTable">
             <thead>
                 <tr>
-                    <th>User / Operator</th>
+                    <th>User Account</th>
                     <th>Security Role</th>
                     <th>Functional Team</th>
                     <th>Assigned Facility</th>
                     <th>Account Status</th>
                     <th>Registration Date</th>
-                    <th class="text-right">Audit Access</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -469,7 +477,7 @@ function getFacilityAssignment($user) {
                     </tr>
                 <?php else: ?>
                     <?php foreach ($users as $u): 
-                        $team = getTeamAssignment($u['email'], $u['role'] ?? '');
+                        $team = getTeamAssignment($u['email'], $u['role'] ?? '', $u['team'] ?? '');
                         $facility = getFacilityAssignment($u);
                         $isCurrent = ((int)$u['user_id'] === (int)($currentUser['id'] ?? 0));
                     ?>
@@ -493,10 +501,8 @@ function getFacilityAssignment($user) {
                             <td>
                                 <?php if (($u['role'] ?? '') === 'super_admin'): ?>
                                     <span class="badge badge-navy">Super Admin</span>
-                                <?php elseif (($u['role'] ?? '') === 'admin'): ?>
-                                    <span class="badge badge-teal">Administrator</span>
                                 <?php else: ?>
-                                    <span class="badge badge-secondary"><?= htmlspecialchars(ucfirst($u['role'] ?? 'Operator')) ?></span>
+                                    <span class="badge badge-teal">Administrator</span>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -520,22 +526,36 @@ function getFacilityAssignment($user) {
                                 <?= !empty($u['created_at']) ? date('M d, Y', strtotime($u['created_at'])) : '—' ?>
                             </td>
                             <td class="text-right">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="showUserDetails(<?= htmlspecialchars(json_encode([
-                                    'id' => $u['user_id'],
-                                    'name' => $u['name'],
-                                    'email' => $u['email'],
-                                    'role' => $u['role'],
-                                    'status' => $u['status'],
-                                    'team' => $team,
-                                    'facility' => $facility,
-                                    'created_at' => $u['created_at'] ? date('M d, Y H:i:s', strtotime($u['created_at'])) : '—'
-                                ])) ?>)">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                                        <circle cx="12" cy="12" r="3"/>
-                                    </svg>
-                                    <span>Profile</span>
-                                </button>
+                                <div style="display: inline-flex; gap: 6px; justify-content: flex-end;">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="showUserDetails(<?= htmlspecialchars(json_encode([
+                                        'id' => $u['user_id'],
+                                        'name' => $u['name'],
+                                        'email' => $u['email'],
+                                        'role' => $u['role'],
+                                        'status' => $u['status'],
+                                        'team' => $team,
+                                        'facility' => $facility,
+                                        'created_at' => $u['created_at'] ? date('M d, Y H:i:s', strtotime($u['created_at'])) : '—'
+                                    ])) ?>)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                        <span>Profile</span>
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openEditUserModal(<?= htmlspecialchars(json_encode([
+                                        'user_id'      => (int)$u['user_id'],
+                                        'name'         => $u['name'],
+                                        'email'        => $u['email'],
+                                        'role'         => $u['role'] ?? 'admin',
+                                        'team'         => $u['team'] ?? 'Inventory',
+                                        'warehouse_id' => $u['warehouse_id'] ? (int)$u['warehouse_id'] : '',
+                                        'status'       => $u['status'] ?? 'active',
+                                        'is_self'      => $isCurrent
+                                    ])) ?>)">
+                                        <span>Edit</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -594,7 +614,233 @@ function getFacilityAssignment($user) {
     </div>
 </div>
 
+<!-- Modal: Create New User Account -->
+<div id="createUserModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="createUserModalTitle" onclick="if(event.target === this) closeCreateUserModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <form method="POST" action="index.php">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_user">
+            <div class="modal-header">
+                <div>
+                    <h3 id="createUserModalTitle" class="card-title">Add New User Account</h3>
+                    <p class="card-desc">Register a new warehouse administrator or cross-team account</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCreateUserModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="createUserName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Full Name <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="text" name="name" id="createUserName" class="search-box" style="width: 100%; padding-left: 12px;" placeholder="e.g. Juan Dela Cruz" required>
+                    </div>
+                    <div>
+                        <label for="createUserEmail" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Email Address <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="email" name="email" id="createUserEmail" class="search-box" style="width: 100%; padding-left: 12px;" placeholder="user@inventory.local" required>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="createUserPassword" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Initial Password <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="password" name="password" id="createUserPassword" class="search-box" style="width: 100%; padding-left: 12px;" minlength="6" placeholder="Min. 6 characters" required>
+                    </div>
+                    <div>
+                        <label for="createUserRole" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Security Role <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="role" id="createUserRole" class="select-filter" style="width: 100%;" required>
+                            <option value="admin">Administrator (Warehouse Scope)</option>
+                            <option value="super_admin">Super Admin (Global Scope)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="createUserTeam" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Functional Team <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="team" id="createUserTeam" class="select-filter" style="width: 100%;" required>
+                            <option value="Inventory">Inventory Operations</option>
+                            <option value="Procurement">Procurement Team</option>
+                            <option value="Production">Production &amp; Distillation</option>
+                            <option value="Sales">Commercial Sales</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="createUserStatus" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Account Status <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="status" id="createUserStatus" class="select-filter" style="width: 100%;" required>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="createUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Assigned Warehouse Facility
+                    </label>
+                    <select name="warehouse_id" id="createUserWarehouse" class="select-filter" style="width: 100%;">
+                        <option value="">— Global / Unassigned (Super Admin) —</option>
+                        <?php foreach ($warehousesList as $wh): ?>
+                            <option value="<?= (int)$wh['warehouse_id'] ?>">
+                                <?= htmlspecialchars($wh['warehouse_code']) ?> — <?= htmlspecialchars($wh['warehouse_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCreateUserModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create User</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Edit Existing User Account -->
+<div id="editUserModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editUserModalTitle" onclick="if(event.target === this) closeEditUserModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <form method="POST" action="index.php">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="update_user">
+            <input type="hidden" name="user_id" id="editUserId" value="">
+            <div class="modal-header">
+                <div>
+                    <h3 id="editUserModalTitle" class="card-title">Edit User Account</h3>
+                    <p class="card-desc">Modify role, facility assignment, status, or reset password</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeEditUserModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="editUserName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Full Name <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="text" name="name" id="editUserName" class="search-box" style="width: 100%; padding-left: 12px;" required>
+                    </div>
+                    <div>
+                        <label for="editUserEmail" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Email Address <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="email" name="email" id="editUserEmail" class="search-box" style="width: 100%; padding-left: 12px;" required>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="editUserRole" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Security Role <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="role" id="editUserRole" class="select-filter" style="width: 100%;" required>
+                            <option value="admin">Administrator (Warehouse Scope)</option>
+                            <option value="super_admin">Super Admin (Global Scope)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="editUserStatus" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Account Status <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="status" id="editUserStatus" class="select-filter" style="width: 100%;" required>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive (Revoke Login)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="editUserTeam" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Functional Team <span style="color: #DC2626;">*</span>
+                        </label>
+                        <select name="team" id="editUserTeam" class="select-filter" style="width: 100%;" required>
+                            <option value="Inventory">Inventory Operations</option>
+                            <option value="Procurement">Procurement Team</option>
+                            <option value="Production">Production &amp; Distillation</option>
+                            <option value="Sales">Commercial Sales</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="editUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Assigned Facility
+                        </label>
+                        <select name="warehouse_id" id="editUserWarehouse" class="select-filter" style="width: 100%;">
+                            <option value="">— Global / Unassigned —</option>
+                            <?php foreach ($warehousesList as $wh): ?>
+                                <option value="<?= (int)$wh['warehouse_id'] ?>">
+                                    <?= htmlspecialchars($wh['warehouse_code']) ?> — <?= htmlspecialchars($wh['warehouse_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="editUserPassword" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Reset Password <span style="color: var(--gray); font-weight: 400;">(Leave blank to keep current password)</span>
+                    </label>
+                    <input type="password" name="new_password" id="editUserPassword" class="search-box" style="width: 100%; padding-left: 12px;" minlength="6" placeholder="Optional new password (min. 6 characters)">
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeEditUserModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
+function openCreateUserModal() {
+    const modal = document.getElementById('createUserModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+function closeCreateUserModal() {
+    const modal = document.getElementById('createUserModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+function openEditUserModal(u) {
+    document.getElementById('editUserId').value = u.user_id;
+    document.getElementById('editUserName').value = u.name || '';
+    document.getElementById('editUserEmail').value = u.email || '';
+    document.getElementById('editUserRole').value = u.role || 'admin';
+    document.getElementById('editUserStatus').value = u.status || 'active';
+    document.getElementById('editUserTeam').value = u.team || 'Inventory';
+    document.getElementById('editUserWarehouse').value = u.warehouse_id || '';
+    document.getElementById('editUserPassword').value = '';
+    const modal = document.getElementById('editUserModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+function closeEditUserModal() {
+    const modal = document.getElementById('editUserModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
 function filterUsersDirectoryTable() {
     const query = (document.getElementById('userSearchInput')?.value || '').toLowerCase().trim();
     const role = (document.getElementById('userRoleFilter')?.value || '').toLowerCase().trim();

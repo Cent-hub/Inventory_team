@@ -32,20 +32,23 @@ if (!defined('BASE_URL')) {
     define('BASE_URL', $projectRoot . '/');
 }
 
-// Enforce strict assigned warehouse resolution
-$userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
-if ($userAssignedWhId <= 0 && !empty($currentUser['id'])) {
-    $uStmt = $pdo->prepare("SELECT warehouse_id FROM users WHERE user_id = :uid LIMIT 1");
-    $uStmt->execute([':uid' => $currentUser['id']]);
-    $userAssignedWhId = (int)$uStmt->fetchColumn();
-    $currentUser['warehouse_id'] = $userAssignedWhId;
-}
-
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 $userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
 
-// Authorized users (admin, super_admin) are permitted multi-warehouse viewing
-$isAuthorizedForMultiWarehouse = in_array($userRole, ['super_admin', 'admin'], true) || !empty($currentUser['id']);
+// Only super_admin is permitted multi-warehouse switching across all facilities
+$isAuthorizedForMultiWarehouse = ($userRole === 'super_admin');
+
+// Enforce strict assigned warehouse resolution from database for regular admins
+$userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
+if (!empty($currentUser['id']) && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0)) {
+    $uStmt = $pdo->prepare("SELECT warehouse_id FROM users WHERE user_id = :uid LIMIT 1");
+    $uStmt->execute([':uid' => $currentUser['id']]);
+    $dbWhId = (int)$uStmt->fetchColumn();
+    if ($dbWhId > 0) {
+        $userAssignedWhId = $dbWhId;
+        $currentUser['warehouse_id'] = $userAssignedWhId;
+    }
+}
 
 $requestedWhId = null;
 if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
@@ -58,19 +61,19 @@ if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
     $requestedWhId = (int)$_POST['source_warehouse_id'];
 } elseif (isset($_GET['branch_id']) && (int)$_GET['branch_id'] > 0) {
     $requestedWhId = (int)$_GET['branch_id'];
-} elseif (isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
+} elseif ($isAuthorizedForMultiWarehouse && isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
     $requestedWhId = (int)$_SESSION['warehouse_id'];
 }
 
 if ($isAuthorizedForMultiWarehouse) {
-    // Multi-warehouse viewing enabled: allow switching and viewing across all warehouses
+    // Multi-warehouse viewing enabled for super_admin: allow switching across all warehouses
     if ($requestedWhId !== null && $requestedWhId > 0) {
         $currentWarehouseId = $requestedWhId;
     } else {
         $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
     }
 } else {
-    // Non-authorized roles: enforce assigned warehouse
+    // Non-super_admin roles: strictly enforce their assigned warehouse
     $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
 
     if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $currentWarehouseId) {

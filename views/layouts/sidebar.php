@@ -84,7 +84,7 @@ $isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
                 <!-- Items Catalog -->
                 <a href="<?= BASE_URL ?>views/items/index.php" class="nav-sub-link <?= $activePage === 'items' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
-                    <span>Item Master</span>
+                    <span>Item Catalog</span>
                 </a>
                 <!-- Raw Materials -->
                 <a href="<?= BASE_URL ?>views/inventory/raw_materials.php" class="nav-sub-link <?= $activePage === 'raw_materials' ? 'active' : '' ?>">

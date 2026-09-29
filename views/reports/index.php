@@ -75,17 +75,16 @@ $sql = "
         i.item_name,
         i.item_type,
         i.unit,
-        i.default_reorder_level,
+        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level,
         COALESCE(c.category_name, 'General') AS category_name,
         w.warehouse_code,
         w.warehouse_name,
         COALESCE(inv.quantity, 0) AS current_quantity
     FROM items i
+    JOIN warehouses w ON w.warehouse_id = ?
     LEFT JOIN categories c ON i.category_id = c.category_id
-    JOIN inventory inv ON i.item_id = inv.item_id
-    JOIN warehouses w ON inv.warehouse_id = w.warehouse_id
+    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = w.warehouse_id
     WHERE i.status = 'active'
-      AND inv.warehouse_id = ?
 ";
 $params = [$currentWarehouseId];
 

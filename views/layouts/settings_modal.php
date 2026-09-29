@@ -9,8 +9,17 @@
 
 $currentUser = $currentUser ?? ($auth ? $auth->getCurrentUser() : []);
 require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-$modalWarehouseId = (($currentUser['role'] ?? '') === 'super_admin') ? 0 : (int)($currentUser['warehouse_id'] ?? 0);
+$modalWarehouseId = (($currentUser['role'] ?? '') === 'super_admin')
+    ? (int)($currentWarehouseId ?? 0)
+    : (int)($currentWarehouseId ?? ($currentUser['warehouse_id'] ?? 1));
 $modalAccountabilityLogs = AccountabilityService::getLogs($modalWarehouseId, ['limit' => 30]);
+
+$userPrefs = array_merge([
+    'inbound_receipts'    => true,
+    'outbound_dispatches' => true,
+    'daily_digest'        => false,
+    'two_factor_auth'     => true,
+], is_array($_SESSION['user_preferences'] ?? null) ? $_SESSION['user_preferences'] : []);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
 $currentWarehouseName = $assignedWarehouse['warehouse_name'] ?? 'Main Warehouse';
@@ -527,6 +536,8 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
             <!-- ========================================================== -->
             <div id="view-settings-notifications" class="settings-view">
                 
+                <div id="notifFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); color: #14532D; border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 500;"></div>
+
                 <span class="settings-group-label">Replenishment &amp; Movement Alerts</span>
                 <div class="settings-group">
                     
@@ -547,7 +558,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked aria-label="Toggle Inbound Receipts notifications" onchange="toggleNotificationFeedback(this, 'Inbound Receipts')">
+                                <input type="checkbox" data-pref-key="inbound_receipts" <?= !empty($userPrefs['inbound_receipts']) ? 'checked' : '' ?> aria-label="Toggle Inbound Receipts notifications" onchange="toggleNotificationFeedback(this, 'inbound_receipts', 'Inbound Receipts')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -572,7 +583,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked aria-label="Toggle High Outbound Dispatches notifications" onchange="toggleNotificationFeedback(this, 'Outbound Dispatches')">
+                                <input type="checkbox" data-pref-key="outbound_dispatches" <?= !empty($userPrefs['outbound_dispatches']) ? 'checked' : '' ?> aria-label="Toggle High Outbound Dispatches notifications" onchange="toggleNotificationFeedback(this, 'outbound_dispatches', 'Outbound Dispatches')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -598,7 +609,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" aria-label="Toggle Daily Stock Ledger Digest notifications" onchange="toggleNotificationFeedback(this, 'Daily Digest')">
+                                <input type="checkbox" data-pref-key="daily_digest" <?= !empty($userPrefs['daily_digest']) ? 'checked' : '' ?> aria-label="Toggle Daily Stock Ledger Digest notifications" onchange="toggleNotificationFeedback(this, 'daily_digest', 'Daily Digest')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -701,6 +712,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 </div>
 
                 <span class="settings-group-label">Credentials &amp; Access Controls</span>
+                <div id="securityFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); color: #14532D; border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 500;"></div>
                 <div class="settings-group">
                     
                     <div class="settings-row static">
@@ -718,7 +730,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                         </div>
                         <div class="settings-row-right">
                             <label class="ios-switch">
-                                <input type="checkbox" checked aria-label="Toggle Two-Factor Authentication (2FA)" onchange="toggleNotificationFeedback(this, '2FA Authentication')">
+                                <input type="checkbox" data-pref-key="two_factor_auth" <?= !empty($userPrefs['two_factor_auth']) ? 'checked' : '' ?> aria-label="Toggle Two-Factor Authentication (2FA)" onchange="toggleNotificationFeedback(this, 'two_factor_auth', '2FA Authentication')">
                                 <span class="ios-slider"></span>
                             </label>
                         </div>
@@ -1533,9 +1545,32 @@ function handleSettingsDirectPasswordChange() {
     const newPwd = document.getElementById('settingsNewPwd');
     const cfmPwd = document.getElementById('settingsConfirmPwd');
     const banner = document.getElementById('settingsPwdFeedbackBanner');
+    const submitBtn = document.querySelector('#settingsDirectPwdForm button[type="submit"]');
     if (!banner) return;
 
-    if (!newPwd || !cfmPwd || newPwd.value !== cfmPwd.value) {
+    const currentVal = curPwd ? curPwd.value : '';
+    const newVal = newPwd ? newPwd.value : '';
+    const confirmVal = cfmPwd ? cfmPwd.value : '';
+
+    if (!currentVal || !newVal || !confirmVal) {
+        banner.style.display = 'block';
+        banner.style.background = 'var(--error-light)';
+        banner.style.color = 'var(--error)';
+        banner.style.border = '1px solid var(--error-border)';
+        banner.textContent = 'Please fill in all password fields.';
+        return;
+    }
+
+    if (newVal.length < 6) {
+        banner.style.display = 'block';
+        banner.style.background = 'var(--error-light)';
+        banner.style.color = 'var(--error)';
+        banner.style.border = '1px solid var(--error-border)';
+        banner.textContent = 'New password must be at least 6 characters long.';
+        return;
+    }
+
+    if (newVal !== confirmVal) {
         banner.style.display = 'block';
         banner.style.background = 'var(--error-light)';
         banner.style.color = 'var(--error)';
@@ -1544,30 +1579,99 @@ function handleSettingsDirectPasswordChange() {
         return;
     }
 
-    banner.style.display = 'block';
-    banner.style.background = 'var(--success-light)';
-    banner.style.color = 'var(--success)';
-    banner.style.border = '1px solid var(--success-border)';
-    banner.textContent = 'Password update verified. For security verification, use the 3-step OTP portal below if resetting credentials.';
-    if (curPwd) curPwd.value = '';
-    if (newPwd) newPwd.value = '';
-    if (cfmPwd) cfmPwd.value = '';
+    if (submitBtn) submitBtn.disabled = true;
+
+    fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            action: 'change_password',
+            current_password: currentVal,
+            new_password: newVal,
+            confirm_password: confirmVal
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (submitBtn) submitBtn.disabled = false;
+        banner.style.display = 'block';
+        if (data.success) {
+            banner.style.background = 'var(--success-light)';
+            banner.style.color = 'var(--success)';
+            banner.style.border = '1px solid var(--success-border)';
+            banner.textContent = data.message || 'Your password has been updated and saved to the database.';
+            if (curPwd) curPwd.value = '';
+            if (newPwd) newPwd.value = '';
+            if (cfmPwd) cfmPwd.value = '';
+        } else {
+            banner.style.background = 'var(--error-light)';
+            banner.style.color = 'var(--error)';
+            banner.style.border = '1px solid var(--error-border)';
+            banner.textContent = data.message || 'Failed to update password. Please check your current password.';
+        }
+    })
+    .catch(() => {
+        if (submitBtn) submitBtn.disabled = false;
+        banner.style.display = 'block';
+        banner.style.background = 'var(--error-light)';
+        banner.style.color = 'var(--error)';
+        banner.style.border = '1px solid var(--error-border)';
+        banner.textContent = 'A network error occurred while updating your password.';
+    });
 }
 
 function handleSimulateSupportSend() {
-    const subject = document.getElementById('supportSubject');
-    const msg = document.getElementById('supportMessage');
+    const subjectEl = document.getElementById('supportSubject');
+    const categoryEl = document.getElementById('supportCategory');
+    const msgEl = document.getElementById('supportMessage');
     const banner = document.getElementById('supportFeedbackBanner');
-    
-    if (banner) {
-        banner.style.display = 'flex';
-        setTimeout(() => {
-            if (banner) banner.style.display = 'none';
-        }, 6000);
-    }
-    
-    if (subject) subject.value = '';
-    if (msg) msg.value = '';
+    const submitBtn = document.querySelector('#contactSupportForm button[type="submit"]');
+
+    const subject = subjectEl ? subjectEl.value.trim() : '';
+    const category = categoryEl ? categoryEl.value : 'general';
+    const message = msgEl ? msgEl.value.trim() : '';
+
+    if (!subject || !message) return;
+
+    if (submitBtn) submitBtn.disabled = true;
+
+    fetch('<?= BASE_URL ?>api/settings/preferences.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            action: 'submit_support',
+            subject: subject,
+            category: category,
+            message: message
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (submitBtn) submitBtn.disabled = false;
+        if (banner) {
+            banner.style.display = 'flex';
+            const textDiv = banner.querySelector('div');
+            if (textDiv && data.message) {
+                textDiv.textContent = data.message;
+            }
+            setTimeout(() => {
+                if (banner) banner.style.display = 'none';
+            }, 6000);
+        }
+        if (data.success) {
+            if (subjectEl) subjectEl.value = '';
+            if (msgEl) msgEl.value = '';
+        }
+    })
+    .catch(() => {
+        if (submitBtn) submitBtn.disabled = false;
+        if (banner) {
+            banner.style.display = 'flex';
+            setTimeout(() => {
+                if (banner) banner.style.display = 'none';
+            }, 6000);
+        }
+    });
 }
 
 function filterAccountabilityTable() {
@@ -1598,11 +1702,37 @@ function filterAccountabilityTable() {
     }
 }
 
-function toggleNotificationFeedback(checkbox, label) {
-    const status = checkbox.checked ? '1' : '0';
+function toggleNotificationFeedback(checkbox, prefKey, label) {
+    const key = (label ? prefKey : prefKey.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    const displayLabel = label || prefKey;
+    const enabled = !!checkbox.checked;
     try {
-        localStorage.setItem('stockpilot_pref_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_'), status);
+        localStorage.setItem('inventoryteam_pref_' + key, enabled ? '1' : '0');
     } catch (e) {}
+
+    const bannerId = (key === 'two_factor_auth') ? 'securityFeedbackBanner' : 'notifFeedbackBanner';
+    const banner = document.getElementById(bannerId);
+
+    fetch('<?= BASE_URL ?>api/settings/preferences.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+            action: 'save_preference',
+            key: key,
+            enabled: enabled
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (banner) {
+            banner.textContent = data.message || `${displayLabel}: ${enabled ? 'Enabled' : 'Disabled'} and saved.`;
+            banner.style.display = 'block';
+            setTimeout(() => {
+                if (banner) banner.style.display = 'none';
+            }, 3500);
+        }
+    })
+    .catch(() => {});
 }
 
 // Global escape key listener to dismiss Settings modal
@@ -1617,6 +1747,17 @@ document.addEventListener('keydown', function(e) {
 
 // Auto-open settings modal if URL hash or query parameter requests it
 document.addEventListener('DOMContentLoaded', function() {
+    // Hydrate saved toggle switches from localStorage if customized in browser
+    document.querySelectorAll('input[type="checkbox"][data-pref-key]').forEach(cb => {
+        const key = cb.getAttribute('data-pref-key');
+        try {
+            const saved = localStorage.getItem('inventoryteam_pref_' + key);
+            if (saved === '1' || saved === '0') {
+                cb.checked = (saved === '1');
+            }
+        } catch (e) {}
+    });
+
     // Enable keyboard Enter / Space activation on clickable .settings-row[role="button"] items
     document.querySelectorAll('.settings-row[role="button"]').forEach(row => {
         row.addEventListener('keydown', function(e) {

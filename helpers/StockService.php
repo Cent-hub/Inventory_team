@@ -782,9 +782,10 @@ class StockService {
 
             // IDOR Protection: Restrict regular admins to only cancel their own transactions
             if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
-                if ((int)$txn['created_by'] !== (int)$authUser['user_id']) {
+                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+                if ((int)$txn['created_by'] !== $authUid) {
                     throw new DomainException(
-                        "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} ('{$authUser['name']}') is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
+                        "Access Denied (IDOR Protection): Administrator #{$authUid} ('" . ($authUser['name'] ?? 'Admin') . "') is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
                     );
                 }
             }
@@ -902,9 +903,10 @@ class StockService {
 
             // IDOR Protection: Restrict regular admins to only cancel their own transactions
             if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
-                if ((int)$txn['created_by'] !== (int)$authUser['user_id']) {
+                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+                if ((int)$txn['created_by'] !== $authUid) {
                     throw new DomainException(
-                        "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} ('{$authUser['name']}') is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
+                        "Access Denied (IDOR Protection): Administrator #{$authUid} ('" . ($authUser['name'] ?? 'Admin') . "') is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
                     );
                 }
             }

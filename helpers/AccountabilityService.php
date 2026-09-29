@@ -67,6 +67,8 @@ class AccountabilityService {
                 if (empty($team)) {
                     $team = !empty($u['team']) ? ucfirst(strtolower($u['team'])) : self::inferTeamFromEmail($u['email']);
                 }
+            } else {
+                $userId = null;
             }
         }
 
@@ -87,6 +89,8 @@ class AccountabilityService {
                 $itemCode = $item['item_code'];
                 $itemName = $item['item_name'];
                 $unit     = $item['unit'];
+            } else {
+                $itemId = null;
             }
         }
 
@@ -195,10 +199,24 @@ class AccountabilityService {
             $params[] = $filters['team'];
         }
 
-        // Action filter
+        // Action filter (supports exact match or prefix groups like TRANSFER / ADJUSTMENT)
         if (!empty($filters['action']) && $filters['action'] !== 'all') {
-            $sql .= " AND al.action_type = ?";
-            $params[] = $filters['action'];
+            $act = strtoupper(trim((string)$filters['action']));
+            if (in_array($act, ['TRANSFER', 'ADJUSTMENT'], true)) {
+                $sql .= " AND al.action_type LIKE ?";
+                $params[] = $act . '%';
+            } else {
+                $sql .= " AND al.action_type = ?";
+                $params[] = $act;
+            }
+        }
+
+        // Warehouse name filter (from UI filter bar)
+        if (!empty($filters['warehouse']) && $filters['warehouse'] !== 'all') {
+            $whFilter = trim((string)$filters['warehouse']);
+            $sql .= " AND (w.warehouse_name = ? OR dw.warehouse_name = ?)";
+            $params[] = $whFilter;
+            $params[] = $whFilter;
         }
 
         // Search filter
@@ -369,6 +387,32 @@ class AccountabilityService {
                 $badgeClass = 'inbound';
                 $label = 'Item Master Created';
                 $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+                break;
+            case 'ITEM_UPDATED':
+                $badgeClass = 'adjustment';
+                $label = 'Item Master Updated';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+                break;
+            case 'STATUS_TOGGLED':
+                $badgeClass = 'adjustment';
+                $label = 'Item Status Toggled';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+                break;
+            case 'USER_CREATED':
+                $badgeClass = 'inbound';
+                $label = 'User Account Created';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+                break;
+            case 'USER_UPDATED':
+            case 'USER_STATUS_TOGGLED':
+                $badgeClass = 'adjustment';
+                $label = ($action === 'USER_STATUS_TOGGLED') ? 'User Status Toggled' : 'User Account Updated';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                break;
+            case 'SUPPORT_INQUIRY':
+                $badgeClass = 'transfer';
+                $label = 'Support Inquiry';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
                 break;
             default:
                 $badgeClass = 'adjustment';

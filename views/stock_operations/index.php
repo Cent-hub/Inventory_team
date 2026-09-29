@@ -118,6 +118,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Stock transfer " . htmlspecialchars($result['transaction_number']) . " confirmed and received successfully into your warehouse inventory!";
                     break;
 
+                case 'cancel_transfer':
+                    $activeTab  = 'transfer';
+                    $transferId = (int)($_POST['stock_transfer_id'] ?? 0);
+                    $reason     = trim($_POST['cancellation_reason'] ?? '');
+                    if ($transferId <= 0) {
+                        throw new InvalidArgumentException("Invalid stock transfer reference ID.");
+                    }
+                    $result = $stockService->cancelStockTransfer($transferId, $reason, $userId, $currentUser);
+                    $successMessage = "Stock transfer " . htmlspecialchars($result['transaction_number']) . " has been cancelled and stock restored to the source warehouse.";
+                    break;
+
                 // -------------------------------------------------------------
                 // 2. Stock Adjustment Actions
                 // -------------------------------------------------------------
@@ -959,10 +970,17 @@ if ($selectedItemId > 0) {
                                         <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="text-align: right;">
-                                    <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick='openTransferDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>, "outbound")'>
-                                        View Details
-                                    </button>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                                        <?php if (in_array($row['status'], ['pending', 'completed'], true)): ?>
+                                            <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelTransferModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                                Cancel
+                                            </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px;" onclick='openTransferDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>, "outbound")'>
+                                            View Details
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -1983,6 +2001,41 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
+<!-- 11. Cancel Stock Transfer Modal -->
+<div id="confirmCancelTransferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelTransferModalTitle" onclick="if(event.target === this) closeCancelTransferModal()">
+    <div class="modal-card" style="max-width: 460px;">
+        <form method="POST" action="index.php?tab=transfer">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="cancel_transfer">
+            <input type="hidden" name="active_tab" value="transfer">
+            <input type="hidden" name="stock_transfer_id" id="cancelTransferId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="confirmCancelTransferModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Stock Transfer</h3>
+                    <p class="card-desc" style="margin: 0;">Reverse transfer and restore stock to source warehouse</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelTransferModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+                <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
+                    Are you sure you want to cancel transfer <strong id="cancelTransferRef" style="font-family: monospace;">—</strong>?
+                </p>
+                <div>
+                    <label for="cancelTransferReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
+                    <textarea name="cancellation_reason" id="cancelTransferReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this stock transfer..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCancelTransferModal()">Close</button>
+                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ========================================================================= -->
 <!-- JAVASCRIPT LOGIC                                                          -->
 <!-- ========================================================================= -->
@@ -2038,6 +2091,18 @@ function switchStockTab(tabName) {
 // Stock Transfer JS
 // -----------------------------------------------------------------------------
 const trfLinesData = <?= json_encode($linesByTransfer) ?>;
+
+function openCancelTransferModal(trf) {
+    if (!trf) return;
+    document.getElementById('cancelTransferId').value = trf.stock_transfer_id;
+    document.getElementById('cancelTransferRef').textContent = trf.transaction_number;
+    document.getElementById('cancelTransferReason').value = '';
+    document.getElementById('confirmCancelTransferModal').style.display = 'flex';
+}
+
+function closeCancelTransferModal() {
+    document.getElementById('confirmCancelTransferModal').style.display = 'none';
+}
 
 function openConfirmReceiptModal(trf) {
     if (!trf) return;

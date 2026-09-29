@@ -1,20 +1,66 @@
 <?php
 /**
- * Simple Password Reset Page
+ * Standalone 3-Step Password Reset Page
+ * InventoryTeam — Liquor Business Inventory Management System
  */
 
 require_once __DIR__ . '/../controllers/AuthController.php';
+require_once __DIR__ . '/../helpers/rate_limiter.php';
 
 $auth = new AuthController();
 $msg = '';
 $isSuccess = false;
+$step = 1;
+
+// Determine current step from active OTP session
+if (!empty($_SESSION['otp_reset']['verified']) && !empty($_SESSION['otp_reset']['reset_token'])) {
+    $step = 3;
+} elseif (!empty($_SESSION['otp_reset']['code']) && time() <= (int)($_SESSION['otp_reset']['expires_at'] ?? 0)) {
+    $step = 2;
+}
+
+if (isset($_GET['restart'])) {
+    unset($_SESSION['otp_reset']);
+    $step = 1;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $result = $auth->requestPasswordReset($email);
-    $msg = $result['message'] ?? ($result['error'] ?? '');
-    $isSuccess = !empty($result['success']);
+    checkRateLimit('auth/reset-password', 10, 300);
+    $action = $_POST['action'] ?? 'send_code';
+
+    if ($action === 'send_code') {
+        $email = trim($_POST['email'] ?? '');
+        $result = $auth->requestPasswordReset($email);
+        $msg = $result['message'] ?? ($result['error'] ?? '');
+        $isSuccess = !empty($result['success']);
+        $step = $isSuccess ? 2 : 1;
+    } elseif ($action === 'verify_code') {
+        $code = trim($_POST['code'] ?? '');
+        $result = $auth->verifyPasswordResetCode($code);
+        $msg = $result['message'] ?? ($result['error'] ?? '');
+        $isSuccess = !empty($result['success']);
+        if ($isSuccess) {
+            $step = 3;
+        } else {
+            $step = !empty($_SESSION['otp_reset']['code']) ? 2 : 1;
+        }
+    } elseif ($action === 'reset_password') {
+        $resetToken = $_POST['reset_token'] ?? ($_SESSION['otp_reset']['reset_token'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+        $result = $auth->completePasswordReset((string)$resetToken, (string)$password, (string)$confirmPassword);
+        $msg = $result['message'] ?? ($result['error'] ?? '');
+        $isSuccess = !empty($result['success']);
+        if ($isSuccess) {
+            $step = 4;
+        } else {
+            $step = !empty($_SESSION['otp_reset']['verified']) ? 3 : 1;
+        }
+    }
 }
+
+$activeResetToken = $_SESSION['otp_reset']['reset_token'] ?? '';
+$activeEmail      = $_SESSION['otp_reset']['email'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -117,6 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 15px;
             font-weight: 700;
             cursor: pointer;
+            text-decoration: none;
             transition: background-color .15s ease, transform .1s ease;
         }
 
@@ -147,31 +194,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <!-- Step Indicator Pills -->
         <div style="display:flex; gap:6px; margin-bottom:20px;">
             <div style="flex:1; height:4px; border-radius:2px; background:var(--accent);"></div>
-            <div style="flex:1; height:4px; border-radius:2px; background:<?= $isSuccess ? 'var(--accent)' : 'var(--border)' ?>;"></div>
-            <div style="flex:1; height:4px; border-radius:2px; background:var(--border);"></div>
+            <div style="flex:1; height:4px; border-radius:2px; background:<?= $step >= 2 ? 'var(--accent)' : 'var(--border)' ?>;"></div>
+            <div style="flex:1; height:4px; border-radius:2px; background:<?= $step >= 3 ? 'var(--accent)' : 'var(--border)' ?>;"></div>
         </div>
 
         <?php if (!empty($msg)): ?>
-            <div style="padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px; <?= $isSuccess ? 'background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;' : 'background:#fef2f2; color:#dc2626; border:1px solid #fecaca;' ?>">
+            <div role="status" aria-live="polite" style="padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px; <?= $isSuccess ? 'background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;' : 'background:#fef2f2; color:#dc2626; border:1px solid #fecaca;' ?>">
                 <?= htmlspecialchars($msg) ?>
             </div>
         <?php endif; ?>
 
-        <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
-        <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your Gmail inbox.</p>
+        <?php if ($step === 1): ?>
+            <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
+            <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your inbox.</p>
 
-        <form action="reset-password.php" method="POST">
-            <div class="field" style="margin-bottom:18px;">
-                <label class="label" for="email">Email Address</label>
-                <div class="input-wrap">
-                    <input id="email" name="email" type="email" class="input" placeholder="e.g. storeowner@gmail.com" required autocomplete="email" />
+            <form action="reset-password.php" method="POST">
+                <input type="hidden" name="action" value="send_code" />
+                <div class="field" style="margin-bottom:18px;">
+                    <label class="label" for="email">Email Address</label>
+                    <div class="input-wrap">
+                        <input id="email" name="email" type="email" class="input" placeholder="e.g. admin@inventory.local" required autocomplete="email" />
+                    </div>
                 </div>
+                <button type="submit" class="login-btn">
+                    <span>Send 6-Digit Code</span>
+                </button>
+            </form>
+
+        <?php elseif ($step === 2): ?>
+            <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Enter 6-Digit Code</h3>
+            <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">
+                Enter the 6-digit verification code sent to <strong><?= htmlspecialchars($activeEmail) ?></strong>. It expires in 15 minutes.
+            </p>
+
+            <form action="reset-password.php" method="POST">
+                <input type="hidden" name="action" value="verify_code" />
+                <div class="field" style="margin-bottom:14px;">
+                    <label class="label" for="code">6-Digit Verification Code</label>
+                    <div class="input-wrap">
+                        <input id="code" name="code" type="text" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" class="input" placeholder="Enter 6-digit code" required autocomplete="one-time-code" style="letter-spacing: 4px; font-weight: 700; text-align: center; font-size: 18px;" />
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:16px; font-size:12.5px;">
+                    <a href="reset-password.php?restart=1" style="color:var(--gray); text-decoration:underline;">Change email</a>
+                </div>
+                <button type="submit" class="login-btn">
+                    <span>Verify Code</span>
+                </button>
+            </form>
+
+        <?php elseif ($step === 3): ?>
+            <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Create New Password</h3>
+            <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Code verified! Enter your new password below (minimum 6 characters).</p>
+
+            <form action="reset-password.php" method="POST">
+                <input type="hidden" name="action" value="reset_password" />
+                <input type="hidden" name="reset_token" value="<?= htmlspecialchars($activeResetToken) ?>" />
+                <div class="field" style="margin-bottom:14px;">
+                    <label class="label" for="password">New Password</label>
+                    <div class="input-wrap">
+                        <input id="password" name="password" type="password" class="input" placeholder="Minimum 6 characters" minlength="6" required autocomplete="new-password" />
+                    </div>
+                </div>
+                <div class="field" style="margin-bottom:18px;">
+                    <label class="label" for="confirm_password">Confirm New Password</label>
+                    <div class="input-wrap">
+                        <input id="confirm_password" name="confirm_password" type="password" class="input" placeholder="Re-enter new password" minlength="6" required autocomplete="new-password" />
+                    </div>
+                </div>
+                <button type="submit" class="login-btn">
+                    <span>Save New Password</span>
+                </button>
+            </form>
+
+        <?php else: ?>
+            <div style="text-align:center; padding:8px 0;">
+                <h3 style="font-family:var(--font-display); font-size:20px; font-weight:700; color:var(--panel-ink); margin:0 0 8px 0;">Password Reset Complete!</h3>
+                <p style="font-size:13.5px; color:var(--gray); line-height:1.5; margin:0 0 20px 0;">
+                    Your password has been updated in the database. You can now sign in with your new credentials.
+                </p>
+                <a href="login.php?reset=success" class="login-btn">
+                    <span>Sign In to Your Account</span>
+                </a>
             </div>
-            <button type="submit" class="login-btn">
-                <span>Send 6-Digit Code</span>
-            </button>
-        </form>
+        <?php endif; ?>
     </div>
 
 </body>
 </html>
+
