@@ -16,7 +16,7 @@ $currentUser = $auth->getCurrentUser();
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
 $pageTitle   = $isSuperAdmin ? 'Users & Accounts — InventoryTeam' : 'My Account — InventoryTeam';
-$activePage  = $isSuperAdmin ? 'users' : 'my_account';
+$activePage  = $isSuperAdmin ? 'users' : 'settings';
 $activeGroup = $isSuperAdmin ? 'users' : 'settings';
 
 require_once __DIR__ . '/../layouts/header.php';
@@ -255,11 +255,12 @@ function getFacilityAssignment($user) {
     if (is_array($user) && ($user['role'] ?? '') === 'super_admin') {
         return 'All Facilities (Global Scope)';
     }
-    $emailLower = is_array($user) ? strtolower($user['email'] ?? '') : strtolower((string)$user);
-    if (str_contains($emailLower, 'procure') || str_contains($emailLower, 'raw')) return 'WH-MAIN (Main Warehouse - Laguna)';
-    if (str_contains($emailLower, 'sales') || str_contains($emailLower, 'bond')) return 'WH-BOND (Bonded Warehouse - Manila)';
-    if (str_contains($emailLower, 'prod') || str_contains($emailLower, 'bott') || str_contains($emailLower, 'fg')) return 'WH-BOTT (Bottling Area - Bulacan)';
-    return 'WH-MAIN (Main Warehouse - Laguna)';
+    $email = is_array($user) ? ($user['email'] ?? '') : (string)$user;
+    return match (AuthController::resolveDefaultWarehouseId($email)) {
+        2       => 'WH-BOND (Bonded Warehouse - Manila)',
+        3       => 'WH-BOTT (Bottling Area - Bulacan)',
+        default => 'WH-MAIN (Main Warehouse - Laguna)',
+    };
 }
 ?>
 
@@ -301,7 +302,7 @@ function getFacilityAssignment($user) {
 <!-- My Profile Spotlight Card -->
 <div class="card mb-6" id="my-account" style="border-left: 4px solid #1F7A6C;">
     <div class="card-body">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
             <div class="flex items-center gap-4">
                 <div class="user-avatar" style="width: 52px; height: 52px; font-size: 20px; background: #14213D; color: #FFFFFF;">
                     <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
@@ -313,18 +314,18 @@ function getFacilityAssignment($user) {
                         </h2>
                         <span class="badge badge-teal">Current Session</span>
                     </div>
-                    <div class="text-xs text-muted flex items-center gap-3 mt-1">
+                    <div class="text-xs text-muted flex items-center gap-3" style="margin-top: 4px; flex-wrap: wrap;">
                         <span>Email: <strong><?= htmlspecialchars($currentUser['email'] ?? 'admin@inventory.local') ?></strong></span>
                         <span>•</span>
-                        <span>Role: <strong class="capitalize"><?= htmlspecialchars(str_replace('_', ' ', $currentUser['role'] ?? 'admin')) ?></strong></span>
+                        <span>Role: <strong style="text-transform: capitalize;"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $currentUser['role'] ?? 'admin'))) ?></strong></span>
                         <span>•</span>
                         <span>Assigned Scope: <strong><?= htmlspecialchars($currentBranch) ?></strong></span>
                     </div>
                 </div>
             </div>
             <div class="flex items-center gap-2" id="security">
-                <span class="badge badge-navy" style="padding: 8px 12px; font-size: 12px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block mr-1">
+                <span class="badge badge-navy" style="padding: 8px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                     Authenticated via Secure Session Guard

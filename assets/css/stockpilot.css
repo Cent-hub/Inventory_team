@@ -1357,7 +1357,7 @@
 
         /* Print Mode Styles */
         @media print {
-            .sidebar, .navbar, .header-actions, .filter-bar, .tab-bar, .btn {
+            .sidebar, .navbar, .header-actions, .filter-bar, .filter-group, .tab-bar, .stock-ops-nav-wrapper, .table-pagination, .btn {
                 display: none !important;
             }
             .page-header {
@@ -1385,6 +1385,9 @@
             }
             table {
                 font-size: 11px !important;
+            }
+            tbody tr:not([data-filtered-out="true"]):not(.empty-filter-row) {
+                display: table-row !important;
             }
         }
 

@@ -47,6 +47,14 @@ function toggleSidebar() {
     toggleMobileSidebar();
 }
 
+// Shared HTML-escaping helper used across modals and dynamic table renders
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+}
+
 // Universal Client-side Table Filter with Pagination Integration
 function filterTable(inputId, tableId) {
     const input = document.getElementById(inputId);
@@ -70,6 +78,43 @@ function filterTable(inputId, tableId) {
     if (typeof table.paginationUpdate === 'function') {
         table.paginationUpdate(true);
     }
+}
+
+// Universal Client-side HTML Table to CSV Exporter
+function exportTableToCsv(tableId, filenamePrefix) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    const csv = [];
+    const rows = table.querySelectorAll('tr');
+
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.filteredOut === 'true' || rows[i].classList.contains('empty-filter-row')) {
+            continue;
+        }
+        const cols = rows[i].querySelectorAll('td, th');
+        if (cols.length === 1 && cols[0].hasAttribute('colspan')) {
+            continue;
+        }
+        const row = [];
+        for (let j = 0; j < cols.length; j++) {
+            let text = (cols[j].textContent || '').replace(/(\r\n|\n|\r)/gm, ' ').replace(/\s+/g, ' ').trim();
+            text = text.replace(/"/g, '""');
+            row.push('"' + text + '"');
+        }
+        if (row.length > 0) {
+            csv.push(row.join(','));
+        }
+    }
+
+    const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
+    const downloadLink = document.createElement('a');
+    downloadLink.download = (filenamePrefix || 'export') + '_report_' + new Date().toISOString().slice(0, 10) + '.csv';
+    downloadLink.href = window.URL.createObjectURL(csvFile);
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
 }
 
 // Universal Client-side Column Sorting Engine

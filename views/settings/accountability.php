@@ -38,14 +38,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $requestedWhId = null;
     if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
         $requestedWhId = (int)$_GET['warehouse_id'];
-    } elseif ($isSuperAdmin && isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
-        $requestedWhId = (int)$_SESSION['warehouse_id'];
     }
 
     if ($isSuperAdmin) {
         $exportWarehouseId = ($requestedWhId !== null && $requestedWhId > 0)
             ? $requestedWhId
-            : ($userAssignedWhId > 0 ? $userAssignedWhId : 1);
+            : 0;
     } else {
         $exportWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
         if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $exportWarehouseId) {
@@ -66,15 +64,17 @@ require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
 // Fetch live KPIs, warehouses, and logs AFTER header.php has resolved and enforced $currentWarehouseId
-$kpis = AccountabilityService::getKpis($currentWarehouseId);
+$scopeWarehouseId = $isSuperAdmin ? 0 : $currentWarehouseId;
+$kpis = AccountabilityService::getKpis($scopeWarehouseId);
 
 $warehousesStmt = $pdo->query("SELECT warehouse_id, warehouse_name, warehouse_code FROM warehouses ORDER BY warehouse_name ASC");
 $allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch logs with verified warehouse scope
-$logs = AccountabilityService::getLogs($currentWarehouseId, [
+// Fetch logs with verified warehouse scope (all facilities for Super Admin so the Warehouse Filter works across branches)
+$logs = AccountabilityService::getLogs($scopeWarehouseId, [
     'team'       => $_GET['team'] ?? '',
     'action'     => $_GET['action'] ?? '',
+    'warehouse'  => $_GET['warehouse'] ?? '',
     'search'     => $_GET['search'] ?? '',
     'start_date' => $_GET['start_date'] ?? '',
     'end_date'   => $_GET['end_date'] ?? '',
@@ -217,6 +217,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 <option value="ADJUSTMENT">Stock Adjustment</option>
                 <option value="ADJUSTMENT_CANCELLED">Adjustment Cancelled</option>
                 <option value="BAD_PRODUCT">Damaged / Bad Stock</option>
+                <option value="BAD_PRODUCT_CANCEL">Bad Stock Cancelled</option>
                 <option value="ITEM_CREATED">Item Master Created</option>
                 <option value="ITEM_UPDATED">Item Master Updated</option>
                 <option value="STATUS_TOGGLED">Item Status Toggled</option>
@@ -237,6 +238,10 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 <?php endforeach; ?>
             </select>
             <?php endif; ?>
+
+            <button type="button" class="btn btn-secondary" style="height: 38px; padding: 0 14px;" onclick="resetFullLogFilters()" title="Reset Filters">
+                Reset
+            </button>
         </div>
     </div>
 
@@ -273,10 +278,10 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                         $actionBadge = AccountabilityService::formatActionBadge($log['action_type'], $log['channel']);
                         $teamBadge = AccountabilityService::formatTeamBadge($log['team']);
                         $whName = htmlspecialchars($log['warehouse_name']);
-                        $whCode = htmlspecialchars($log['warehouse_code']);
+                        $whBadgeClass = getWarehouseBadgeClass($log['warehouse_code'] ?? '');
                         $destName = !empty($log['dest_name']) ? htmlspecialchars($log['dest_name']) : '';
                     ?>
-                    <tr data-team="<?= $team ?>" data-action="<?= htmlspecialchars($log['action_type']) ?>" data-warehouse="<?= $whName ?>">
+                    <tr data-team="<?= $team ?>" data-action="<?= htmlspecialchars($log['action_type']) ?>" data-warehouse="<?= $whName . ($destName !== '' ? ' ' . $destName : '') ?>">
                         <td style="white-space: nowrap;">
                             <strong style="color: var(--panel-ink);"><?= $dateFormatted ?></strong><br>
                             <small style="color: var(--gray); font-family: monospace; font-size: 12px;"><?= $timeFormatted ?></small>
@@ -319,7 +324,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                             <?php endif; ?>
                         </td>
                         <td>
-                            <span class="badge-wh wh-main"><?= $whName ?></span>
+                            <span class="badge-wh <?= $whBadgeClass ?>"><?= $whName ?></span>
                             <?php if (!empty($destName)): ?>
                                 <div style="font-size: 11px; color: var(--gray); margin-top: 2px;">➔ <?= $destName ?></div>
                             <?php endif; ?>
@@ -381,7 +386,7 @@ function filterFullLogTable() {
         const matchTeam = (team === 'all' || rowTeam === team.toLowerCase());
         const matchAction = (action === 'all') ||
             ((actionLower === 'transfer' || actionLower === 'adjustment')
-                ? rowAction.startsWith(actionLower)
+                ? (rowAction.startsWith(actionLower) && !rowAction.includes('cancel'))
                 : rowAction === actionLower);
         const matchWarehouse = (warehouse === 'all' || rowWarehouse.includes(warehouse.toLowerCase()));
         const matchQuery = !query || text.includes(query);

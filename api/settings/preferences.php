@@ -9,6 +9,7 @@ header('Content-Type: application/json; charset=UTF-8');
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+require_once __DIR__ . '/../../helpers/csrf.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -23,16 +24,22 @@ if (!$auth->isAuthenticated()) {
     exit;
 }
 
+$input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    $input = $_POST;
+}
+
+if (!validateCsrfToken($input['csrf_token'] ?? null)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Security validation failed: Invalid or expired CSRF token. Please refresh the page.']);
+    exit;
+}
+
 $currentUser = $auth->getCurrentUser();
 $userId      = (int)($currentUser['id'] ?? 1);
 $warehouseId = (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
 if ($warehouseId <= 0) {
     $warehouseId = 1;
-}
-
-$input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input)) {
-    $input = $_POST;
 }
 
 $action = trim((string)($input['action'] ?? ''));

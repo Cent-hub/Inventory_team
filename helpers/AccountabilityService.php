@@ -203,7 +203,7 @@ class AccountabilityService {
         if (!empty($filters['action']) && $filters['action'] !== 'all') {
             $act = strtoupper(trim((string)$filters['action']));
             if (in_array($act, ['TRANSFER', 'ADJUSTMENT'], true)) {
-                $sql .= " AND al.action_type LIKE ?";
+                $sql .= " AND al.action_type LIKE ? AND al.action_type NOT LIKE '%CANCEL%'";
                 $params[] = $act . '%';
             } else {
                 $sql .= " AND al.action_type = ?";

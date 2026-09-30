@@ -55,23 +55,19 @@ $stmt = $pdo->prepare("
 $stmt->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $rawMaterials = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Metrics scoped strictly to assigned warehouse
+// Metrics scoped strictly to assigned warehouse (computed from $rawMaterials without extra queries)
 $totalRawSKUs = count($rawMaterials);
+$totalRawQty  = 0.0;
+$lowStockRaw  = 0;
 
-$stmtQty = $pdo->prepare("SELECT COALESCE(SUM(inv.quantity), 0) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'raw_material' AND i.status = 'active' AND inv.warehouse_id = :wid");
-$stmtQty->execute([':wid' => $currentWarehouseId]);
-$totalRawQty = (float)$stmtQty->fetchColumn();
-
-$stmtLow = $pdo->prepare("
-    SELECT COUNT(*)
-    FROM items i
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid
-    WHERE i.item_type = 'raw_material'
-      AND i.status = 'active'
-      AND COALESCE(inv.quantity, 0) <= COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level)
-");
-$stmtLow->execute([':wid' => $currentWarehouseId]);
-$lowStockRaw = (int)$stmtLow->fetchColumn();
+foreach ($rawMaterials as $rm) {
+    $qty = (float)($rm['current_stock'] ?? 0);
+    $reorder = (float)($rm['default_reorder_level'] ?? 0);
+    $totalRawQty += $qty;
+    if ($qty <= $reorder) {
+        $lowStockRaw++;
+    }
+}
 ?>
 
 <!-- Page Header -->
@@ -86,7 +82,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
 <div class="stats-grid">
     <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Raw Material</span>
+            <span class="stat-label">Raw Materials</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>
@@ -145,7 +141,7 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="rawSearch" class="search-box" aria-label="Filter raw materials" placeholder="Filter material name or code..." oninput="filterRawTable()">
+                <input type="text" id="rawSearch" class="search-box" aria-label="Filter raw materials" placeholder="Filter material name or code..." oninput="filterTable('rawSearch', 'rawMaterialsTable')">
             </div>
         </div>
     </div>
@@ -201,20 +197,22 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
                                     <?php if (!empty($item['last_received_qty'])): ?>
                                         <small style="color: #15803D;">(+<?= formatQty($item['last_received_qty']) ?>)</small>
                                     <?php endif; ?>
-                                <?php else: ?>
+                                <?php elseif ($isAvailable): ?>
                                     <span style="color: var(--gray);">Initial Stock</span>
+                                <?php else: ?>
+                                    <span style="color: var(--gray);">No Receipts Yet</span>
                                 <?php endif; ?>
                             </td>
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
-                                <?= !empty($item['last_received_date']) ? date('M d, Y', strtotime($item['last_received_date'])) : 'System Setup' ?>
+                                <?= !empty($item['last_received_date']) ? date('M d, Y', strtotime($item['last_received_date'])) : ($isAvailable ? 'System Setup' : '—') ?>
                             </td>
                             <td>
                                 <?php if (!$isAvailable): ?>
                                     <span class="badge status-alert">Out of Stock</span>
                                 <?php elseif ($isReorder): ?>
-                                    <span class="badge status-pending">Reorder Needed</span>
+                                    <span class="badge status-pending">Low Stock</span>
                                 <?php else: ?>
-                                    <span class="badge status-optimal">Available</span>
+                                    <span class="badge status-optimal">Optimal</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -224,22 +222,5 @@ $lowStockRaw = (int)$stmtLow->fetchColumn();
         </table>
     </div>
 </div>
-
-<script>
-function filterRawTable() {
-    const term = document.getElementById('rawSearch').value.toLowerCase().trim();
-    const table = document.getElementById('rawMaterialsTable');
-    if (!table) return;
-    const rows = table.querySelectorAll('tbody tr');
-
-    rows.forEach(row => {
-        if (row.querySelector('td[colspan]')) return;
-        const text = row.textContent.toLowerCase();
-        const match = !term || text.includes(term);
-        row.dataset.filteredOut = match ? 'false' : 'true';
-    });
-    if (table.paginationUpdate) table.paginationUpdate(true);
-}
-</script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

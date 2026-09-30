@@ -40,13 +40,21 @@ $isAuthorizedForMultiWarehouse = ($userRole === 'super_admin');
 
 // Enforce strict assigned warehouse resolution from database for regular admins
 $userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
-if (!empty($currentUser['id']) && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0)) {
-    $uStmt = $pdo->prepare("SELECT warehouse_id FROM users WHERE user_id = :uid LIMIT 1");
+if (!empty($currentUser['id']) && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0 || empty($_SESSION['user_team']))) {
+    $uStmt = $pdo->prepare("SELECT warehouse_id, team FROM users WHERE user_id = :uid LIMIT 1");
     $uStmt->execute([':uid' => $currentUser['id']]);
-    $dbWhId = (int)$uStmt->fetchColumn();
-    if ($dbWhId > 0) {
-        $userAssignedWhId = $dbWhId;
-        $currentUser['warehouse_id'] = $userAssignedWhId;
+    $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
+    if ($uRow) {
+        $dbWhId = (int)($uRow['warehouse_id'] ?? 0);
+        if ($dbWhId > 0 && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0)) {
+            $userAssignedWhId = $dbWhId;
+            $currentUser['warehouse_id'] = $userAssignedWhId;
+        }
+        $dbTeam = trim((string)($uRow['team'] ?? ''));
+        if ($dbTeam !== '') {
+            $currentUser['team'] = $dbTeam;
+            $_SESSION['user_team'] = $dbTeam;
+        }
     }
 }
 
@@ -122,12 +130,13 @@ $currentUser['warehouse_id'] = $currentWarehouseId;
 if (!function_exists('getWarehouseBadgeClass')) {
     function getWarehouseBadgeClass(?string $code): string {
         $c = strtoupper(trim((string)$code));
-        return match($c) {
-            'WH-MAIN', 'WH-RAW' => 'wh-main',
-            'WH-BOND'           => 'wh-bond',
-            'WH-BOTT', 'WH-FG'  => 'wh-bott',
-            default             => 'wh-main'
-        };
+        if (str_contains($c, 'BOND') || str_contains($c, 'AGE')) {
+            return 'wh-bond';
+        }
+        if (str_contains($c, 'BOTT') || str_contains($c, 'DIST') || str_contains($c, 'PROD') || str_contains($c, 'FG')) {
+            return 'wh-bott';
+        }
+        return 'wh-main';
     }
 }
 

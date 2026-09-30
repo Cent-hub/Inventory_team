@@ -83,17 +83,3 @@ function checkRateLimit(
     }
 }
 
-/**
- * Utility function to clear rate limits (used during test setup / resets)
- */
-function clearRateLimits(?string $clientIdentifier = null, ?string $endpoint = null): void {
-    $pdo = Database::getConnection();
-    if ($clientIdentifier === null && $endpoint === null) {
-        $pdo->query("TRUNCATE TABLE api_rate_limits");
-        return;
-    }
-    $clientKey = 'tok:' . hash('sha256', $clientIdentifier);
-    $stmt = $pdo->prepare("DELETE FROM api_rate_limits WHERE client_key = ?");
-    $stmt->execute([$clientKey]);
-}
-

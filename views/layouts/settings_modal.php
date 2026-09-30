@@ -12,7 +12,9 @@ require_once __DIR__ . '/../../helpers/AccountabilityService.php';
 $modalWarehouseId = (($currentUser['role'] ?? '') === 'super_admin')
     ? (int)($currentWarehouseId ?? 0)
     : (int)($currentWarehouseId ?? ($currentUser['warehouse_id'] ?? 1));
-$modalAccountabilityLogs = AccountabilityService::getLogs($modalWarehouseId, ['limit' => 30]);
+$modalAccountabilityLogs = (isset($logs) && is_array($logs))
+    ? array_slice($logs, 0, 30)
+    : AccountabilityService::getLogs($modalWarehouseId, ['limit' => 30]);
 
 $userPrefs = array_merge([
     'inbound_receipts'    => true,
@@ -27,6 +29,32 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
 $userRoleDisplay = htmlspecialchars(ucfirst(str_replace('_', ' ', $currentUser['role'] ?? 'admin')));
 $userNameDisplay = htmlspecialchars($currentUser['name'] ?? 'Administrator');
 $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.local');
+
+$userTeamRaw = trim((string)($currentUser['team'] ?? ($_SESSION['user_team'] ?? '')));
+if ($userTeamRaw === '' && isset($pdo) && !empty($currentUser['id'])) {
+    try {
+        $stmtUserTeam = $pdo->prepare("SELECT team FROM users WHERE user_id = ? LIMIT 1");
+        $stmtUserTeam->execute([(int)$currentUser['id']]);
+        $dbTeam = trim((string)$stmtUserTeam->fetchColumn());
+        if ($dbTeam !== '') {
+            $userTeamRaw = $dbTeam;
+            $_SESSION['user_team'] = $dbTeam;
+        }
+    } catch (Exception $e) {
+        // Fallback to session/default team
+    }
+}
+if ($userTeamRaw === '') {
+    $userTeamRaw = 'Inventory';
+}
+$teamSubtitleMap = [
+    'Inventory'   => 'Distillery & Inventory Operations',
+    'Procurement' => 'Procurement & Supplier Operations',
+    'Production'  => 'Production & Distillation Operations',
+    'Sales'       => 'Commercial Sales & Dispatch Operations',
+];
+$userTeamDisplay  = htmlspecialchars($userTeamRaw . ' Team');
+$userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTeamRaw . ' Department'));
 ?>
 
 <!-- Settings Master Modal -->
@@ -269,14 +297,14 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 
                 <div class="settings-group">
                     <div style="padding: 20px 16px; display: flex; align-items: center; gap: 16px; background: #ffffff;">
-                        <div class="user-avatar" style="width: 58px; height: 58px; font-size: 24px; background: #14213D; color: #FFFFFF; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">
+                        <div id="settingsAccountAvatar" class="user-avatar" style="width: 58px; height: 58px; font-size: 24px; background: #14213D; color: #FFFFFF; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">
                             <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
                         </div>
                         <div>
-                            <div style="font-size: 17px; font-weight: 700; color: var(--panel-ink); margin-bottom: 2px;">
+                            <div id="settingsAccountNameText" style="font-size: 17px; font-weight: 700; color: var(--panel-ink); margin-bottom: 2px;">
                                 <?= $userNameDisplay ?>
                             </div>
-                            <div style="font-size: 13px; color: var(--gray); font-family: monospace;">
+                            <div id="settingsAccountEmailText" style="font-size: 13px; color: var(--gray); font-family: monospace;">
                                 <?= $userEmailDisplay ?>
                             </div>
                             <div style="margin-top: 6px; display: flex; align-items: center; gap: 6px;">
@@ -291,6 +319,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     </div>
                 </div>
 
+                <span class="settings-group-label">Facility &amp; Session Scope</span>
                 <div class="settings-group">
                     <div class="settings-row static">
                         <div class="settings-row-left">
@@ -321,11 +350,11 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                             </div>
                             <div>
                                 <div class="settings-row-title">Assigned Team</div>
-                                <div class="settings-row-subtitle">Distillery &amp; Inventory Operations</div>
+                                <div class="settings-row-subtitle"><?= $userTeamSubtitle ?></div>
                             </div>
                         </div>
                         <div class="settings-row-right">
-                            <span class="settings-row-value">Internal</span>
+                            <span class="settings-row-value"><?= $userTeamDisplay ?></span>
                         </div>
                     </div>
                     <div class="settings-divider"></div>
@@ -783,7 +812,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                 <div class="settings-group">
                     
                     <!-- 1. Current Stock -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=current_stock'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=current_stock&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle teal">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -807,7 +836,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     <div class="settings-divider"></div>
 
                     <!-- 2. Raw Materials -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=raw_materials'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=raw_materials&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle bronze">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -830,7 +859,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     <div class="settings-divider"></div>
 
                     <!-- 3. Finished Goods -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=finished_goods'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=finished_goods&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle green">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -854,7 +883,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                     <div class="settings-divider"></div>
 
                     <!-- 4. Stock Movements -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=stock_movements'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=stock_movements&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle blue">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1080,6 +1109,7 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                     $actionBadge = AccountabilityService::formatActionBadge($log['action_type'], $log['channel']);
                                     $teamBadge = AccountabilityService::formatTeamBadge($log['team']);
                                     $whName = htmlspecialchars($log['warehouse_name']);
+                                    $whBadgeClass = getWarehouseBadgeClass($log['warehouse_code'] ?? '');
                                     $destName = !empty($log['dest_name']) ? htmlspecialchars($log['dest_name']) : '';
                                 ?>
                                 <tr data-team="<?= $team ?>">
@@ -1111,14 +1141,14 @@ $userEmailDisplay = htmlspecialchars($currentUser['email'] ?? 'admin@inventory.l
                                     </td>
                                     <td style="text-align: right;">
                                         <?php if ((float)$log['quantity'] != 0): ?>
-                                            <span style="font-weight: 700; font-size: 13.5px; color: var(--panel-ink);"><?= (float)$log['quantity'] > 0 ? '+' : '' ?><?= rtrim(rtrim(number_format((float)$log['quantity'], 4), '0'), '.') ?></span>
+                                            <span style="font-weight: 700; font-size: 13.5px; color: var(--panel-ink);"><?= (float)$log['quantity'] > 0 ? '+' : '' ?><?= formatQty((float)$log['quantity']) ?></span>
                                             <small style="color: var(--gray); font-weight: 500;"><?= htmlspecialchars($log['unit'] ?? '') ?></small>
                                         <?php else: ?>
                                             <span style="color: var(--gray); font-size: 12px;">—</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <span class="badge-wh wh-main"><?= $whName ?></span>
+                                        <span class="badge-wh <?= $whBadgeClass ?>"><?= $whName ?></span>
                                         <?php if (!empty($destName)): ?>
                                             <div style="font-size: 10px; color: var(--gray); margin-top: 1px;">➔ <?= $destName ?></div>
                                         <?php endif; ?>
@@ -1637,7 +1667,11 @@ function handleSimulateSupportSend() {
 
     fetch('<?= BASE_URL ?>api/settings/preferences.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': '<?= htmlspecialchars(getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>'
+        },
         body: JSON.stringify({
             action: 'submit_support',
             subject: subject,
@@ -1715,7 +1749,11 @@ function toggleNotificationFeedback(checkbox, prefKey, label) {
 
     fetch('<?= BASE_URL ?>api/settings/preferences.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': '<?= htmlspecialchars(getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>'
+        },
         body: JSON.stringify({
             action: 'save_preference',
             key: key,

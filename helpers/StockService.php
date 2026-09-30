@@ -1430,15 +1430,6 @@ class StockService {
                 }
             }
 
-            $stmtItems = $this->pdo->prepare("
-                SELECT sti.item_id, i.item_code, i.item_name, i.unit, sti.quantity
-                FROM stock_transfer_items sti
-                JOIN items i ON i.item_id = sti.item_id
-                WHERE sti.stock_transfer_id = ?
-            ");
-            $stmtItems->execute([$stockTransferId]);
-            $affectedItems = $stmtItems->fetchAll();
-
             // Updating status to 'cancelled' fires trg_stock_transfers_after_update in MySQL!
             $stmtUpdate = $this->pdo->prepare("
                 UPDATE stock_transfers

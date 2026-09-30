@@ -52,11 +52,6 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-$auth = $auth ?? new AuthController();
-$pdo  = $pdo ?? Database::getConnection();
-$currentUser = $currentUser ?? ($auth->getCurrentUser() ?? []);
-$currentWarehouseId = $currentWarehouseId ?? (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
-
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
 // Active Tab for Unified Inventory Reports (Default: raw_materials)
@@ -193,6 +188,9 @@ $currentBalanceData = $allInventoryData;
         </div>
         <!-- Buttons -->
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="resetInventoryReportFilters()" title="Reset Filters">
+                <span>Reset</span>
+            </button>
             <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -494,36 +492,26 @@ function filterActiveReportTable() {
     }
 }
 
-// Export active report table as CSV
-function exportReportCsv() {
-    const table = document.getElementById('reportTable_' + currentActiveTab);
-    const exportFileName = currentActiveTab;
-    if (!table) return;
-
-    let csv = [];
-    const rows = table.querySelectorAll('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = [], cols = rows[i].querySelectorAll('td, th');
-        for (let j = 0; j < cols.length; j++) {
-            let text = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/\s+/g, ' ').trim();
-            text = text.replace(/"/g, '""');
-            row.push('"' + text + '"');
-        }
-        if (row.length > 0 && !row[0].includes('No inventory records found') && !row[0].includes('No raw materials') && !row[0].includes('No finished goods')) {
-            csv.push(row.join(','));
-        }
-    }
-
-    const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
-    const downloadLink = document.createElement('a');
-    downloadLink.download = exportFileName + '_report_' + new Date().toISOString().slice(0, 10) + '.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+function resetInventoryReportFilters() {
+    const input = document.getElementById('reportSearchInput');
+    if (input) input.value = '';
+    filterActiveReportTable();
 }
+
+// Export active report table as CSV (delegates to global exportTableToCsv in footer.php)
+function exportReportCsv() {
+    exportTableToCsv('reportTable_' + currentActiveTab, currentActiveTab);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('export') === 'csv') {
+        exportReportCsv();
+        const url = new URL(window.location.href);
+        url.searchParams.delete('export');
+        window.history.replaceState({ tab: currentActiveTab }, '', url.toString());
+    }
+});
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

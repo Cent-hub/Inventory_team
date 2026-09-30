@@ -15,21 +15,7 @@ $activeGroup = 'inventory';
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
-require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
-
-$auth = $auth ?? new AuthController();
-$pdo = $pdo ?? Database::getConnection();
-$currentUser = $currentUser ?? ($auth->getCurrentUser() ?? []);
-$currentWarehouseId = $currentWarehouseId ?? (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
-
-/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
-$assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse : [
-    'warehouse_id'   => $currentWarehouseId ?? 1,
-    'warehouse_code' => 'WH-MAIN',
-    'warehouse_name' => 'Main Warehouse',
-    'location'       => 'Default Location'
-];
 
 $successMessage = null;
 $errorMessage   = null;
@@ -177,13 +163,15 @@ $stmtIn = $pdo->prepare("
         si.transaction_date,
         si.status,
         si.remarks,
+        si.cancellation_reason,
+        si.cancelled_at,
         si.created_at,
         w.warehouse_code,
         w.warehouse_name,
         u.name AS operator_name,
         COUNT(sii.item_id) AS total_item_count,
         COALESCE(SUM(sii.quantity), 0) AS total_quantity,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(sii.quantity, 1), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
+        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sii.quantity, 2))), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
     FROM stock_ins si
     JOIN warehouses w ON si.warehouse_id = w.warehouse_id
     JOIN users u ON si.created_by = u.user_id
@@ -217,15 +205,10 @@ while ($row = $stmtInLines->fetch(PDO::FETCH_ASSOC)) {
     $linesByStockIn[(int)$row['stock_in_id']][] = $row;
 }
 
-// KPI Metrics scoped strictly to assigned warehouse
-$totalStockInTxns = count($stockIns);
-$stmtProc = $pdo->prepare("SELECT COUNT(*) FROM stock_ins WHERE source_type = 'PURCHASE_ORDER' AND warehouse_id = :wid");
-$stmtProc->execute([':wid' => $currentWarehouseId]);
-$procurementInbounds = (int)$stmtProc->fetchColumn();
-
-$stmtProd = $pdo->prepare("SELECT COUNT(*) FROM stock_ins WHERE source_type = 'PRODUCTION_RETURN' AND warehouse_id = :wid");
-$stmtProd->execute([':wid' => $currentWarehouseId]);
-$productionInbounds  = (int)$stmtProd->fetchColumn();
+// KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
+$totalStockInTxns    = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed'));
+$procurementInbounds = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'PURCHASE_ORDER'));
+$productionInbounds  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'PRODUCTION_RETURN'));
 
 // =============================================================================
 // DATA QUERIES: SECTION 2 (OUTBOUND / STOCK OUT)
@@ -252,13 +235,15 @@ $stmtOut = $pdo->prepare("
         so.transaction_date,
         so.status,
         so.remarks,
+        so.cancellation_reason,
+        so.cancelled_at,
         so.created_at,
         w.warehouse_code,
         w.warehouse_name,
         u.name AS operator_name,
         COUNT(soi.item_id) AS total_item_count,
         COALESCE(SUM(soi.quantity), 0) AS total_quantity,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(soi.quantity, 1), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
+        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(soi.quantity, 2))), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
     FROM stock_outs so
     JOIN warehouses w ON so.warehouse_id = w.warehouse_id
     JOIN users u ON so.created_by = u.user_id
@@ -292,15 +277,10 @@ while ($row = $stmtOutLines->fetch(PDO::FETCH_ASSOC)) {
     $linesByStockOut[(int)$row['stock_out_id']][] = $row;
 }
 
-// KPI Metrics scoped strictly to assigned warehouse
-$totalStockOutTxns = count($stockOuts);
-$stmtSales = $pdo->prepare("SELECT COUNT(*) FROM stock_outs WHERE source_type = 'SALES_DELIVERY' AND warehouse_id = :wid");
-$stmtSales->execute([':wid' => $currentWarehouseId]);
-$salesDispatches   = (int)$stmtSales->fetchColumn();
-
-$stmtMat = $pdo->prepare("SELECT COUNT(*) FROM stock_outs WHERE source_type = 'MATERIAL_REQUEST' AND warehouse_id = :wid");
-$stmtMat->execute([':wid' => $currentWarehouseId]);
-$materialRequests  = (int)$stmtMat->fetchColumn();
+// KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
+$totalStockOutTxns = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed'));
+$salesDispatches   = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SALES_DELIVERY'));
+$materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'MATERIAL_REQUEST'));
 ?>
 
 <!-- Page Header -->
@@ -448,6 +428,10 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     <option value="raw_material">Raw Materials</option>
                     <option value="finished_good">Finished Goods</option>
                 </select>
+
+                <button type="button" class="btn btn-secondary" onclick="resetStockInFilters()">
+                    Reset
+                </button>
 
                 <button type="button" class="btn btn-primary" onclick="openRecordStockInModal()">
                     + Record Stock In
@@ -600,7 +584,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         <div class="modal-header">
             <div>
                 <h3 id="modalTitle" class="card-title">Transaction Details</h3>
-                <p id="modalSub" class="card-desc">Inbound line items received into warehouse</p>
+                <p id="modalSub" class="card-desc">Inbound receipt metadata and line items received into warehouse</p>
             </div>
             <button type="button" class="modal-close" aria-label="Close modal" onclick="closeDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -610,6 +594,28 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             </button>
         </div>
         <div class="modal-body">
+            <div id="modalInMetaBox" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 12.5px;">
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Reference / PO #</div>
+                    <div id="modalInRef" style="font-family: monospace; font-weight: 700; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Status</div>
+                    <div id="modalInStatus" style="margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Logged By</div>
+                    <div id="modalInOperator" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Date Received</div>
+                    <div id="modalInDate" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div id="modalInRemarksWrap" style="grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 2px;">
+                    <div id="modalInRemarksLabel" style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Remarks / Notes</div>
+                    <div id="modalInRemarks" style="color: var(--panel-ink); margin-top: 4px; line-height: 1.45; white-space: pre-wrap;">—</div>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="no-paginate">
                     <thead>
@@ -624,6 +630,9 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     </tbody>
                 </table>
             </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeDetailModal()">Close</button>
         </div>
     </div>
 </div>
@@ -714,6 +723,10 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     <option value="finished_good">Finished Goods</option>
                     <option value="raw_material">Raw Materials</option>
                 </select>
+
+                <button type="button" class="btn btn-secondary" onclick="resetStockOutFilters()">
+                    Reset
+                </button>
 
                 <button type="button" class="btn btn-primary" onclick="openRecordStockOutModal()">
                     + Record Stock Out
@@ -866,7 +879,7 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
         <div class="modal-header">
             <div>
                 <h3 id="modalOutTitle" class="card-title">Dispatch Details</h3>
-                <p id="modalOutSub" class="card-desc">Outbound line items released from inventory</p>
+                <p id="modalOutSub" class="card-desc">Outbound dispatch metadata and line items released from inventory</p>
             </div>
             <button type="button" class="modal-close" aria-label="Close modal" onclick="closeOutDetailModal()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -876,6 +889,28 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
             </button>
         </div>
         <div class="modal-body">
+            <div id="modalOutMetaBox" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 12.5px;">
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Reference / Order #</div>
+                    <div id="modalOutRef" style="font-family: monospace; font-weight: 700; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Status</div>
+                    <div id="modalOutStatus" style="margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Logged By</div>
+                    <div id="modalOutOperator" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div>
+                    <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Date Dispatched</div>
+                    <div id="modalOutDate" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                </div>
+                <div id="modalOutRemarksWrap" style="grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 2px;">
+                    <div id="modalOutRemarksLabel" style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Remarks / Notes</div>
+                    <div id="modalOutRemarks" style="color: var(--panel-ink); margin-top: 4px; line-height: 1.45; white-space: pre-wrap;">—</div>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="no-paginate">
                     <thead>
@@ -890,6 +925,9 @@ $materialRequests  = (int)$stmtMat->fetchColumn();
                     </tbody>
                 </table>
             </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeOutDetailModal()">Close</button>
         </div>
     </div>
 </div>
@@ -1301,9 +1339,46 @@ window.addEventListener('popstate', function() {
 // SECTION 1: INBOUND SCRIPTS
 // =============================================================================
 const linesData = <?= json_encode($linesByStockIn) ?>;
+const stockInList = <?= json_encode($stockIns) ?>;
+const stockInMetaById = {};
+stockInList.forEach(r => { stockInMetaById[r.stock_in_id] = r; });
 
 function openDetailModal(id, txnNo) {
     document.getElementById('modalTitle').textContent = 'Inbound Receipt: ' + txnNo;
+    const meta = stockInMetaById[id] || {};
+    const isCancelled = (meta.status || '').toLowerCase() === 'cancelled';
+
+    document.getElementById('modalInRef').textContent = meta.source_reference_no || '—';
+    document.getElementById('modalInStatus').innerHTML = isCancelled
+        ? '<span class="badge status-cancelled">Cancelled</span>'
+        : '<span class="badge status-completed">Received</span>';
+    document.getElementById('modalInOperator').textContent = meta.operator_name || 'System Operator';
+    document.getElementById('modalInDate').textContent = meta.transaction_date
+        ? meta.transaction_date + (meta.created_at ? ' (' + meta.created_at.slice(11, 16) + ')' : '')
+        : '—';
+
+    const remarksLabel = document.getElementById('modalInRemarksLabel');
+    const remarksEl = document.getElementById('modalInRemarks');
+    if (isCancelled) {
+        remarksLabel.textContent = 'Cancellation Reason';
+        remarksLabel.style.color = '#B91C1C';
+        remarksEl.style.color = '#991B1B';
+        remarksEl.style.fontWeight = '600';
+        const cancelReason = (meta.cancellation_reason && meta.cancellation_reason.trim() !== '') ? meta.cancellation_reason.trim() : '';
+        const origRemarks = (meta.remarks && meta.remarks.trim() !== '') ? meta.remarks.trim() : '';
+        if (cancelReason && origRemarks) {
+            remarksEl.textContent = cancelReason + '\n(Original Remarks: ' + origRemarks + ')';
+        } else {
+            remarksEl.textContent = cancelReason || origRemarks || 'No cancellation reason recorded.';
+        }
+    } else {
+        remarksLabel.textContent = 'Remarks / Notes';
+        remarksLabel.style.color = 'var(--gray)';
+        remarksEl.style.color = 'var(--panel-ink)';
+        remarksEl.style.fontWeight = 'normal';
+        remarksEl.textContent = (meta.remarks && meta.remarks.trim() !== '') ? meta.remarks : 'No remarks provided.';
+    }
+
     const tbody = document.getElementById('modalLineTableBody');
     tbody.innerHTML = '';
 
@@ -1367,13 +1442,60 @@ function filterStockInTable() {
     }
 }
 
+function resetStockInFilters() {
+    const search = document.getElementById('stockInSearch');
+    const source = document.getElementById('sourceTypeFilter');
+    const type = document.getElementById('itemTypeFilter');
+    if (search) search.value = '';
+    if (source) source.value = '';
+    if (type) type.value = '';
+    filterStockInTable();
+}
+
 // =============================================================================
 // SECTION 2: OUTBOUND SCRIPTS
 // =============================================================================
 const outLinesData = <?= json_encode($linesByStockOut) ?>;
+const stockOutList = <?= json_encode($stockOuts) ?>;
+const stockOutMetaById = {};
+stockOutList.forEach(r => { stockOutMetaById[r.stock_out_id] = r; });
 
 function openOutDetailModal(id, txnNo) {
     document.getElementById('modalOutTitle').textContent = 'Dispatch: ' + txnNo;
+    const meta = stockOutMetaById[id] || {};
+    const isCancelled = (meta.status || '').toLowerCase() === 'cancelled';
+
+    document.getElementById('modalOutRef').textContent = meta.source_reference_no || '—';
+    document.getElementById('modalOutStatus').innerHTML = isCancelled
+        ? '<span class="badge status-cancelled">Cancelled</span>'
+        : '<span class="badge status-completed">Dispatched</span>';
+    document.getElementById('modalOutOperator').textContent = meta.operator_name || 'System Operator';
+    document.getElementById('modalOutDate').textContent = meta.transaction_date
+        ? meta.transaction_date + (meta.created_at ? ' (' + meta.created_at.slice(11, 16) + ')' : '')
+        : '—';
+
+    const remarksLabel = document.getElementById('modalOutRemarksLabel');
+    const remarksEl = document.getElementById('modalOutRemarks');
+    if (isCancelled) {
+        remarksLabel.textContent = 'Cancellation Reason';
+        remarksLabel.style.color = '#B91C1C';
+        remarksEl.style.color = '#991B1B';
+        remarksEl.style.fontWeight = '600';
+        const cancelReason = (meta.cancellation_reason && meta.cancellation_reason.trim() !== '') ? meta.cancellation_reason.trim() : '';
+        const origRemarks = (meta.remarks && meta.remarks.trim() !== '') ? meta.remarks.trim() : '';
+        if (cancelReason && origRemarks) {
+            remarksEl.textContent = cancelReason + '\n(Original Remarks: ' + origRemarks + ')';
+        } else {
+            remarksEl.textContent = cancelReason || origRemarks || 'No cancellation reason recorded.';
+        }
+    } else {
+        remarksLabel.textContent = 'Remarks / Notes';
+        remarksLabel.style.color = 'var(--gray)';
+        remarksEl.style.color = 'var(--panel-ink)';
+        remarksEl.style.fontWeight = 'normal';
+        remarksEl.textContent = (meta.remarks && meta.remarks.trim() !== '') ? meta.remarks : 'No remarks provided.';
+    }
+
     const tbody = document.getElementById('modalOutTableBody');
     tbody.innerHTML = '';
 
@@ -1437,6 +1559,16 @@ function filterStockOutTable() {
     }
 }
 
+function resetStockOutFilters() {
+    const search = document.getElementById('stockOutSearch');
+    const dest = document.getElementById('stockOutDestFilter');
+    const type = document.getElementById('stockOutTypeFilter');
+    if (search) search.value = '';
+    if (dest) dest.value = '';
+    if (type) type.value = '';
+    filterStockOutTable();
+}
+
 function openCancelStockInModal(id, txnNo) {
     document.getElementById('cancelStockInId').value = id;
     document.getElementById('cancelStockInRef').textContent = txnNo;
@@ -1473,13 +1605,6 @@ function closeCancelStockOutModal() {
         modal.classList.remove('open');
         modal.style.display = 'none';
     }
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-    });
 }
 </script>
 

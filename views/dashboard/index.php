@@ -12,87 +12,79 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// 1. Total Raw Materials (count of unique active raw materials with inventory > 0 in assigned warehouse)
-$stmtRM = $pdo->prepare("
-    SELECT COUNT(DISTINCT inv.item_id) 
-    FROM inventory inv 
-    JOIN items i ON inv.item_id = i.item_id 
-    WHERE i.item_type = 'raw_material' 
-      AND i.status = 'active'
-      AND inv.quantity > 0
-      AND inv.warehouse_id = :wid
-");
-$stmtRM->execute([':wid' => $currentWarehouseId]);
-$totalRawMaterials = (int)$stmtRM->fetchColumn();
-
-// 2. Total Finished Goods (count of unique active finished goods with inventory > 0 in assigned warehouse)
-$stmtFG = $pdo->prepare("
-    SELECT COUNT(DISTINCT inv.item_id) 
-    FROM inventory inv 
-    JOIN items i ON inv.item_id = i.item_id 
-    WHERE i.item_type = 'finished_good' 
-      AND i.status = 'active'
-      AND inv.quantity > 0
-      AND inv.warehouse_id = :wid
-");
-$stmtFG->execute([':wid' => $currentWarehouseId]);
-$totalFinishedGoods = (int)$stmtFG->fetchColumn();
-
-// 3. Total Stock (net physical quantity of active items in assigned warehouse)
-$stmtStock = $pdo->prepare("
-    SELECT COALESCE(SUM(inv.quantity), 0) 
-    FROM inventory inv
-    JOIN items i ON inv.item_id = i.item_id
-    WHERE inv.warehouse_id = :wid
-      AND i.status = 'active'
-");
-$stmtStock->execute([':wid' => $currentWarehouseId]);
-$totalStock = (float)$stmtStock->fetchColumn();
-
-// 4. Low Stock Items count in assigned warehouse (active items only)
-$stmtLow = $pdo->prepare("
-    SELECT COUNT(*) 
+// 1. Primary Inventory Status Table for assigned warehouse (active catalog items only)
+$stmtInventory = $pdo->prepare("
+    SELECT 
+        w.warehouse_code,
+        w.warehouse_name,
+        i.item_code,
+        i.item_name,
+        i.item_type,
+        i.unit,
+        COALESCE(inv.quantity, 0) AS quantity,
+        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level
     FROM items i
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid
+    JOIN warehouses w ON w.warehouse_id = :wid1
+    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid2
     WHERE i.status = 'active'
-      AND COALESCE(inv.quantity, 0) <= COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level)
+    ORDER BY i.item_type ASC, i.item_name ASC
 ");
-$stmtLow->execute([':wid' => $currentWarehouseId]);
-$lowStockCount = (int)$stmtLow->fetchColumn();
+$stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
+$inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
-// 5. Recent Stock In (inbound volume received for assigned warehouse in last 30 days)
+// Compute KPI metrics directly from $inventoryRows (eliminating 4 redundant SQL queries)
+$totalRawMaterials  = 0;
+$totalFinishedGoods = 0;
+$totalStock         = 0.0;
+$lowStockCount      = 0;
+
+foreach ($inventoryRows as $row) {
+    if (($row['item_type'] ?? '') === 'raw_material') {
+        $totalRawMaterials++;
+    } elseif (($row['item_type'] ?? '') === 'finished_good') {
+        $totalFinishedGoods++;
+    }
+    $qty = (float)($row['quantity'] ?? 0);
+    $reorder = (float)($row['default_reorder_level'] ?? 0);
+    $totalStock += $qty;
+    if ($qty <= $reorder) {
+        $lowStockCount++;
+    }
+}
+
+// 2. Recent Stock In (combined count & volume received for assigned warehouse in last 30 days)
 $stmtSI = $pdo->prepare("
-    SELECT COALESCE(SUM(sii.quantity), 0)
+    SELECT 
+        COUNT(DISTINCT si.stock_in_id) AS txn_count,
+        COALESCE(SUM(sii.quantity), 0) AS total_qty
     FROM stock_ins si
-    JOIN stock_in_items sii ON si.stock_in_id = sii.stock_in_id
-    WHERE si.status = 'completed' AND si.warehouse_id = :wid AND si.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    LEFT JOIN stock_in_items sii ON si.stock_in_id = sii.stock_in_id
+    WHERE si.status = 'completed'
+      AND si.warehouse_id = :wid
+      AND si.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
 ");
 $stmtSI->execute([':wid' => $currentWarehouseId]);
-$recentStockInVolume = (float)$stmtSI->fetchColumn();
+$siRow = $stmtSI->fetch(PDO::FETCH_ASSOC);
+$recentStockInCount  = (int)($siRow['txn_count'] ?? 0);
+$recentStockInVolume = (float)($siRow['total_qty'] ?? 0);
 
-$stmtSICount = $pdo->prepare("
-    SELECT COUNT(*) FROM stock_ins WHERE status = 'completed' AND warehouse_id = :wid
-");
-$stmtSICount->execute([':wid' => $currentWarehouseId]);
-$recentStockInCount = (int)$stmtSICount->fetchColumn();
-
-// 6. Recent Stock Out (outbound volume dispatched for assigned warehouse in last 30 days)
+// 3. Recent Stock Out (combined count & volume dispatched for assigned warehouse in last 30 days)
 $stmtSO = $pdo->prepare("
-    SELECT COALESCE(SUM(soi.quantity), 0)
+    SELECT 
+        COUNT(DISTINCT so.stock_out_id) AS txn_count,
+        COALESCE(SUM(soi.quantity), 0) AS total_qty
     FROM stock_outs so
-    JOIN stock_out_items soi ON so.stock_out_id = soi.stock_out_id
-    WHERE so.status = 'completed' AND so.warehouse_id = :wid AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    LEFT JOIN stock_out_items soi ON so.stock_out_id = soi.stock_out_id
+    WHERE so.status = 'completed'
+      AND so.warehouse_id = :wid
+      AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
 ");
 $stmtSO->execute([':wid' => $currentWarehouseId]);
-$recentStockOutVolume = (float)$stmtSO->fetchColumn();
+$soRow = $stmtSO->fetch(PDO::FETCH_ASSOC);
+$recentStockOutCount  = (int)($soRow['txn_count'] ?? 0);
+$recentStockOutVolume = (float)($soRow['total_qty'] ?? 0);
 
-$stmtSOCount = $pdo->prepare("
-    SELECT COUNT(*) FROM stock_outs WHERE status = 'completed' AND warehouse_id = :wid
-");
-$stmtSOCount->execute([':wid' => $currentWarehouseId]);
-$recentStockOutCount = (int)$stmtSOCount->fetchColumn();
-
-// 7. Recent Inventory Activity in assigned warehouse
+// 4. Recent Inventory Activity in assigned warehouse
 $stmtRecent = $pdo->prepare("
     SELECT 
         sm.movement_id,
@@ -117,26 +109,6 @@ $stmtRecent = $pdo->prepare("
 ");
 $stmtRecent->execute([':wid' => $currentWarehouseId]);
 $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
-
-// 8. Primary Inventory Status Table for assigned warehouse (active catalog items only)
-$stmtInventory = $pdo->prepare("
-    SELECT 
-        w.warehouse_code,
-        w.warehouse_name,
-        i.item_code,
-        i.item_name,
-        i.item_type,
-        i.unit,
-        COALESCE(inv.quantity, 0) AS quantity,
-        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level
-    FROM items i
-    JOIN warehouses w ON w.warehouse_id = :wid1
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid2
-    WHERE i.status = 'active'
-    ORDER BY i.item_type ASC, i.item_name ASC
-");
-$stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
-$inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!-- Page Header -->
@@ -294,7 +266,8 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                         <?php 
                             $isIncoming = (float)$act['quantity_in'] > 0;
                             $isTransfer = strpos($act['movement_type'], 'TRANSFER') !== false;
-                            $pillClass = $isTransfer ? 'mov-transfer' : ($isIncoming ? 'mov-in' : 'mov-out');
+                            $isAdj = strpos($act['movement_type'], 'ADJUSTMENT') !== false;
+                            $pillClass = $isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($isIncoming ? 'mov-in' : 'mov-out'));
                         ?>
                         <tr>
                             <td>
@@ -308,7 +281,7 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                             </td>
                             <td>
                                 <span class="badge <?= $pillClass ?>">
-                                    <?= htmlspecialchars($act['movement_type']) ?>
+                                    <?= htmlspecialchars(str_replace('_', ' ', $act['movement_type'])) ?>
                                 </span>
                             </td>
                             <td style="font-weight: 700; font-size: 13.5px;">
@@ -365,7 +338,12 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                     </tr>
                 <?php else: ?>
                     <?php foreach ($inventoryRows as $row): ?>
-                        <?php $isOptimal = (float)$row['quantity'] > (float)$row['default_reorder_level']; ?>
+                        <?php
+                            $qtyOnHand = (float)$row['quantity'];
+                            $reorderThreshold = (float)$row['default_reorder_level'];
+                            $isOutOfStock = $qtyOnHand <= 0;
+                            $isLowStock = !$isOutOfStock && $qtyOnHand <= $reorderThreshold;
+                        ?>
                         <tr>
                             <td style="font-family: monospace; font-weight: 600; color: var(--panel-ink);">
                                 <?= htmlspecialchars($row['item_code']) ?>
@@ -386,21 +364,30 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
                                 <?= formatQty($row['default_reorder_level']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                             </td>
                             <td>
-                                <?php if ($isOptimal): ?>
-                                    <span class="badge status-optimal">
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                            <polyline points="20 6 9 17 4 12"/>
-                                        </svg>
-                                        Optimal
-                                    </span>
-                                <?php else: ?>
+                                <?php if ($isOutOfStock): ?>
                                     <span class="badge status-alert">
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                             <circle cx="12" cy="12" r="10"/>
                                             <line x1="12" y1="8" x2="12" y2="12"/>
                                             <line x1="12" y1="16" x2="12.01" y2="16"/>
                                         </svg>
+                                        Out of Stock
+                                    </span>
+                                <?php elseif ($isLowStock): ?>
+                                    <span class="badge status-pending">
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <line x1="12" y1="8" x2="12" y2="12"/>
+                                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                        </svg>
                                         Low Stock
+                                    </span>
+                                <?php else: ?>
+                                    <span class="badge status-optimal">
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"/>
+                                        </svg>
+                                        Optimal
                                     </span>
                                 <?php endif; ?>
                             </td>

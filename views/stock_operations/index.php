@@ -16,21 +16,7 @@ $activeGroup = 'inventory';
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
-require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
-
-$auth = $auth ?? new AuthController();
-$pdo = $pdo ?? Database::getConnection();
-$currentUser = $currentUser ?? ($auth->getCurrentUser() ?? []);
-$currentWarehouseId = $currentWarehouseId ?? (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
-
-/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
-$assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse : [
-    'warehouse_id'   => $currentWarehouseId ?? 1,
-    'warehouse_code' => 'WH',
-    'warehouse_name' => 'Assigned Warehouse',
-    'location'       => 'Default Location'
-];
 
 $successMessage = null;
 $errorMessage   = null;
@@ -278,6 +264,8 @@ $stmtRecv = $pdo->prepare("
         st.transaction_date,
         st.status,
         st.remarks,
+        st.cancellation_reason,
+        st.cancelled_at,
         st.created_at,
         u.name AS requested_by,
         COUNT(sti.item_id) AS total_items,
@@ -286,7 +274,7 @@ $stmtRecv = $pdo->prepare("
         MIN(i.item_code) AS first_item_code,
         MIN(i.item_type) AS first_item_type,
         MIN(i.unit) AS first_unit,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(sti.quantity, 1), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
+        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sti.quantity, 2))), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
     JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
@@ -314,6 +302,8 @@ $stmtSent = $pdo->prepare("
         st.transaction_date,
         st.status,
         st.remarks,
+        st.cancellation_reason,
+        st.cancelled_at,
         st.created_at,
         u.name AS requested_by,
         COUNT(sti.item_id) AS total_items,
@@ -322,7 +312,7 @@ $stmtSent = $pdo->prepare("
         MIN(i.item_code) AS first_item_code,
         MIN(i.item_type) AS first_item_type,
         MIN(i.unit) AS first_unit,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', FORMAT(sti.quantity, 1), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
+        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sti.quantity, 2))), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
     JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
@@ -357,8 +347,8 @@ while ($row = $stmtLines->fetch(PDO::FETCH_ASSOC)) {
     $linesByTransfer[(int)$row['stock_transfer_id']][] = $row;
 }
 
-$totalReceived       = count($receivedTransfers);
-$totalTransferred    = count($transferredTransfers);
+$totalReceived       = count(array_filter($receivedTransfers, fn($t) => ($t['status'] ?? '') !== 'cancelled'));
+$totalTransferred    = count(array_filter($transferredTransfers, fn($t) => ($t['status'] ?? '') !== 'cancelled'));
 $totalTransfersCount = $totalReceived + $totalTransferred;
 $allInvolved         = array_merge($receivedTransfers, $transferredTransfers);
 $completedCount      = count(array_filter($allInvolved, fn($t) => ($t['status'] ?? '') === 'completed'));
@@ -391,6 +381,8 @@ $stmtAdj = $pdo->prepare("
         sa.transaction_number,
         sa.adjustment_date,
         sa.reason,
+        sa.cancellation_reason,
+        sa.cancelled_at,
         sa.status,
         sa.created_at,
         w.warehouse_code,
@@ -426,6 +418,8 @@ $stmtBad = $pdo->prepare("
         bp.condition_type,
         bp.quantity,
         bp.reason,
+        bp.cancellation_reason,
+        bp.cancelled_at,
         bp.status,
         bp.created_at,
         w.warehouse_code,
@@ -446,8 +440,8 @@ $stmtBad = $pdo->prepare("
 $stmtBad->execute([':wid' => $currentWarehouseId]);
 $badProducts = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
 
-$totalAdjustments = count($adjustments);
-$totalBadProducts = count($badProducts);
+$totalAdjustments = count(array_filter($adjustments, fn($a) => !in_array($a['status'] ?? '', ['cancelled', 'rejected'], true)));
+$totalBadProducts = count(array_filter($badProducts, fn($b) => ($b['status'] ?? '') !== 'cancelled'));
 $netVariance      = 0.0;
 foreach ($adjustments as $a) {
     if (($a['status'] ?? '') === 'approved') {
@@ -525,7 +519,17 @@ if ($selectedItemId > 0) {
             sm.created_at,
             w.warehouse_code,
             w.warehouse_name,
-            COALESCE(si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, '') AS notes
+            CASE
+                WHEN sm.movement_type LIKE '%_CANCEL' THEN COALESCE(
+                    NULLIF(TRIM(si.cancellation_reason), ''),
+                    NULLIF(TRIM(so.cancellation_reason), ''),
+                    NULLIF(TRIM(st.cancellation_reason), ''),
+                    NULLIF(TRIM(sa.cancellation_reason), ''),
+                    NULLIF(TRIM(bp.cancellation_reason), ''),
+                    si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, ''
+                )
+                ELSE COALESCE(si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, '')
+            END AS notes
         FROM stock_movements sm
         JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
         LEFT JOIN stock_ins si ON sm.stock_in_id = si.stock_in_id
@@ -1206,8 +1210,11 @@ if ($selectedItemId > 0) {
                                 <td style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
                                     -<?= formatQty($bp['quantity']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
                                 </td>
-                                <td style="font-size: 12px; color: var(--gray); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($bp['reason']) ?>">
+                                <td style="font-size: 12px; color: var(--gray); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($bp['reason'] . (!empty($bp['cancellation_reason']) ? ' | Cancelled: ' . $bp['cancellation_reason'] : '')) ?>">
                                     <?= htmlspecialchars($bp['reason']) ?>
+                                    <?php if (!empty($bp['cancellation_reason'])): ?>
+                                        <div style="font-size: 11px; color: #B91C1C; font-weight: 600;">Cancelled: <?= htmlspecialchars($bp['cancellation_reason']) ?></div>
+                                    <?php endif; ?>
                                 </td>
                                 <td style="font-size: 12px;">
                                     <?= htmlspecialchars($bp['reported_by_name']) ?>
@@ -1385,7 +1392,8 @@ if ($selectedItemId > 0) {
                                 $qtyIn  = (float)$m['quantity_in'];
                                 $qtyOut = (float)$m['quantity_out'];
                                 $isTransfer = strpos($m['movement_type'], 'TRANSFER') !== false;
-                                $pillClass = $isTransfer ? 'mov-transfer' : ($qtyIn > 0 ? 'mov-in' : 'mov-out');
+                                $isAdj = strpos($m['movement_type'], 'ADJUSTMENT') !== false;
+                                $pillClass = $isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($qtyIn > 0 ? 'mov-in' : 'mov-out'));
                             ?>
                             <tr>
                                 <td style="font-size: 12.5px; white-space: nowrap; color: var(--gray);">
@@ -1396,7 +1404,7 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td>
                                     <span class="badge <?= $pillClass ?>">
-                                        <?= htmlspecialchars($m['movement_type']) ?>
+                                        <?= htmlspecialchars(str_replace('_', ' ', $m['movement_type'])) ?>
                                     </span>
                                 </td>
                                 <td style="text-align: right; font-weight: 700; color: #15803D;">
@@ -1465,9 +1473,14 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
 
-            <div id="modalTrfRemarksContainer" style="margin-bottom: 16px; background: #F1F5F9; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
+            <div id="modalTrfRemarksContainer" style="margin-bottom: 12px; background: #F1F5F9; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
                 <strong style="color: #475569; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Transfer Notes:</strong>
                 <span id="modalTrfRemarks" style="color: var(--panel-ink);"></span>
+            </div>
+
+            <div id="modalTrfCancelContainer" style="margin-bottom: 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
+                <strong style="color: #B91C1C; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Cancellation Reason:</strong>
+                <span id="modalTrfCancelReason" style="color: #991B1B; font-weight: 600;"></span>
             </div>
 
             <div style="font-size: 13px; font-weight: 700; color: var(--panel-ink); margin-bottom: 8px;">
@@ -1486,6 +1499,9 @@ if ($selectedItemId > 0) {
                     <tbody id="modalTrfTableBody"></tbody>
                 </table>
             </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeTransferDetailModal()">Close</button>
         </div>
     </div>
 </div>
@@ -1993,10 +2009,16 @@ if ($selectedItemId > 0) {
                 <div id="modalAdjReason" style="color: var(--gray); background: #FAF5FF; border: 1px solid #E9D5FF; border-radius: 6px; padding: 8px 12px;">—</div>
             </div>
 
+            <div id="modalAdjCancelContainer" style="font-size: 12.5px; display: none;">
+                <strong id="modalAdjCancelLabel" style="color: #B91C1C; display: block; margin-bottom: 2px;">Cancellation / Rejection Reason:</strong>
+                <div id="modalAdjCancelReason" style="color: #991B1B; font-weight: 600; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 8px 12px;">—</div>
+            </div>
+
             <div id="modalAdjAuditRow" style="font-size: 11.5px; color: var(--gray);"></div>
         </div>
-        <div id="modalAdjFooter" class="modal-footer" style="display: none; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div id="modalAdjFooter" class="modal-footer" style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap;">
             <div id="modalAdjActionBtns" style="display: flex; align-items: center; gap: 8px;"></div>
+            <button type="button" class="btn btn-secondary" onclick="closeAdjDetailModal()">Close</button>
         </div>
     </div>
 </div>
@@ -2153,6 +2175,17 @@ function openTransferDetailModal(trf, direction) {
         remarksCont.style.display = 'block';
     } else {
         remarksCont.style.display = 'none';
+    }
+
+    const cancelElem = document.getElementById('modalTrfCancelReason');
+    const cancelCont = document.getElementById('modalTrfCancelContainer');
+    if (cancelElem && cancelCont) {
+        if (trf.cancellation_reason && trf.cancellation_reason.trim() !== '') {
+            cancelElem.textContent = trf.cancellation_reason;
+            cancelCont.style.display = 'block';
+        } else {
+            cancelCont.style.display = 'none';
+        }
     }
 
     const tbody = document.getElementById('modalTrfTableBody');
@@ -2413,9 +2446,27 @@ function openAdjDetailModal(row) {
 
     document.getElementById('modalAdjReason').textContent = row.reason || 'No notes provided';
 
+    const cancelCont = document.getElementById('modalAdjCancelContainer');
+    const cancelLabel = document.getElementById('modalAdjCancelLabel');
+    const cancelReasonEl = document.getElementById('modalAdjCancelReason');
+    if (cancelCont && cancelReasonEl) {
+        if (row.cancellation_reason && row.cancellation_reason.trim() !== '') {
+            if (cancelLabel) {
+                cancelLabel.textContent = (row.status === 'rejected') ? 'Rejection Reason:' : 'Cancellation Reason:';
+            }
+            cancelReasonEl.textContent = row.cancellation_reason;
+            cancelCont.style.display = 'block';
+        } else {
+            cancelCont.style.display = 'none';
+        }
+    }
+
     let audit = '';
     if (row.approved_by_name) audit += 'Approved by: ' + row.approved_by_name;
-    if (row.cancelled_by_name) audit += (audit ? ' &middot; ' : '') + 'Cancelled by: ' + row.cancelled_by_name;
+    if (row.cancelled_by_name) {
+        const actionWord = (row.status === 'rejected') ? 'Rejected by: ' : 'Cancelled by: ';
+        audit += (audit ? ' &middot; ' : '') + actionWord + row.cancelled_by_name;
+    }
     document.getElementById('modalAdjAuditRow').innerHTML = audit;
 
     const actionBtns = document.getElementById('modalAdjActionBtns');
@@ -2430,18 +2481,16 @@ function openAdjDetailModal(row) {
                     Reject
                 </button>
             `;
-            if (footerEl) footerEl.style.display = 'flex';
         } else if (row.status === 'approved') {
             actionBtns.innerHTML = `
                 <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openCancelAdjModal(currentDetailAdjRow);">
                     Cancel Adjustment
                 </button>
             `;
-            if (footerEl) footerEl.style.display = 'flex';
         } else {
             actionBtns.innerHTML = '';
-            if (footerEl) footerEl.style.display = 'none';
         }
+        if (footerEl) footerEl.style.display = 'flex';
     }
 
     document.getElementById('adjustmentDetailModal').style.display = 'flex';
@@ -2652,39 +2701,6 @@ document.addEventListener('click', function(e) {
         }
     }
 });
-
-// Shared Helpers
-function filterTable(inputId, tableId) {
-    const input = document.getElementById(inputId);
-    const table = document.getElementById(tableId);
-    if (!input || !table) return;
-    const filter = input.value.toUpperCase();
-    const tr = table.getElementsByTagName('tr');
-
-    for (let i = 1; i < tr.length; i++) {
-        if (tr[i].cells.length <= 1) continue;
-        let match = false;
-        const tds = tr[i].getElementsByTagName('td');
-        for (let j = 0; j < tds.length; j++) {
-            if (tds[j]) {
-                const txt = tds[j].textContent || tds[j].innerText;
-                if (txt.toUpperCase().indexOf(filter) > -1) {
-                    match = true;
-                    break;
-                }
-            }
-        }
-        tr[i].dataset.filteredOut = match ? 'false' : 'true';
-    }
-    if (table.paginationUpdate) table.paginationUpdate(true);
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-    });
-}
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

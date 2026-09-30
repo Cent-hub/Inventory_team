@@ -11,17 +11,10 @@ $currentUser = $currentUser ?? [];
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
 $isInventoryActive = in_array($activePage, [
-    'raw_materials', 'finished_goods', 'items', 'stock_in', 'stock_out', 
-    'stock_transfer', 'stock_adjustment', 'stock_card', 'movement', 'stock_operations', 'inbound_outbound'
+    'raw_materials', 'finished_goods', 'items', 'stock_operations', 'inbound_outbound'
 ], true);
 
-$isReportsActive = in_array($activePage, ['reports', 'inventory_reports', 'stock_transactions'], true) || ($activeGroup === 'reports');
-$isStockTransactionsActive = ($activePage === 'stock_transactions');
-$isInventoryReportsActive = ($isReportsActive && !$isStockTransactionsActive);
-
-$isSettingsActive = ($activeGroup === 'settings' || in_array($activePage, [
-    'settings', 'my_account', 'change_password', 'notifications', 'security', 'backup_export'
-], true) || ($activePage === 'users' && !$isSuperAdmin));
+$isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && !$isSuperAdmin));
 ?>
 <aside id="appSidebar" class="sidebar" aria-label="Main Navigation">
     <!-- Brand Header -->

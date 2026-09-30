@@ -14,11 +14,14 @@ require_once __DIR__ . '/../layouts/navbar.php';
 
 $successMessage = null;
 $errorMessage   = null;
+$canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 
 // Handle New Item Creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_item') {
     if (!validateCsrfToken()) {
         $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } elseif (!$canManageItems) {
+        $errorMessage = "Access denied: Only Administrators can create catalog items.";
     } else {
         $itemCode        = strtoupper(trim($_POST['item_code'] ?? ''));
         $itemName        = trim($_POST['item_name'] ?? '');
@@ -122,6 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item') {
     if (!validateCsrfToken()) {
         $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } elseif (!$canManageItems) {
+        $errorMessage = "Access denied: Only Administrators can update catalog items.";
     } else {
         $itemId          = (int)($_POST['item_id'] ?? 0);
         $itemName        = trim($_POST['item_name'] ?? '');
@@ -147,66 +152,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
             if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
                 $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
+            } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
+                $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
                 try {
-                    $stmtExist = $pdo->prepare("SELECT item_code, item_type FROM items WHERE item_id = ?");
-                    $stmtExist->execute([$itemId]);
-                    $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
-
-                    if (!$existingItem) {
-                        $errorMessage = "Selected catalog item does not exist.";
+                    // Verify active category exists
+                    $stmtCat = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE category_id = ? AND status = 'active'");
+                    $stmtCat->execute([$categoryId]);
+                    if ((int)$stmtCat->fetchColumn() === 0) {
+                        $errorMessage = "Selected category does not exist or is inactive.";
                     } else {
-                        $stmtUpd = $pdo->prepare("
-                            UPDATE items
-                            SET item_name = ?,
-                                description = ?,
-                                category_id = ?,
-                                unit = ?,
-                                default_reorder_level = ?,
-                                status = ?
-                            WHERE item_id = ?
-                        ");
-                        $stmtUpd->execute([
-                            $itemName,
-                            $description ?: null,
-                            $categoryId,
-                            $unit,
-                            round($reorderLevel, 3),
-                            $itemStatus,
-                            $itemId
-                        ]);
+                        $stmtExist = $pdo->prepare("SELECT item_code, item_type FROM items WHERE item_id = ?");
+                        $stmtExist->execute([$itemId]);
+                        $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
 
-                        // Keep warehouse inventory reorder levels synchronized with master catalog
-                        $stmtSyncInv = $pdo->prepare("
-                            UPDATE inventory
-                            SET reorder_level = ?
-                            WHERE item_id = ?
-                        ");
-                        $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
+                        if (!$existingItem) {
+                            $errorMessage = "Selected catalog item does not exist.";
+                        } else {
+                            $stmtUpd = $pdo->prepare("
+                                UPDATE items
+                                SET item_name = ?,
+                                    description = ?,
+                                    category_id = ?,
+                                    unit = ?,
+                                    default_reorder_level = ?,
+                                    status = ?
+                                WHERE item_id = ?
+                            ");
+                            $stmtUpd->execute([
+                                $itemName,
+                                $description ?: null,
+                                $categoryId,
+                                $unit,
+                                round($reorderLevel, 3),
+                                $itemStatus,
+                                $itemId
+                            ]);
 
-                        // Ensure all active warehouses have an inventory row for this item
-                        $stmtSeedMissing = $pdo->prepare("
-                            INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
-                            SELECT ?, warehouse_id, 0.000, ?
-                            FROM warehouses
-                            WHERE status = 'active'
-                        ");
-                        $stmtSeedMissing->execute([$itemId, round($reorderLevel, 3)]);
+                            // Keep warehouse inventory reorder levels synchronized with master catalog
+                            $stmtSyncInv = $pdo->prepare("
+                                UPDATE inventory
+                                SET reorder_level = ?
+                                WHERE item_id = ?
+                            ");
+                            $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
 
-                        $userId = (int)($currentUser['id'] ?? 1);
-                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                        AccountabilityService::log([
-                            'user_id'          => $userId,
-                            'team'             => 'Inventory',
-                            'action_type'      => 'ITEM_UPDATED',
-                            'channel'          => 'UI',
-                            'item_id'          => $itemId,
-                            'warehouse_id'     => $currentWarehouseId ?: 1,
-                            'reference_number' => $existingItem['item_code'],
-                            'notes'            => "Master item updated: {$itemName} (Status: {$itemStatus}, Reorder: " . round($reorderLevel, 3) . " {$unit})"
-                        ]);
+                            // Ensure all active warehouses have an inventory row for this item
+                            $stmtSeedMissing = $pdo->prepare("
+                                INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
+                                SELECT ?, warehouse_id, 0.000, ?
+                                FROM warehouses
+                                WHERE status = 'active'
+                            ");
+                            $stmtSeedMissing->execute([$itemId, round($reorderLevel, 3)]);
 
-                        $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
+                            $userId = (int)($currentUser['id'] ?? 1);
+                            require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                            AccountabilityService::log([
+                                'user_id'          => $userId,
+                                'team'             => 'Inventory',
+                                'action_type'      => 'ITEM_UPDATED',
+                                'channel'          => 'UI',
+                                'item_id'          => $itemId,
+                                'warehouse_id'     => $currentWarehouseId ?: 1,
+                                'reference_number' => $existingItem['item_code'],
+                                'notes'            => "Master item updated: {$itemName} (Status: {$itemStatus}, Reorder: " . round($reorderLevel, 3) . " {$unit})"
+                            ]);
+
+                            $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
+                        }
                     }
                 } catch (Exception $e) {
                     $errorMessage = "Failed to update item: " . $e->getMessage();
@@ -240,12 +254,13 @@ $stmtItems = $pdo->query("
 ");
 $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
-// KPI metrics
+// KPI metrics (count active SKUs for Raw Materials & Finished Goods so totals match Inventory pages)
 $totalSKUs    = count($itemsList);
-$rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material'));
-$finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good'));
+$activeSKUs   = count(array_filter($itemsList, fn($x) => ($x['status'] ?? 'active') === 'active'));
+$inactiveSKUs = $totalSKUs - $activeSKUs;
+$rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material' && ($x['status'] ?? 'active') === 'active'));
+$finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good' && ($x['status'] ?? 'active') === 'active'));
 $catCount     = count($categories);
-$canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 ?>
 
 <!-- Page Header -->
@@ -287,7 +302,7 @@ $canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((strin
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <div class="stat-meta">Across all categories</div>
+        <div class="stat-meta"><?= $inactiveSKUs > 0 ? "{$activeSKUs} active · {$inactiveSKUs} inactive" : 'Across all categories' ?></div>
     </div>
 
     <div class="stat-card stat-gold">

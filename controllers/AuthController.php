@@ -250,7 +250,7 @@ class AuthController {
         }
 
         $stmt = $this->db->prepare("
-            SELECT user_id, name, email, password, role, warehouse_id, api_token, status
+            SELECT user_id, name, email, password, role, team, warehouse_id, api_token, status
             FROM users 
             WHERE email = :email 
             LIMIT 1
@@ -309,19 +309,9 @@ class AuthController {
         $this->clearLoginRateLimit();
 
         // Resolve assigned warehouse for user session without mutating database record
-        $assignedWhId = !empty($user['warehouse_id']) ? (int)$user['warehouse_id'] : null;
-        if (!$assignedWhId) {
-            $emailLower = strtolower($user['email']);
-            if (str_contains($emailLower, 'procure') || str_contains($emailLower, 'raw') || str_contains($emailLower, 'admin')) {
-                $assignedWhId = 1; // WH-MAIN (Laguna)
-            } elseif (str_contains($emailLower, 'sales') || str_contains($emailLower, 'bond')) {
-                $assignedWhId = 2; // WH-BOND (Manila)
-            } elseif (str_contains($emailLower, 'prod') || str_contains($emailLower, 'bott') || str_contains($emailLower, 'fg')) {
-                $assignedWhId = 3; // WH-BOTT (Bulacan)
-            } else {
-                $assignedWhId = 1;
-            }
-        }
+        $assignedWhId = !empty($user['warehouse_id'])
+            ? (int)$user['warehouse_id']
+            : self::resolveDefaultWarehouseId($user['email'] ?? '');
 
         // Prevent session fixation attack
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
@@ -332,6 +322,7 @@ class AuthController {
         $_SESSION['user_name']      = $user['name'];
         $_SESSION['user_email']     = $user['email'];
         $_SESSION['user_role']      = $user['role'];
+        $_SESSION['user_team']      = $user['team'] ?? 'Inventory';
         $_SESSION['warehouse_id']   = $assignedWhId;
         $_SESSION['logged_in']      = true;
         $_SESSION['login_time']     = time();
@@ -356,125 +347,8 @@ class AuthController {
                 'name'         => $user['name'],
                 'email'        => $user['email'],
                 'role'         => $user['role'],
+                'team'         => $user['team'] ?? 'Inventory',
                 'warehouse_id' => $assignedWhId
-            ],
-            'redirect' => $redirect
-        ];
-    }
-
-    /**
-     * Register a new warehouse operator / administrator account
-     */
-    public function register(string $name, string $email, string $password, string $confirmPassword, ?int $warehouseId = null): array {
-        $name  = trim($name);
-        $email = trim(filter_var($email, FILTER_SANITIZE_EMAIL));
-
-        if (empty($name) && !empty($email)) {
-            $prefix = strstr($email, '@', true);
-            $name = $prefix ? ucwords(str_replace(['.', '_', '-'], ' ', $prefix)) : 'Administrator';
-        }
-
-        if (empty($email) || empty($password)) {
-            return [
-                'success' => false,
-                'error'   => 'All required fields must be filled.'
-            ];
-        }
-
-        if (mb_strlen($name) < 2 || mb_strlen($name) > 100) {
-            $name = 'Administrator';
-        }
-
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return [
-                'success' => false,
-                'error'   => 'Please enter a valid email address.'
-            ];
-        }
-
-        if (strlen($password) < 6) {
-            return [
-                'success' => false,
-                'error'   => 'Password must be at least 6 characters in length.'
-            ];
-        }
-
-        if ($password !== $confirmPassword) {
-            return [
-                'success' => false,
-                'error'   => 'Password and confirmation password do not match.'
-            ];
-        }
-
-        // Validate warehouse if provided
-        if ($warehouseId !== null && $warehouseId > 0) {
-            $whStmt = $this->db->prepare("SELECT warehouse_id FROM warehouses WHERE warehouse_id = :id AND status = 'active'");
-            $whStmt->execute([':id' => $warehouseId]);
-            if (!$whStmt->fetch()) {
-                return [
-                    'success' => false,
-                    'error'   => 'Selected warehouse branch is invalid or inactive.'
-                ];
-            }
-        }
-
-        // Check for duplicate email
-        $checkStmt = $this->db->prepare("SELECT user_id FROM users WHERE email = :email LIMIT 1");
-        $checkStmt->execute([':email' => $email]);
-        if ($checkStmt->fetch()) {
-            return [
-                'success' => false,
-                'error'   => 'An account with this email address already exists.'
-            ];
-        }
-
-        // Hash password securely with bcrypt
-        $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 10]);
-
-        // Generate raw API token and store SHA-256 hash for defense-in-depth
-        $rawToken = 'usr_' . bin2hex(random_bytes(24));
-        $hashedToken = hash('sha256', $rawToken);
-
-        $warehouseId = ($warehouseId !== null && $warehouseId > 0) ? $warehouseId : 1;
-
-        $insertStmt = $this->db->prepare("
-            INSERT INTO users (name, email, password, role, warehouse_id, api_token, status, created_at, updated_at)
-            VALUES (:name, :email, :password, 'admin', :warehouse_id, :api_token, 'active', NOW(), NOW())
-        ");
-
-        $insertStmt->execute([
-            ':name'         => $name,
-            ':email'        => $email,
-            ':password'     => $passwordHash,
-            ':warehouse_id' => $warehouseId,
-            ':api_token'    => $hashedToken
-        ]);
-
-        $newUserId = (int)$this->db->lastInsertId();
-
-        // Auto-login newly registered user
-        $this->initSession();
-        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-            @session_regenerate_id(true);
-        }
-        $_SESSION['user_id']        = $newUserId;
-        $_SESSION['user_name']      = $name;
-        $_SESSION['user_email']     = $email;
-        $_SESSION['user_role']      = 'admin';
-        $_SESSION['warehouse_id']   = $warehouseId;
-        $_SESSION['logged_in']      = true;
-        $_SESSION['login_time']     = time();
-
-        $redirect = $this->getDashboardRedirectUrl();
-
-        return [
-            'success'  => true,
-            'message'  => 'Account successfully created. Welcome to Casklog!',
-            'user'     => [
-                'id'    => $newUserId,
-                'name'  => $name,
-                'email' => $email,
-                'role'  => 'admin'
             ],
             'redirect' => $redirect
         ];
@@ -796,23 +670,6 @@ class AuthController {
     }
 
     /**
-     * Get active warehouses for branch selector dropdown
-     */
-    public function getActiveWarehouses(): array {
-        try {
-            $stmt = $this->db->query("
-                SELECT warehouse_id, warehouse_code, warehouse_name, location 
-                FROM warehouses 
-                WHERE status = 'active' 
-                ORDER BY warehouse_id ASC
-            ");
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            return [];
-        }
-    }
-
-    /**
      * Check if currently authenticated
      */
     public function isAuthenticated(): bool {
@@ -832,7 +689,22 @@ class AuthController {
             'name'         => $_SESSION['user_name'] ?? 'Warehouse User',
             'email'        => $_SESSION['user_email'] ?? '',
             'role'         => $_SESSION['user_role'] ?? 'admin',
+            'team'         => $_SESSION['user_team'] ?? 'Inventory',
             'warehouse_id' => (int)($_SESSION['warehouse_id'] ?? 1)
         ];
+    }
+
+    /**
+     * Resolve default warehouse ID from user email when warehouse_id is not explicitly set
+     */
+    public static function resolveDefaultWarehouseId(?string $email): int {
+        $emailLower = strtolower(trim((string)$email));
+        if (str_contains($emailLower, 'sales') || str_contains($emailLower, 'bond')) {
+            return 2; // WH-BOND (Manila)
+        }
+        if (str_contains($emailLower, 'prod') || str_contains($emailLower, 'bott') || str_contains($emailLower, 'fg')) {
+            return 3; // WH-BOTT (Bulacan)
+        }
+        return 1; // WH-MAIN (Laguna)
     }
 }

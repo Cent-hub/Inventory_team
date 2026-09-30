@@ -55,23 +55,19 @@ $stmt = $pdo->prepare("
 $stmt->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $finishedGoods = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Metrics scoped strictly to assigned warehouse
+// Metrics scoped strictly to assigned warehouse (computed from $finishedGoods without extra queries)
 $totalFGSKUs = count($finishedGoods);
+$totalFGQty  = 0.0;
+$lowStockFG  = 0;
 
-$stmtFGQty = $pdo->prepare("SELECT COALESCE(SUM(inv.quantity), 0) FROM inventory inv JOIN items i ON inv.item_id = i.item_id WHERE i.item_type = 'finished_good' AND i.status = 'active' AND inv.warehouse_id = :wid");
-$stmtFGQty->execute([':wid' => $currentWarehouseId]);
-$totalFGQty = (float)$stmtFGQty->fetchColumn();
-
-$stmtLowFG = $pdo->prepare("
-    SELECT COUNT(*)
-    FROM items i
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid
-    WHERE i.item_type = 'finished_good'
-      AND i.status = 'active'
-      AND COALESCE(inv.quantity, 0) <= COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level)
-");
-$stmtLowFG->execute([':wid' => $currentWarehouseId]);
-$lowStockFG = (int)$stmtLowFG->fetchColumn();
+foreach ($finishedGoods as $fg) {
+    $qty = (float)($fg['current_stock'] ?? 0);
+    $reorder = (float)($fg['default_reorder_level'] ?? 0);
+    $totalFGQty += $qty;
+    if ($qty <= $reorder) {
+        $lowStockFG++;
+    }
+}
 ?>
 
 <!-- Page Header -->
@@ -86,7 +82,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Finished Product</span>
+            <span class="stat-label">Finished Goods</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: var(--accent); background: var(--accent-light);">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m7.5 4.27 9 5.15"/>
@@ -144,7 +140,7 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="fgSearch" class="search-box" aria-label="Filter finished goods" placeholder="Filter product name or code..." oninput="filterFGTable()">
+                <input type="text" id="fgSearch" class="search-box" aria-label="Filter finished goods" placeholder="Filter product name or code..." oninput="filterTable('fgSearch', 'finishedGoodsTable')">
             </div>
         </div>
     </div>
@@ -200,20 +196,22 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
                                     <?php if (!empty($item['last_produced_qty'])): ?>
                                         <small style="color: #15803D;">(+<?= formatQty($item['last_produced_qty']) ?>)</small>
                                     <?php endif; ?>
-                                <?php else: ?>
+                                <?php elseif ($isAvailable): ?>
                                     <span style="color: var(--gray);">Batch Distilled</span>
+                                <?php else: ?>
+                                    <span style="color: var(--gray);">No Batches Yet</span>
                                 <?php endif; ?>
                             </td>
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
-                                <?= !empty($item['production_date']) ? date('M d, Y', strtotime($item['production_date'])) : 'Distillery Base' ?>
+                                <?= !empty($item['production_date']) ? date('M d, Y', strtotime($item['production_date'])) : ($isAvailable ? 'Distillery Base' : '—') ?>
                             </td>
                             <td>
                                 <?php if (!$isAvailable): ?>
                                     <span class="badge status-alert">Out of Stock</span>
                                 <?php elseif ($isReorder): ?>
-                                    <span class="badge status-pending">Batch Needed</span>
+                                    <span class="badge status-pending">Low Stock</span>
                                 <?php else: ?>
-                                    <span class="badge status-optimal">Available</span>
+                                    <span class="badge status-optimal">Optimal</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -223,22 +221,5 @@ $lowStockFG = (int)$stmtLowFG->fetchColumn();
         </table>
     </div>
 </div>
-
-<script>
-function filterFGTable() {
-    const term = document.getElementById('fgSearch').value.toLowerCase().trim();
-    const table = document.getElementById('finishedGoodsTable');
-    if (!table) return;
-    const rows = table.querySelectorAll('tbody tr');
-
-    rows.forEach(row => {
-        if (row.querySelector('td[colspan]')) return;
-        const text = row.textContent.toLowerCase();
-        const match = !term || text.includes(term);
-        row.dataset.filteredOut = match ? 'false' : 'true';
-    });
-    if (table.paginationUpdate) table.paginationUpdate(true);
-}
-</script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

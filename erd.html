@@ -2,770 +2,1028 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Inventory & Warehouse Management - ERD Diagram</title>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory_Team — Per-Module Architecture Diagram (Short Bond Extra-Large Print)</title>
   <style>
-    body {
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #ffffff;
+      color: #0f172a;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
       overflow: hidden;
-      user-select: none;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    .canvas-bg {
-      background-color: #0f172a;
-      background-image: 
-        radial-gradient(circle at 1px 1px, #334155 1px, transparent 0);
-      background-size: 24px 24px;
+
+    /* Top Toolbar */
+    .toolbar {
+      position: fixed;
+      top: 12px;
+      left: 16px;
+      right: 16px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.97);
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+      backdrop-filter: blur(8px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
     }
-    .table-card {
-      position: absolute;
+
+    .toolbar.hidden-ui {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-12px);
+    }
+
+    .toolbar-title h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .toolbar-title p {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 13px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #334155;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+    }
+
+    .btn-primary:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+      color: #ffffff;
+    }
+
+    .btn-success {
+      background: #16a34a;
+      color: #ffffff;
+      border-color: #16a34a;
+    }
+
+    .btn-success:hover {
+      background: #15803d;
+      border-color: #15803d;
+      color: #ffffff;
+    }
+
+    select.layout-select {
+      padding: 7px 11px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #0f172a;
+      background: #f8fafc;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .zoom-group {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .zoom-group button {
+      border: none;
+      background: transparent;
+      padding: 7px 11px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+      cursor: pointer;
+    }
+
+    .zoom-group button:hover {
+      background: #f1f5f9;
+    }
+
+    .zoom-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      padding: 0 10px;
+      min-width: 52px;
+      text-align: center;
+      border-left: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+    }
+
+    #showUiBtn {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      z-index: 101;
+      display: none;
+      opacity: 0.6;
+    }
+
+    #showUiBtn:hover {
+      opacity: 1;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 200;
+      background: #0f172a;
+      color: #ffffff;
+      padding: 11px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: all 0.2s ease;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Interactive Viewport */
+    #viewport {
+      width: 100vw;
+      height: 100vh;
       cursor: grab;
-      transition: box-shadow 0.15s ease;
+      position: relative;
+      overflow: hidden;
+      background-color: #ffffff;
     }
-    .table-card:active {
+
+    #viewport:active {
       cursor: grabbing;
     }
-    .table-card.selected {
-      outline: 2px solid #38bdf8;
-      box-shadow: 0 0 25px rgba(56, 189, 248, 0.35);
+
+    /* Short Bond Paper Sheet Container */
+    #paperSheet {
+      transform-origin: 0 0;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background-color: #ffffff;
+      box-shadow: 0 0 0 1px #e2e8f0, 0 12px 36px rgba(15, 23, 42, 0.08);
     }
-    .bezier-line {
-      fill: none;
-      stroke-width: 2;
-      transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s;
+
+    #paperSheet svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background-color: #ffffff;
     }
-    .bezier-line.dimmed {
-      opacity: 0.15;
+
+    @media print {
+      @page {
+        size: 8.5in 11in;
+        margin: 0.18in;
+      }
+      html, body, #viewport {
+        background: #ffffff !important;
+        overflow: visible !important;
+      }
+      .toolbar, #showUiBtn, #toast {
+        display: none !important;
+      }
+      #paperSheet {
+        transform: none !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        box-shadow: none !important;
+      }
     }
-    .bezier-line.highlighted {
-      stroke: #38bdf8 !important;
-      stroke-width: 3.5 !important;
-      opacity: 1 !important;
-    }
-    /* Custom scrollbars */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   </style>
 </head>
-<body class="canvas-bg w-screen h-screen text-slate-200">
+<body>
 
-  <!-- Top Navigation & Controls Bar -->
-  <header class="absolute top-4 left-4 right-4 z-50 flex items-center justify-between px-6 py-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl">
-    <div class="flex items-center space-x-4">
-      <div class="p-2 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7zm0 5h16M9 4v16" />
-        </svg>
-      </div>
-      <div>
-        <h1 class="font-bold text-lg text-white flex items-center gap-2">
-          Team_Inventory <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Never Delete, Cancel Instead Policy</span>
-        </h1>
-        <p class="text-xs text-slate-400">15 Tables &bull; 5 Views &bull; 36 Foreign Keys &bull; 14 Check Constraints &bull; 28 Triggers</p>
-      </div>
+  <!-- Top Controls Toolbar -->
+  <header id="mainToolbar" class="toolbar">
+    <div class="toolbar-title">
+      <h1>Per-Module Architecture Diagram — Short Bond Paper (Extra-Large Print Edition)</h1>
+      <p>Maximum-sized bold letters (21px&ndash;30px) with zero file paths for effortless reading when printed</p>
     </div>
 
-    <!-- Tier Filter Tabs -->
-    <div class="hidden lg:flex items-center space-x-1 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800/80 text-xs">
-      <button onclick="filterTier('all')" id="tab-all" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium transition">All Tiers</button>
-      <button onclick="filterTier('master')" id="tab-master" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Master Data</button>
-      <button onclick="filterTier('transactions')" id="tab-transactions" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Transactions</button>
-      <button onclick="filterTier('ledger')" id="tab-ledger" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Ledger & Snapshot</button>
-    </div>
+    <div class="toolbar-actions">
+      <label for="orientationSelect" style="font-size: 12px; font-weight: 600; color: #475569;">Paper Layout:</label>
+      <select id="orientationSelect" class="layout-select" onchange="switchOrientation(this.value)">
+        <option value="portrait" selected>Short Bond Portrait (8.5" &times; 11")</option>
+        <option value="landscape">Short Bond Landscape (11" &times; 8.5")</option>
+      </select>
 
-    <!-- Zoom & Alignment Controls -->
-    <div class="flex items-center space-x-2">
-      <button onclick="resetView()" title="Reset Alignment" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Reset Align
-      </button>
-      <div class="flex items-center bg-slate-800 rounded-xl border border-slate-700 text-xs">
-        <button onclick="zoomOut()" class="px-2.5 py-1.5 text-slate-300 hover:text-white border-r border-slate-700">&minus;</button>
-        <span id="zoom-label" class="px-3 py-1.5 font-mono text-slate-300">100%</span>
-        <button onclick="zoomIn()" class="px-2.5 py-1.5 text-slate-300 hover:text-white">&plus;</button>
+      <div class="zoom-group">
+        <button type="button" onclick="zoomBy(-0.12)" title="Zoom Out">&minus;</button>
+        <span id="zoomDisplay" class="zoom-label">100%</span>
+        <button type="button" onclick="zoomBy(0.12)" title="Zoom In">&plus;</button>
       </div>
+
+      <button type="button" class="btn" onclick="fitToScreen()">Fit Bond Page</button>
+      <button type="button" class="btn btn-success" onclick="copyImageToClipboard()">Copy Image (Ctrl+V in WPS)</button>
+      <button type="button" class="btn btn-primary" onclick="downloadPNG()">Download Short Bond PNG</button>
+      <button type="button" class="btn" onclick="window.print()">Print Page</button>
+      <button type="button" class="btn" onclick="toggleUI(false)">Hide Toolbar</button>
     </div>
   </header>
 
-  <!-- Interactive Drag/Zoom World Container -->
-  <div id="world" class="w-full h-full origin-top-left">
-    <!-- SVG Canvas for Connector Lines -->
-    <svg id="svg-canvas" class="absolute top-0 left-0 w-[3500px] h-[3000px] pointer-events-none">
-      <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
-        </marker>
-        <marker id="arrow-highlight" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
-        </marker>
-      </defs>
-      <g id="lines-layer"></g>
-    </svg>
+  <button id="showUiBtn" class="btn" onclick="toggleUI(true)">Show Toolbar</button>
+  <div id="toast"></div>
 
-    <!-- Draggable Tables Container -->
-    <div id="tables-container" class="relative w-[3500px] h-[3000px]"></div>
-  </div>
-
-  <!-- Legend & Information Bar -->
-  <footer class="absolute bottom-4 left-4 right-4 z-50 flex flex-wrap items-center justify-between gap-4 px-6 py-2.5 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl text-xs text-slate-400">
-    <div class="flex items-center gap-4">
-      <span class="font-semibold text-slate-300">Tiers:</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-purple-500"></span> Master Data</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-500"></span> Transaction Headers</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-blue-500"></span> Line Items</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> Core Ledger</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-500"></span> Snapshot Inventory</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-rose-500"></span> Defect Registry</span>
-    </div>
-    <div class="flex items-center gap-4">
-      <span class="text-slate-400 font-medium">🛡️ Policy: <span class="text-amber-300 font-semibold">Never Delete, Cancel Instead</span> &bull; Click card to trace relations &bull; Drag to arrange &bull; Scroll to Zoom</span>
-    </div>
-  </footer>
+  <!-- White Background Viewport -->
+  <main id="viewport">
+    <div id="paperSheet"></div>
+  </main>
 
   <script>
-    // Schema Table Definitions
-    const SCHEMA = [
-      // ==========================================
-      // TIER 1: MASTER DATA
-      // ==========================================
-      {
-        id: "users",
-        name: "users",
-        tier: "master",
-        color: "purple",
-        x: 40,
-        y: 100,
-        badge: "Auth & Identity",
-        columns: [
-          { name: "user_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "name", type: "VARCHAR(100)", key: "" },
-          { name: "email", type: "VARCHAR(150)", key: "UQ" },
-          { name: "password", type: "VARCHAR(255)", key: "" },
-          { name: "role", type: "ENUM('super_admin','admin')", key: "" },
-          { name: "status", type: "ENUM('active','inactive')", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "warehouses",
-        name: "warehouses",
-        tier: "master",
-        color: "purple",
-        x: 400,
-        y: 100,
-        badge: "Facilities",
-        columns: [
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "warehouse_code", type: "VARCHAR(50)", key: "UQ" },
-          { name: "warehouse_name", type: "VARCHAR(150)", key: "" },
-          { name: "location", type: "VARCHAR(255)", key: "" },
-          { name: "description", type: "TEXT", key: "" },
-          { name: "status", type: "ENUM('active','inactive')", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "categories",
-        name: "categories",
-        tier: "master",
-        color: "purple",
-        x: 760,
-        y: 100,
-        badge: "Classification",
-        columns: [
-          { name: "category_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "category_code", type: "VARCHAR(50)", key: "UQ" },
-          { name: "category_name", type: "VARCHAR(100)", key: "" },
-          { name: "description", type: "TEXT", key: "" },
-          { name: "status", type: "ENUM('active','inactive')", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "items",
-        name: "items",
-        tier: "master",
-        color: "purple",
-        x: 1120,
-        y: 100,
-        badge: "Raw Mat & Finished",
-        columns: [
-          { name: "item_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "item_code", type: "VARCHAR(50)", key: "UQ" },
-          { name: "item_name", type: "VARCHAR(150)", key: "" },
-          { name: "description", type: "TEXT", key: "" },
-          { name: "item_type", type: "ENUM('raw_mat','finished')", key: "IDX" },
-          { name: "category_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "unit", type: "VARCHAR(20)", key: "" },
-          { name: "default_reorder_level", type: "DECIMAL(14,3)", key: "" },
-          { name: "status", type: "ENUM('active','inactive')", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
+    // ============================================================================
+    // 1. SHORT BOND PORTRAIT SVG (8.5" x 11" -> 1275 x 1650 px)
+    //    EXTRA-LARGE BOLD LETTERS (21px - 30px) FOR PRINT CLARITY
+    // ============================================================================
+    const PORTRAIT_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1275 1650" width="1275" height="1650" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif">
+  <defs>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#0f172a"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#15803d"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#b45309"/>
+    </marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#be123c"/>
+    </marker>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#a16207"/>
+    </marker>
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
 
-      // ==========================================
-      // TIER 2: TRANSACTION HEADERS ("Never Delete, Cancel Instead")
-      // ==========================================
-      {
-        id: "stock_ins",
-        name: "stock_ins",
-        tier: "transactions",
-        color: "amber",
-        x: 40,
-        y: 450,
-        badge: "Inbound Voucher",
-        columns: [
-          { name: "stock_in_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "transaction_date", type: "DATE", key: "" },
-          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
-          { name: "remarks", type: "TEXT", key: "" },
-          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancelled_at", type: "DATETIME", key: "" },
-          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "stock_outs",
-        name: "stock_outs",
-        tier: "transactions",
-        color: "amber",
-        x: 370,
-        y: 450,
-        badge: "Outbound Voucher",
-        columns: [
-          { name: "stock_out_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "transaction_date", type: "DATE", key: "" },
-          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
-          { name: "remarks", type: "TEXT", key: "" },
-          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancelled_at", type: "DATETIME", key: "" },
-          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "stock_transfers",
-        name: "stock_transfers",
-        tier: "transactions",
-        color: "amber",
-        x: 700,
-        y: 450,
-        badge: "Inter-WH Transfer",
-        columns: [
-          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
-          { name: "source_warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "destination_warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "transaction_date", type: "DATE", key: "" },
-          { name: "status", type: "ENUM('pending','completed','cancelled')", key: "" },
-          { name: "remarks", type: "TEXT", key: "" },
-          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancelled_at", type: "DATETIME", key: "" },
-          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "stock_adjustments",
-        name: "stock_adjustments",
-        tier: "transactions",
-        color: "amber",
-        x: 1040,
-        y: 450,
-        badge: "Maker-Checker Memo",
-        columns: [
-          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "transaction_number", type: "VARCHAR(50)", key: "UQ" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "adjustment_date", type: "DATE", key: "" },
-          { name: "reason", type: "VARCHAR(255)", key: "" },
-          { name: "status", type: "ENUM('pending','approved','rejected','cancelled')", key: "" },
-          { name: "created_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "approved_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "approved_at", type: "DATETIME", key: "" },
-          { name: "cancelled_at", type: "DATETIME", key: "" },
-          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
-      {
-        id: "bad_products",
-        name: "bad_products",
-        tier: "transactions",
-        color: "rose",
-        x: 1380,
-        y: 450,
-        badge: "Defect Registry",
-        columns: [
-          { name: "bad_product_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "bad_product_number", type: "VARCHAR(50)", key: "UQ" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "condition_type", type: "ENUM(6 types)", key: "IDX" },
-          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" },
-          { name: "reason", type: "VARCHAR(255)", key: "" },
-          { name: "status", type: "ENUM('completed','cancelled')", key: "IDX" },
-          { name: "reported_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancelled_at", type: "DATETIME", key: "" },
-          { name: "cancelled_by", type: "INT UNSIGNED", key: "FK" },
-          { name: "cancellation_reason", type: "VARCHAR(255)", key: "" },
-          { name: "created_at", type: "TIMESTAMP", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
+  <!-- Pure White Page Background -->
+  <rect x="0" y="0" width="1275" height="1650" fill="#ffffff"/>
 
-      // ==========================================
-      // TIER 3: TRANSACTION LINE ITEMS (Immutable once completed/cancelled)
-      // ==========================================
-      {
-        id: "stock_in_items",
-        name: "stock_in_items",
-        tier: "transactions",
-        color: "blue",
-        x: 40,
-        y: 920,
-        badge: "Inbound Items",
-        columns: [
-          { name: "stock_in_item_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "stock_in_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
-        ]
-      },
-      {
-        id: "stock_out_items",
-        name: "stock_out_items",
-        tier: "transactions",
-        color: "blue",
-        x: 370,
-        y: 920,
-        badge: "Outbound Items",
-        columns: [
-          { name: "stock_out_item_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "stock_out_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
-        ]
-      },
-      {
-        id: "stock_transfer_items",
-        name: "stock_transfer_items",
-        tier: "transactions",
-        color: "blue",
-        x: 700,
-        y: 920,
-        badge: "Transfer Items",
-        columns: [
-          { name: "stock_transfer_item_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" }
-        ]
-      },
-      {
-        id: "stock_adjustment_items",
-        name: "stock_adjustment_items",
-        tier: "transactions",
-        color: "blue",
-        x: 1040,
-        y: 920,
-        badge: "Variance Details",
-        columns: [
-          { name: "stock_adjustment_item_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "previous_quantity", type: "DECIMAL(14,3)", key: "" },
-          { name: "adjusted_quantity", type: "DECIMAL(14,3)", key: "" },
-          { name: "difference", type: "DECIMAL(14,3)", key: "GEN" }
-        ]
-      },
+  <!-- Diagram Header Title -->
+  <text x="637.5" y="48" text-anchor="middle" font-size="30" font-weight="900" fill="#0f172a" letter-spacing="-0.4">INVENTORY MANAGEMENT — PER-MODULE CHART</text>
 
-      // ==========================================
-      // TIER 4: CORE AUDIT LEDGER (Immutable Ledger)
-      // ==========================================
-      {
-        id: "stock_movements",
-        name: "stock_movements",
-        tier: "ledger",
-        color: "emerald",
-        x: 520,
-        y: 1170,
-        badge: "Immutable Ledger",
-        columns: [
-          { name: "movement_id", type: "BIGINT UNSIGNED", key: "PK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "movement_type", type: "ENUM(11 types)", key: "IDX" },
-          { name: "stock_in_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "stock_out_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "stock_transfer_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "stock_adjustment_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "bad_product_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "reference_number", type: "VARCHAR(100)", key: "" },
-          { name: "quantity_in", type: "DECIMAL(14,3)", key: "" },
-          { name: "quantity_out", type: "DECIMAL(14,3)", key: "" },
-          { name: "balance_after", type: "DECIMAL(14,3)", key: "CHK" },
-          { name: "created_at", type: "TIMESTAMP", key: "" }
-        ]
-      },
+  <!-- ======================================================================= -->
+  <!-- TIER 1: WAREHOUSE OPERATOR (ACTOR)                                      -->
+  <!-- ======================================================================= -->
+  <g filter="url(#card-shadow)">
+    <ellipse cx="637.5" cy="108" rx="225" ry="38" fill="#e0e7ff" stroke="#4338ca" stroke-width="3"/>
+    <text x="637.5" y="116" text-anchor="middle" font-size="24" font-weight="900" fill="#1e1b4b">Warehouse Operator / Admin</text>
+  </g>
 
-      // ==========================================
-      // TIER 5: REAL-TIME INVENTORY SNAPSHOT
-      // ==========================================
-      {
-        id: "inventory",
-        name: "inventory",
-        tier: "ledger",
-        color: "teal",
-        x: 520,
-        y: 1680,
-        badge: "Real-Time Snapshot",
-        columns: [
-          { name: "inventory_id", type: "INT UNSIGNED", key: "PK" },
-          { name: "item_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "warehouse_id", type: "INT UNSIGNED", key: "FK" },
-          { name: "quantity", type: "DECIMAL(14,3)", key: "CHK" },
-          { name: "reorder_level", type: "DECIMAL(14,3)", key: "" },
-          { name: "updated_at", type: "TIMESTAMP", key: "" }
-        ]
+  <!-- Arrow: Operator -> Command Hub -->
+  <line x1="637.5" y1="146" x2="637.5" y2="190" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate)"/>
+  <rect x="595" y="152" width="85" height="26" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.8"/>
+  <text x="637.5" y="170" text-anchor="middle" font-size="16" font-weight="900" fill="#0f172a">uses</text>
+
+  <!-- ======================================================================= -->
+  <!-- TIER 2: COMMAND HUB (ENTRY, AUTH & LAYOUT SHELL)                        -->
+  <!-- ======================================================================= -->
+  <rect x="30" y="192" width="1215" height="202" rx="14" fill="#f8fafc" stroke="#2563eb" stroke-width="2.8" filter="url(#card-shadow)"/>
+  <rect x="30" y="192" width="1215" height="40" rx="14" fill="#dbeafe"/>
+  <rect x="30" y="216" width="1215" height="16" fill="#dbeafe"/>
+  <text x="637.5" y="220" text-anchor="middle" font-size="20" font-weight="900" fill="#1e3a8a">COMMAND HUB (ENTRY, AUTHENTICATION &amp; NAVIGATION)</text>
+
+  <!-- Node: Login Portal -->
+  <g filter="url(#card-shadow)">
+    <rect x="55" y="246" width="255" height="62" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+    <text x="182.5" y="285" text-anchor="middle" font-size="23" font-weight="900" fill="#1e3a8a">Login Portal</text>
+  </g>
+
+  <!-- Node: Application Gateway -->
+  <g filter="url(#card-shadow)">
+    <rect x="485" y="246" width="305" height="62" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.8"/>
+    <text x="637.5" y="285" text-anchor="middle" font-size="23.5" font-weight="900" fill="#1e3a8a">Application Entry</text>
+  </g>
+
+  <!-- Node: Authentication Controller -->
+  <g filter="url(#card-shadow)">
+    <rect x="960" y="246" width="260" height="62" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+    <text x="1090" y="285" text-anchor="middle" font-size="23" font-weight="900" fill="#1e3a8a">Authentication</text>
+  </g>
+
+  <!-- Node: Master Header & Access Guard -->
+  <g filter="url(#card-shadow)">
+    <rect x="130" y="322" width="400" height="58" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.4"/>
+    <text x="330" y="359" text-anchor="middle" font-size="22" font-weight="900" fill="#1e3a8a">Master Header &amp; Guard</text>
+  </g>
+
+  <!-- Node: Navigation Sidebar -->
+  <g filter="url(#card-shadow)">
+    <rect x="720" y="322" width="400" height="58" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.4"/>
+    <text x="920" y="359" text-anchor="middle" font-size="22" font-weight="900" fill="#1e3a8a">Navigation Sidebar</text>
+  </g>
+
+  <!-- Command Hub Internal Arrows -->
+  <line x1="485" y1="277" x2="310" y2="277" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue)"/>
+  <rect x="330" y="263" width="142" height="27" rx="6" fill="#ffffff" stroke="#60a5fa" stroke-width="1.6"/>
+  <text x="401" y="282" text-anchor="middle" font-size="15.5" font-weight="800" fill="#1e3a8a">unauthenticated</text>
+
+  <line x1="790" y1="277" x2="960" y2="277" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue)"/>
+  <rect x="802" y="263" width="138" height="27" rx="6" fill="#ffffff" stroke="#60a5fa" stroke-width="1.6"/>
+  <text x="871" y="282" text-anchor="middle" font-size="15.5" font-weight="800" fill="#1e3a8a">verifies session</text>
+
+  <path d="M 550 308 L 550 315 L 330 315 L 330 322" fill="none" stroke="#1d4ed8" stroke-width="2.4" marker-end="url(#arrow-blue)"/>
+
+  <line x1="530" y1="351" x2="720" y2="351" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue)"/>
+  <rect x="575" y="337" width="100" height="27" rx="6" fill="#ffffff" stroke="#60a5fa" stroke-width="1.6"/>
+  <text x="625" y="356" text-anchor="middle" font-size="15.5" font-weight="800" fill="#1e3a8a">includes</text>
+
+  <path d="M 1120 351 L 1175 351 L 1175 308" fill="none" stroke="#1d4ed8" stroke-width="2.4" marker-end="url(#arrow-blue)"/>
+
+  <!-- ======================================================================= -->
+  <!-- ROUTING BUS FROM COMMAND HUB TO MODULE GROUPS                           -->
+  <!-- ======================================================================= -->
+  <path d="M 637.5 394 L 637.5 418" fill="none" stroke="#0f172a" stroke-width="3"/>
+  <path d="M 385 418 L 1015 418" fill="none" stroke="#0f172a" stroke-width="3"/>
+  <line x1="385" y1="418" x2="385" y2="444" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate)"/>
+  <line x1="1015" y1="418" x2="1015" y2="444" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate)"/>
+  <rect x="527.5" y="403" width="220" height="28" rx="6" fill="#ffffff" stroke="#475569" stroke-width="1.8"/>
+  <text x="637.5" y="423" text-anchor="middle" font-size="16.5" font-weight="900" fill="#0f172a">routes to modules</text>
+
+  <!-- ======================================================================= -->
+  <!-- TIER 3 LEFT: STOCK OPERATIONS MODULE GROUP                              -->
+  <!-- ======================================================================= -->
+  <rect x="30" y="446" width="735" height="550" rx="14" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.8" filter="url(#card-shadow)"/>
+  <rect x="30" y="446" width="735" height="40" rx="14" fill="#dcfce7"/>
+  <rect x="30" y="470" width="735" height="16" fill="#dcfce7"/>
+  <text x="397.5" y="474" text-anchor="middle" font-size="21" font-weight="900" fill="#14532d">STOCK OPERATIONS</text>
+
+  <!-- Row 1: 4 Specific Operation Modules (2-Line Large Stack) -->
+  <!-- Stock Receiving -->
+  <g filter="url(#card-shadow)">
+    <rect x="48" y="498" width="164" height="68" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="6,3"/>
+    <text x="130" y="527" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Stock</text>
+    <text x="130" y="553" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Receiving</text>
+  </g>
+
+  <!-- Stock Dispatch -->
+  <g filter="url(#card-shadow)">
+    <rect x="225" y="498" width="164" height="68" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="6,3"/>
+    <text x="307" y="527" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Stock</text>
+    <text x="307" y="553" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Dispatch</text>
+  </g>
+
+  <!-- Stock Transfers -->
+  <g filter="url(#card-shadow)">
+    <rect x="405" y="498" width="164" height="68" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="6,3"/>
+    <text x="487" y="527" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Stock</text>
+    <text x="487" y="553" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Transfers</text>
+  </g>
+
+  <!-- Stock Adjustments -->
+  <g filter="url(#card-shadow)">
+    <rect x="582" y="498" width="164" height="68" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="6,3"/>
+    <text x="664" y="527" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Stock</text>
+    <text x="664" y="553" text-anchor="middle" font-size="20.5" font-weight="900" fill="#14532d">Adjustments</text>
+  </g>
+
+  <!-- Dashed Redirect Arrows to Unified Hubs -->
+  <line x1="130" y1="566" x2="178" y2="606" stroke="#15803d" stroke-width="2.4" stroke-dasharray="5,3" marker-end="url(#arrow-green)"/>
+  <line x1="307" y1="566" x2="260" y2="606" stroke="#15803d" stroke-width="2.4" stroke-dasharray="5,3" marker-end="url(#arrow-green)"/>
+  <rect x="158" y="572" width="122" height="25" rx="5" fill="#ffffff" stroke="#4ade80" stroke-width="1.6"/>
+  <text x="219" y="590" text-anchor="middle" font-size="15" font-weight="800" fill="#14532d">redirects to</text>
+
+  <line x1="487" y1="566" x2="535" y2="606" stroke="#15803d" stroke-width="2.4" stroke-dasharray="5,3" marker-end="url(#arrow-green)"/>
+  <line x1="664" y1="566" x2="615" y2="606" stroke="#15803d" stroke-width="2.4" stroke-dasharray="5,3" marker-end="url(#arrow-green)"/>
+  <rect x="514" y="572" width="122" height="25" rx="5" fill="#ffffff" stroke="#4ade80" stroke-width="1.6"/>
+  <text x="575" y="590" text-anchor="middle" font-size="15" font-weight="800" fill="#14532d">redirects to</text>
+
+  <!-- Row 2: Active Unified Transaction Hubs -->
+  <g filter="url(#card-shadow)">
+    <rect x="48" y="608" width="342" height="70" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.6"/>
+    <text x="219" y="651" text-anchor="middle" font-size="22.5" font-weight="900" fill="#14532d">Inbound &amp; Outbound Hub</text>
+  </g>
+
+  <g filter="url(#card-shadow)">
+    <rect x="405" y="608" width="342" height="70" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.6"/>
+    <text x="576" y="651" text-anchor="middle" font-size="22.5" font-weight="900" fill="#14532d">Stock Operations Hub</text>
+  </g>
+
+  <!-- Arrows from Unified Hubs to Stock Service -->
+  <path d="M 219 678 L 219 714 L 320 714 L 320 740" fill="none" stroke="#15803d" stroke-width="2.8" marker-end="url(#arrow-green)"/>
+  <rect x="95" y="686" width="215" height="27" rx="6" fill="#ffffff" stroke="#22c55e" stroke-width="1.6"/>
+  <text x="202.5" y="705" text-anchor="middle" font-size="15.5" font-weight="800" fill="#14532d">records stock in / out</text>
+
+  <path d="M 576 678 L 576 714 L 470 714 L 470 740" fill="none" stroke="#15803d" stroke-width="2.8" marker-end="url(#arrow-green)"/>
+  <rect x="478" y="686" width="240" height="27" rx="6" fill="#ffffff" stroke="#22c55e" stroke-width="1.6"/>
+  <text x="598" y="705" text-anchor="middle" font-size="15.5" font-weight="800" fill="#14532d">transfers &amp; adjustments</text>
+
+  <!-- Row 3: Transactional Stock Service Engine -->
+  <g filter="url(#card-shadow)">
+    <rect x="95" y="742" width="605" height="82" rx="12" fill="#bbf7d0" stroke="#15803d" stroke-width="3"/>
+    <text x="397.5" y="779" text-anchor="middle" font-size="25" font-weight="900" fill="#14532d">Transactional Stock Service</text>
+    <text x="397.5" y="808" text-anchor="middle" font-size="16.5" font-weight="800" fill="#166534">ACID Locks, ERP Rules &amp; Reversal Cancellations</text>
+  </g>
+
+  <!-- Row 4: Stock Movement Master Ledger -->
+  <g filter="url(#card-shadow)">
+    <rect x="150" y="898" width="495" height="70" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2.6"/>
+    <text x="397.5" y="942" text-anchor="middle" font-size="24" font-weight="900" fill="#14532d">Stock Movement Ledger</text>
+  </g>
+
+  <!-- ======================================================================= -->
+  <!-- TIER 3 RIGHT: CATALOG & STOCK MODULE GROUP                              -->
+  <!-- ======================================================================= -->
+  <rect x="785" y="446" width="460" height="550" rx="14" fill="#fffbeb" stroke="#d97706" stroke-width="2.8" filter="url(#card-shadow)"/>
+  <rect x="785" y="446" width="460" height="40" rx="14" fill="#fef3c7"/>
+  <rect x="785" y="470" width="460" height="16" fill="#fef3c7"/>
+  <text x="1015" y="474" text-anchor="middle" font-size="21" font-weight="900" fill="#78350f">CATALOG &amp; STOCK</text>
+
+  <!-- 1. Item Catalog -->
+  <g filter="url(#card-shadow)">
+    <rect x="808" y="498" width="414" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="1015" y="542" text-anchor="middle" font-size="24" font-weight="900" fill="#78350f">Item Catalog &amp; SKUs</text>
+  </g>
+
+  <!-- 2. Inventory Overview -->
+  <g filter="url(#card-shadow)">
+    <rect x="835" y="586" width="360" height="58" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="2.4" stroke-dasharray="6,3"/>
+    <text x="1015" y="623" text-anchor="middle" font-size="21.5" font-weight="900" fill="#78350f">Inventory Overview</text>
+  </g>
+
+  <line x1="1015" y1="644" x2="1015" y2="676" stroke="#b45309" stroke-width="2.4" stroke-dasharray="5,3" marker-end="url(#arrow-amber)"/>
+
+  <!-- 3. Raw Materials -->
+  <g filter="url(#card-shadow)">
+    <rect x="808" y="678" width="414" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="1015" y="722" text-anchor="middle" font-size="24" font-weight="900" fill="#78350f">Raw Materials</text>
+  </g>
+
+  <!-- 4. Finished Goods -->
+  <g filter="url(#card-shadow)">
+    <rect x="808" y="768" width="414" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="1015" y="812" text-anchor="middle" font-size="24" font-weight="900" fill="#78350f">Finished Goods</text>
+  </g>
+
+  <!-- 5. Stock Card -->
+  <g filter="url(#card-shadow)">
+    <rect x="808" y="858" width="414" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="1015" y="902" text-anchor="middle" font-size="24" font-weight="900" fill="#78350f">Item Stock Card</text>
+  </g>
+
+  <!-- ======================================================================= -->
+  <!-- TIER 4: REPORTING, INSIGHTS & ADMINISTRATION                            -->
+  <!-- ======================================================================= -->
+  <rect x="30" y="1022" width="1215" height="296" rx="14" fill="#fff1f2" stroke="#e11d48" stroke-width="2.8" filter="url(#card-shadow)"/>
+  <rect x="30" y="1022" width="1215" height="40" rx="14" fill="#ffe4e6"/>
+  <rect x="30" y="1046" width="1215" height="16" fill="#ffe4e6"/>
+  <text x="637.5" y="1050" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">REPORTING, INSIGHTS &amp; ADMINISTRATION</text>
+
+  <!-- 1. Central Dashboard -->
+  <g filter="url(#card-shadow)">
+    <rect x="48" y="1076" width="222" height="76" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="159" y="1109" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Central</text>
+    <text x="159" y="1137" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Dashboard</text>
+  </g>
+
+  <!-- 2. Inventory Reports -->
+  <g filter="url(#card-shadow)">
+    <rect x="286" y="1076" width="222" height="76" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="397" y="1109" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Inventory</text>
+    <text x="397" y="1137" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Reports</text>
+  </g>
+
+  <!-- 3. Stock Transaction Reports -->
+  <g filter="url(#card-shadow)">
+    <rect x="524" y="1076" width="226" height="76" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="637" y="1109" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Transaction</text>
+    <text x="637" y="1137" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">History</text>
+  </g>
+
+  <!-- 4. Accountability Audit Log -->
+  <g filter="url(#card-shadow)">
+    <rect x="766" y="1076" width="230" height="76" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="881" y="1109" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Accountability</text>
+    <text x="881" y="1137" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Audit Log</text>
+  </g>
+
+  <!-- 5. Users & Account Admin -->
+  <g filter="url(#card-shadow)">
+    <rect x="1012" y="1076" width="215" height="76" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1119.5" y="1109" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Users &amp;</text>
+    <text x="1119.5" y="1137" text-anchor="middle" font-size="21.5" font-weight="900" fill="#881337">Accounts</text>
+  </g>
+
+  <!-- Accountability Audit Service Box -->
+  <g filter="url(#card-shadow)">
+    <rect x="615" y="1210" width="535" height="80" rx="12" fill="#fecdd3" stroke="#be123c" stroke-width="2.8"/>
+    <text x="882.5" y="1246" text-anchor="middle" font-size="24" font-weight="900" fill="#881337">Accountability Audit Service</text>
+    <text x="882.5" y="1274" text-anchor="middle" font-size="16" font-weight="800" fill="#9f1239">Logs User, Team &amp; Item for Every Action</text>
+  </g>
+
+  <!-- Arrow: Accountability Audit -> Accountability Service -->
+  <line x1="881" y1="1152" x2="881" y2="1210" stroke="#be123c" stroke-width="2.8" marker-end="url(#arrow-rose)"/>
+  <rect x="815" y="1166" width="132" height="26" rx="5" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="881" y="1184" text-anchor="middle" font-size="15.5" font-weight="800" fill="#881337">fetches logs</text>
+
+  <!-- Cross-Module Arrow: Stock Service -> Accountability Service -->
+  <path d="M 555 824 L 555 860 L 755 860 L 755 1210" fill="none" stroke="#be123c" stroke-width="2.8" stroke-dasharray="7,4" marker-end="url(#arrow-rose)"/>
+  <rect x="568" y="846" width="175" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="655.5" y="865" text-anchor="middle" font-size="15.5" font-weight="800" fill="#881337">logs stock actions</text>
+
+  <!-- ======================================================================= -->
+  <!-- TIER 5: DATABASE PERSISTENCE LAYER (CYLINDER & QUERY BUS)               -->
+  <!-- ======================================================================= -->
+  <line x1="105" y1="1384" x2="1165" y2="1384" stroke="#a16207" stroke-width="3.5"/>
+
+  <!-- 1. Stock Service -> DB Bus -->
+  <path d="M 140 824 L 140 1384" fill="none" stroke="#15803d" stroke-width="3"/>
+  <rect x="42" y="990" width="196" height="27" rx="6" fill="#ffffff" stroke="#22c55e" stroke-width="1.6"/>
+  <text x="140" y="1009" text-anchor="middle" font-size="15.5" font-weight="800" fill="#14532d">ACID transactions</text>
+
+  <!-- 2. Movement Ledger -> DB Bus -->
+  <path d="M 305 968 L 305 1384" fill="none" stroke="#16a34a" stroke-width="2.6"/>
+  <rect x="242" y="990" width="146" height="27" rx="6" fill="#ffffff" stroke="#22c55e" stroke-width="1.6"/>
+  <text x="315" y="1009" text-anchor="middle" font-size="15" font-weight="800" fill="#14532d">queries ledger</text>
+
+  <!-- 3. Catalog & Stock Group -> DB Bus -->
+  <path d="M 1222 533 L 1236 533 L 1236 1384 L 1165 1384" fill="none" stroke="#d97706" stroke-width="3"/>
+  <line x1="1222" y1="713" x2="1236" y2="713" stroke="#d97706" stroke-width="2.6"/>
+  <line x1="1222" y1="803" x2="1236" y2="803" stroke="#d97706" stroke-width="2.6"/>
+  <line x1="1222" y1="893" x2="1236" y2="893" stroke="#d97706" stroke-width="2.6"/>
+  <rect x="1020" y="952" width="205" height="27" rx="6" fill="#ffffff" stroke="#f59e0b" stroke-width="1.6"/>
+  <text x="1122.5" y="971" text-anchor="middle" font-size="15.5" font-weight="800" fill="#78350f">queries stock &amp; items</text>
+
+  <!-- 4. Reporting & Admin -> DB Bus -->
+  <line x1="105" y1="1152" x2="105" y2="1384" stroke="#e11d48" stroke-width="2.6"/>
+  <rect x="38" y="1245" width="134" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="105" y="1264" text-anchor="middle" font-size="15" font-weight="800" fill="#881337">queries KPIs</text>
+
+  <line x1="397" y1="1152" x2="397" y2="1384" stroke="#e11d48" stroke-width="2.6"/>
+  <rect x="317" y="1245" width="160" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="397" y="1264" text-anchor="middle" font-size="15" font-weight="800" fill="#881337">queries balances</text>
+
+  <line x1="585" y1="1152" x2="585" y2="1384" stroke="#e11d48" stroke-width="2.6"/>
+  <rect x="510" y="1245" width="150" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="585" y="1264" text-anchor="middle" font-size="15" font-weight="800" fill="#881337">queries history</text>
+
+  <line x1="882.5" y1="1290" x2="882.5" y2="1384" stroke="#be123c" stroke-width="2.8"/>
+  <rect x="795" y="1328" width="175" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="882.5" y="1347" text-anchor="middle" font-size="15" font-weight="800" fill="#881337">reads &amp; writes logs</text>
+
+  <line x1="1140" y1="1152" x2="1140" y2="1384" stroke="#e11d48" stroke-width="2.6"/>
+  <rect x="1062" y="1328" width="156" height="27" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="1140" y="1347" text-anchor="middle" font-size="15" font-weight="800" fill="#881337">manages users</text>
+
+  <!-- Central Feed Arrow into Database Cylinder -->
+  <line x1="637.5" y1="1384" x2="637.5" y2="1434" stroke="#a16207" stroke-width="4" marker-end="url(#arrow-gold)"/>
+
+  <!-- 3D Database Cylinder -->
+  <g filter="url(#card-shadow)">
+    <path d="M 347.5 1464 L 347.5 1584 A 290 26 0 0 0 927.5 1584 L 927.5 1464 Z" fill="#fef08a" stroke="#ca8a04" stroke-width="3"/>
+    <ellipse cx="637.5" cy="1464" rx="290" ry="26" fill="#fde047" stroke="#ca8a04" stroke-width="3"/>
+    <text x="637.5" y="1530" text-anchor="middle" font-size="27" font-weight="900" fill="#713f12">Application Database</text>
+    <text x="637.5" y="1562" text-anchor="middle" font-size="17" font-weight="800" fill="#854d0e">Central Inventory Ledger &amp; Warehouse Data</text>
+  </g>
+</svg>`;
+
+    // ============================================================================
+    // 2. SHORT BOND LANDSCAPE SVG (11" x 8.5" -> 1650 x 1275 px)
+    //    EXTRA-LARGE BOLD LETTERS (21px - 30px) FOR PRINT CLARITY
+    // ============================================================================
+    const LANDSCAPE_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1650 1275" width="1650" height="1275" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif">
+  <defs>
+    <marker id="arrow-slate-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#0f172a"/>
+    </marker>
+    <marker id="arrow-blue-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-green-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#15803d"/>
+    </marker>
+    <marker id="arrow-amber-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#b45309"/>
+    </marker>
+    <marker id="arrow-rose-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#be123c"/>
+    </marker>
+    <marker id="arrow-gold-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 1 L 9.5 5 L 0 9 z" fill="#a16207"/>
+    </marker>
+    <filter id="card-shadow-l" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- White Background -->
+  <rect x="0" y="0" width="1650" height="1275" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="825" y="44" text-anchor="middle" font-size="30" font-weight="900" fill="#0f172a">INVENTORY MANAGEMENT — PER-MODULE CHART</text>
+
+  <!-- Operator -->
+  <g filter="url(#card-shadow-l)">
+    <ellipse cx="825" cy="96" rx="220" ry="34" fill="#e0e7ff" stroke="#4338ca" stroke-width="3"/>
+    <text x="825" y="104" text-anchor="middle" font-size="23" font-weight="900" fill="#1e1b4b">Warehouse Operator / Admin</text>
+  </g>
+  <line x1="825" y1="130" x2="825" y2="166" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate-l)"/>
+  <rect x="786" y="134" width="78" height="24" rx="5" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
+  <text x="825" y="151" text-anchor="middle" font-size="15.5" font-weight="900" fill="#0f172a">uses</text>
+
+  <!-- COMMAND HUB -->
+  <rect x="240" y="168" width="1170" height="172" rx="14" fill="#f8fafc" stroke="#2563eb" stroke-width="2.8" filter="url(#card-shadow-l)"/>
+  <rect x="240" y="168" width="1170" height="36" rx="14" fill="#dbeafe"/>
+  <rect x="240" y="188" width="1170" height="16" fill="#dbeafe"/>
+  <text x="825" y="193" text-anchor="middle" font-size="19.5" font-weight="900" fill="#1e3a8a">COMMAND HUB (ENTRY, AUTHENTICATION &amp; NAVIGATION)</text>
+
+  <g filter="url(#card-shadow-l)">
+    <rect x="268" y="214" width="255" height="54" rx="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+    <text x="395.5" y="249" text-anchor="middle" font-size="22" font-weight="900" fill="#1e3a8a">Login Portal</text>
+
+    <rect x="680" y="214" width="290" height="54" rx="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.8"/>
+    <text x="825" y="249" text-anchor="middle" font-size="22.5" font-weight="900" fill="#1e3a8a">Application Entry</text>
+
+    <rect x="1125" y="214" width="255" height="54" rx="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+    <text x="1252.5" y="249" text-anchor="middle" font-size="22" font-weight="900" fill="#1e3a8a">Authentication</text>
+
+    <rect x="370" y="278" width="380" height="52" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="2.4"/>
+    <text x="560" y="311" text-anchor="middle" font-size="21.5" font-weight="900" fill="#1e3a8a">Master Header &amp; Guard</text>
+
+    <rect x="900" y="278" width="380" height="52" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="2.4"/>
+    <text x="1090" y="311" text-anchor="middle" font-size="21.5" font-weight="900" fill="#1e3a8a">Navigation Sidebar</text>
+  </g>
+
+  <line x1="680" y1="241" x2="523" y2="241" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue-l)"/>
+  <line x1="970" y1="241" x2="1125" y2="241" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue-l)"/>
+  <line x1="750" y1="304" x2="900" y2="304" stroke="#1d4ed8" stroke-width="2.6" marker-end="url(#arrow-blue-l)"/>
+
+  <!-- Routing Bus from Command Hub to 3 Columns -->
+  <line x1="825" y1="340" x2="825" y2="368" stroke="#0f172a" stroke-width="3"/>
+  <line x1="335" y1="368" x2="1360" y2="368" stroke="#0f172a" stroke-width="3"/>
+  <line x1="335" y1="368" x2="335" y2="398" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate-l)"/>
+  <line x1="860" y1="368" x2="860" y2="398" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate-l)"/>
+  <line x1="1360" y1="368" x2="1360" y2="398" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-slate-l)"/>
+  <rect x="718" y="354" width="214" height="27" rx="6" fill="#ffffff" stroke="#475569" stroke-width="1.8"/>
+  <text x="825" y="373" text-anchor="middle" font-size="16" font-weight="900" fill="#0f172a">routes to modules</text>
+
+  <!-- COLUMN 1: STOCK OPERATIONS (x=25..635) -->
+  <rect x="25" y="400" width="610" height="625" rx="14" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.8" filter="url(#card-shadow-l)"/>
+  <rect x="25" y="400" width="610" height="38" rx="14" fill="#dcfce7"/>
+  <rect x="25" y="422" width="610" height="16" fill="#dcfce7"/>
+  <text x="330" y="426" text-anchor="middle" font-size="20" font-weight="900" fill="#14532d">STOCK OPERATIONS</text>
+
+  <!-- Specific Operation Modules -->
+  <g filter="url(#card-shadow-l)">
+    <rect x="42" y="450" width="136" height="64" rx="9" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="5,3"/>
+    <text x="110" y="478" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Stock</text>
+    <text x="110" y="502" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Receiving</text>
+
+    <rect x="188" y="450" width="136" height="64" rx="9" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="5,3"/>
+    <text x="256" y="478" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Stock</text>
+    <text x="256" y="502" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Dispatch</text>
+
+    <rect x="336" y="450" width="136" height="64" rx="9" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="5,3"/>
+    <text x="404" y="478" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Stock</text>
+    <text x="404" y="502" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Transfers</text>
+
+    <rect x="482" y="450" width="136" height="64" rx="9" fill="#ffffff" stroke="#16a34a" stroke-width="2.4" stroke-dasharray="5,3"/>
+    <text x="550" y="478" text-anchor="middle" font-size="19" font-weight="900" fill="#14532d">Stock</text>
+    <text x="550" y="502" text-anchor="middle" font-size="18.5" font-weight="900" fill="#14532d">Adjustments</text>
+  </g>
+
+  <line x1="110" y1="514" x2="155" y2="554" stroke="#15803d" stroke-width="2.4" stroke-dasharray="4,3" marker-end="url(#arrow-green-l)"/>
+  <line x1="256" y1="514" x2="215" y2="554" stroke="#15803d" stroke-width="2.4" stroke-dasharray="4,3" marker-end="url(#arrow-green-l)"/>
+  <line x1="404" y1="514" x2="445" y2="554" stroke="#15803d" stroke-width="2.4" stroke-dasharray="4,3" marker-end="url(#arrow-green-l)"/>
+  <line x1="550" y1="514" x2="510" y2="554" stroke="#15803d" stroke-width="2.4" stroke-dasharray="4,3" marker-end="url(#arrow-green-l)"/>
+
+  <!-- Unified Hubs -->
+  <g filter="url(#card-shadow-l)">
+    <rect x="42" y="556" width="282" height="68" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.6"/>
+    <text x="183" y="598" text-anchor="middle" font-size="21" font-weight="900" fill="#14532d">Inbound &amp; Outbound Hub</text>
+
+    <rect x="336" y="556" width="282" height="68" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.6"/>
+    <text x="477" y="598" text-anchor="middle" font-size="21" font-weight="900" fill="#14532d">Stock Operations Hub</text>
+  </g>
+
+  <path d="M 183 624 L 183 664 L 275 664 L 275 696" fill="none" stroke="#15803d" stroke-width="2.8" marker-end="url(#arrow-green-l)"/>
+  <path d="M 477 624 L 477 664 L 385 664 L 385 696" fill="none" stroke="#15803d" stroke-width="2.8" marker-end="url(#arrow-green-l)"/>
+  <rect x="210" y="650" width="240" height="26" rx="6" fill="#ffffff" stroke="#22c55e" stroke-width="1.6"/>
+  <text x="330" y="668" text-anchor="middle" font-size="15.5" font-weight="800" fill="#14532d">processes transactions</text>
+
+  <!-- Stock Service -->
+  <g filter="url(#card-shadow-l)">
+    <rect x="65" y="698" width="530" height="82" rx="12" fill="#bbf7d0" stroke="#15803d" stroke-width="3"/>
+    <text x="330" y="735" text-anchor="middle" font-size="24" font-weight="900" fill="#14532d">Transactional Stock Service</text>
+    <text x="330" y="763" text-anchor="middle" font-size="16" font-weight="800" fill="#166534">ACID Locks, ERP Rules &amp; Cancellations</text>
+  </g>
+
+  <!-- Movement Ledger -->
+  <g filter="url(#card-shadow-l)">
+    <rect x="115" y="880" width="430" height="66" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2.5"/>
+    <text x="330" y="921" text-anchor="middle" font-size="23" font-weight="900" fill="#14532d">Stock Movement Ledger</text>
+  </g>
+
+  <!-- COLUMN 2: CATALOG & STOCK (x=655..1065) -->
+  <rect x="655" y="400" width="410" height="625" rx="14" fill="#fffbeb" stroke="#d97706" stroke-width="2.8" filter="url(#card-shadow-l)"/>
+  <rect x="655" y="400" width="410" height="38" rx="14" fill="#fef3c7"/>
+  <rect x="655" y="422" width="410" height="16" fill="#fef3c7"/>
+  <text x="860" y="426" text-anchor="middle" font-size="20" font-weight="900" fill="#78350f">CATALOG &amp; STOCK</text>
+
+  <g filter="url(#card-shadow-l)">
+    <rect x="678" y="454" width="364" height="68" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="860" y="497" text-anchor="middle" font-size="23" font-weight="900" fill="#78350f">Item Catalog &amp; SKUs</text>
+
+    <rect x="700" y="544" width="320" height="58" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="2.4" stroke-dasharray="5,3"/>
+    <text x="860" y="581" text-anchor="middle" font-size="21" font-weight="900" fill="#78350f">Inventory Overview</text>
+
+    <rect x="678" y="632" width="364" height="68" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="860" y="675" text-anchor="middle" font-size="23" font-weight="900" fill="#78350f">Raw Materials</text>
+
+    <rect x="678" y="724" width="364" height="68" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="860" y="767" text-anchor="middle" font-size="23" font-weight="900" fill="#78350f">Finished Goods</text>
+
+    <rect x="678" y="816" width="364" height="68" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2.5"/>
+    <text x="860" y="859" text-anchor="middle" font-size="23" font-weight="900" fill="#78350f">Item Stock Card</text>
+  </g>
+  <line x1="860" y1="602" x2="860" y2="632" stroke="#b45309" stroke-width="2.4" stroke-dasharray="4,3" marker-end="url(#arrow-amber-l)"/>
+
+  <!-- COLUMN 3: REPORTING, INSIGHTS & ADMIN (x=1085..1625) -->
+  <rect x="1085" y="400" width="540" height="625" rx="14" fill="#fff1f2" stroke="#e11d48" stroke-width="2.8" filter="url(#card-shadow-l)"/>
+  <rect x="1085" y="400" width="540" height="38" rx="14" fill="#ffe4e6"/>
+  <rect x="1085" y="422" width="540" height="16" fill="#ffe4e6"/>
+  <text x="1355" y="426" text-anchor="middle" font-size="19.5" font-weight="900" fill="#881337">REPORTING, INSIGHTS &amp; ADMIN</text>
+
+  <g filter="url(#card-shadow-l)">
+    <rect x="1104" y="454" width="240" height="68" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1224" y="484" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Central</text>
+    <text x="1224" y="509" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Dashboard</text>
+
+    <rect x="1364" y="454" width="240" height="68" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1484" y="484" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Inventory</text>
+    <text x="1484" y="509" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Reports</text>
+
+    <rect x="1104" y="540" width="240" height="68" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1224" y="570" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Transaction</text>
+    <text x="1224" y="595" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Reports</text>
+
+    <rect x="1364" y="540" width="240" height="68" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1484" y="570" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Users &amp;</text>
+    <text x="1484" y="595" text-anchor="middle" font-size="21" font-weight="900" fill="#881337">Accounts</text>
+
+    <rect x="1135" y="626" width="440" height="64" rx="10" fill="#ffe4e6" stroke="#e11d48" stroke-width="2.5"/>
+    <text x="1355" y="666" text-anchor="middle" font-size="22" font-weight="900" fill="#881337">System Audit &amp; Accountability</text>
+
+    <rect x="1115" y="728" width="480" height="80" rx="12" fill="#fecdd3" stroke="#be123c" stroke-width="2.8"/>
+    <text x="1355" y="764" text-anchor="middle" font-size="23" font-weight="900" fill="#881337">Accountability Audit Service</text>
+    <text x="1355" y="792" text-anchor="middle" font-size="15.5" font-weight="800" fill="#9f1239">Logs User, Team &amp; Item for Every Action</text>
+  </g>
+
+  <line x1="1355" y1="690" x2="1355" y2="728" stroke="#be123c" stroke-width="2.8" marker-end="url(#arrow-rose-l)"/>
+
+  <!-- Cross-Link: Stock Service -> Accountability Service -->
+  <path d="M 595 745 L 645 745 L 645 968 L 1220 968 L 1220 808" fill="none" stroke="#be123c" stroke-width="2.8" stroke-dasharray="6,3" marker-end="url(#arrow-rose-l)"/>
+  <rect x="845" y="954" width="180" height="26" rx="6" fill="#ffffff" stroke="#fb7185" stroke-width="1.6"/>
+  <text x="935" y="972" text-anchor="middle" font-size="15.5" font-weight="800" fill="#881337">logs audit trail</text>
+
+  <!-- DATABASE BUS AT BOTTOM -->
+  <line x1="200" y1="1065" x2="1450" y2="1065" stroke="#a16207" stroke-width="3.5"/>
+  <line x1="200" y1="780" x2="200" y2="1065" stroke="#15803d" stroke-width="3"/>
+  <line x1="330" y1="946" x2="330" y2="1065" stroke="#16a34a" stroke-width="2.6"/>
+  <line x1="860" y1="884" x2="860" y2="1065" stroke="#d97706" stroke-width="3"/>
+  <line x1="1355" y1="808" x2="1355" y2="1065" stroke="#be123c" stroke-width="3"/>
+  <line x1="1450" y1="608" x2="1450" y2="1065" stroke="#e11d48" stroke-width="2.6"/>
+  <line x1="825" y1="1065" x2="825" y2="1105" stroke="#a16207" stroke-width="4" marker-end="url(#arrow-gold-l)"/>
+
+  <!-- Database Cylinder -->
+  <g filter="url(#card-shadow-l)">
+    <path d="M 525 1130 L 525 1232 A 300 24 0 0 0 1125 1232 L 1125 1130 Z" fill="#fef08a" stroke="#ca8a04" stroke-width="3"/>
+    <ellipse cx="825" cy="1130" rx="300" ry="24" fill="#fde047" stroke="#ca8a04" stroke-width="3"/>
+    <text x="825" y="1188" text-anchor="middle" font-size="26" font-weight="900" fill="#713f12">Application Database</text>
+    <text x="825" y="1217" text-anchor="middle" font-size="16.5" font-weight="800" fill="#854d0e">Central Inventory Ledger &amp; Warehouse Data</text>
+  </g>
+</svg>`;
+
+    let currentOrientation = 'portrait';
+    let scale = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    const viewport = document.getElementById('viewport');
+    const paperSheet = document.getElementById('paperSheet');
+    const zoomDisplay = document.getElementById('zoomDisplay');
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    function switchOrientation(mode) {
+      currentOrientation = mode;
+      if (mode === 'portrait') {
+        paperSheet.style.width = '1275px';
+        paperSheet.style.height = '1650px';
+        paperSheet.innerHTML = PORTRAIT_SVG;
+      } else {
+        paperSheet.style.width = '1650px';
+        paperSheet.style.height = '1275px';
+        paperSheet.innerHTML = LANDSCAPE_SVG;
       }
-    ];
-
-    // Referential Relationships
-    const RELATIONS = [
-      // Categories -> Items
-      { from: "categories", to: "items", label: "category_id" },
-
-      // Users -> Headers & Registries
-      { from: "users", to: "stock_ins", label: "created_by" },
-      { from: "users", to: "stock_ins", label: "cancelled_by" },
-      { from: "users", to: "stock_outs", label: "created_by" },
-      { from: "users", to: "stock_outs", label: "cancelled_by" },
-      { from: "users", to: "stock_transfers", label: "created_by" },
-      { from: "users", to: "stock_transfers", label: "cancelled_by" },
-      { from: "users", to: "stock_adjustments", label: "created_by" },
-      { from: "users", to: "stock_adjustments", label: "cancelled_by" },
-      { from: "users", to: "bad_products", label: "reported_by" },
-      { from: "users", to: "bad_products", label: "cancelled_by" },
-
-      // Warehouses -> Headers, Registries & Inventory
-      { from: "warehouses", to: "stock_ins", label: "warehouse_id" },
-      { from: "warehouses", to: "stock_outs", label: "warehouse_id" },
-      { from: "warehouses", to: "stock_transfers", label: "source_wh" },
-      { from: "warehouses", to: "stock_transfers", label: "dest_wh" },
-      { from: "warehouses", to: "stock_adjustments", label: "warehouse_id" },
-      { from: "warehouses", to: "bad_products", label: "warehouse_id" },
-      { from: "warehouses", to: "inventory", label: "warehouse_id" },
-
-      // Items -> Line Items, Registries & Inventory
-      { from: "items", to: "stock_in_items", label: "item_id" },
-      { from: "items", to: "stock_out_items", label: "item_id" },
-      { from: "items", to: "stock_transfer_items", label: "item_id" },
-      { from: "items", to: "stock_adjustment_items", label: "item_id" },
-      { from: "items", to: "bad_products", label: "item_id" },
-      { from: "items", to: "inventory", label: "item_id" },
-
-      // Header -> Line items (1:N)
-      { from: "stock_ins", to: "stock_in_items", label: "stock_in_id" },
-      { from: "stock_outs", to: "stock_out_items", label: "stock_out_id" },
-      { from: "stock_transfers", to: "stock_transfer_items", label: "stock_transfer_id" },
-      { from: "stock_adjustments", to: "stock_adjustment_items", label: "stock_adjustment_id" },
-
-      // Header & Registry -> Ledger Movements
-      { from: "stock_ins", to: "stock_movements", label: "stock_in_id" },
-      { from: "stock_outs", to: "stock_movements", label: "stock_out_id" },
-      { from: "stock_transfers", to: "stock_movements", label: "stock_transfer_id" },
-      { from: "stock_adjustments", to: "stock_movements", label: "stock_adjustment_id" },
-      { from: "bad_products", to: "stock_movements", label: "bad_product_id" },
-
-      // Ledger -> Snapshot Trigger Link
-      { from: "stock_movements", to: "inventory", label: "syncs (trigger)" }
-    ];
-
-    // State Variables
-    let zoom = 0.85;
-    let panX = 40;
-    let panY = 70;
-    let isPanning = false;
-    let startX, startY;
-    let selectedTable = null;
-
-    const world = document.getElementById("world");
-    const tablesContainer = document.getElementById("tables-container");
-    const linesLayer = document.getElementById("lines-layer");
-    const zoomLabel = document.getElementById("zoom-label");
-
-    // Color theme mappings
-    const THEME = {
-      purple: { border: "border-purple-500/40", header: "bg-purple-900/40 text-purple-300", badge: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
-      amber: { border: "border-amber-500/40", header: "bg-amber-900/40 text-amber-300", badge: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
-      blue: { border: "border-blue-500/40", header: "bg-blue-900/40 text-blue-300", badge: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
-      emerald: { border: "border-emerald-500/40", header: "bg-emerald-900/40 text-emerald-300", badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-      teal: { border: "border-teal-500/40", header: "bg-teal-900/40 text-teal-300", badge: "bg-teal-500/20 text-teal-300 border-teal-500/30" },
-      rose: { border: "border-rose-500/40", header: "bg-rose-900/40 text-rose-300", badge: "bg-rose-500/20 text-rose-300 border-rose-500/30" }
-    };
-
-    function renderTables() {
-      tablesContainer.innerHTML = "";
-      SCHEMA.forEach(tbl => {
-        const card = document.createElement("div");
-        card.id = `card-${tbl.id}`;
-        card.className = `table-card w-[290px] bg-slate-900/95 border ${THEME[tbl.color].border} rounded-2xl shadow-xl backdrop-blur overflow-hidden`;
-        card.style.left = `${tbl.x}px`;
-        card.style.top = `${tbl.y}px`;
-
-        let colsHtml = tbl.columns.map(col => {
-          let badge = "";
-          if (col.key === "PK") badge = `<span class="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold rounded">PK</span>`;
-          else if (col.key === "FK") badge = `<span class="px-1.5 py-0.2 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded">FK</span>`;
-          else if (col.key === "UQ") badge = `<span class="px-1.5 py-0.2 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold rounded">UQ</span>`;
-          else if (col.key === "CHK") badge = `<span class="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-bold rounded">CHK</span>`;
-          else if (col.key === "GEN") badge = `<span class="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded">GEN</span>`;
-          else if (col.key === "IDX") badge = `<span class="px-1.5 py-0.2 bg-slate-500/20 text-slate-400 border border-slate-500/30 text-[10px] font-bold rounded">IDX</span>`;
-
-          return `
-            <div class="flex items-center justify-between px-3.5 py-1.5 border-b border-slate-800/60 hover:bg-slate-800/40 text-xs">
-              <div class="flex items-center gap-1.5 truncate">
-                ${badge}
-                <span class="font-mono text-slate-200 truncate ${col.key === 'PK' ? 'font-semibold text-amber-200' : ''}">${col.name}</span>
-              </div>
-              <span class="font-mono text-[11px] text-slate-500 truncate ml-2">${col.type}</span>
-            </div>
-          `;
-        }).join("");
-
-        card.innerHTML = `
-          <div class="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 ${THEME[tbl.color].header}">
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-sm text-white">${tbl.name}</span>
-            </div>
-            <span class="text-[10px] px-2 py-0.5 rounded-full border ${THEME[tbl.color].badge} font-medium">${tbl.badge}</span>
-          </div>
-          <div class="divide-y divide-slate-800/40">${colsHtml}</div>
-        `;
-
-        makeDraggable(card, tbl);
-        card.addEventListener("click", (e) => {
-          e.stopPropagation();
-          selectTable(tbl.id);
-        });
-
-        tablesContainer.appendChild(card);
-      });
-
-      renderLines();
+      requestAnimationFrame(() => fitToScreen());
     }
 
-    function renderLines() {
-      linesLayer.innerHTML = "";
-      RELATIONS.forEach((rel, idx) => {
-        const fromEl = document.getElementById(`card-${rel.from}`);
-        const toEl = document.getElementById(`card-${rel.to}`);
-        if (!fromEl || !toEl) return;
-
-        const fRect = { x: parseFloat(fromEl.style.left), y: parseFloat(fromEl.style.top), w: fromEl.offsetWidth, h: fromEl.offsetHeight };
-        const tRect = { x: parseFloat(toEl.style.left), y: parseFloat(toEl.style.top), w: toEl.offsetWidth, h: toEl.offsetHeight };
-
-        let x1, y1, x2, y2;
-        if (fRect.y + fRect.h < tRect.y) {
-          x1 = fRect.x + fRect.w / 2;
-          y1 = fRect.y + fRect.h;
-          x2 = tRect.x + tRect.w / 2;
-          y2 = tRect.y;
-        } else if (fRect.y > tRect.y + tRect.h) {
-          x1 = fRect.x + fRect.w / 2;
-          y1 = fRect.y;
-          x2 = tRect.x + tRect.w / 2;
-          y2 = tRect.y + tRect.h;
-        } else if (fRect.x + fRect.w < tRect.x) {
-          x1 = fRect.x + fRect.w;
-          y1 = fRect.y + fRect.h / 2;
-          x2 = tRect.x;
-          y2 = tRect.y + tRect.h / 2;
-        } else {
-          x1 = fRect.x;
-          y1 = fRect.y + fRect.h / 2;
-          x2 = tRect.x + tRect.w;
-          y2 = tRect.y + tRect.h / 2;
-        }
-
-        const dx = Math.abs(x2 - x1) * 0.45;
-        const dy = Math.abs(y2 - y1) * 0.45;
-        let d = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
-        if (Math.abs(x2 - x1) > Math.abs(y2 - y1)) {
-          d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-        }
-
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", d);
-        path.setAttribute("id", `line-${idx}`);
-        path.setAttribute("data-from", rel.from);
-        path.setAttribute("data-to", rel.to);
-        path.setAttribute("stroke", "#475569");
-        path.setAttribute("marker-end", "url(#arrow)");
-        path.classList.add("bezier-line");
-
-        linesLayer.appendChild(path);
-      });
+    function updateTransform() {
+      paperSheet.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+      zoomDisplay.textContent = `${Math.round(scale * 100)}%`;
     }
 
-    function makeDraggable(el, tbl) {
-      let isDragging = false;
-      let offX, offY;
+    function fitToScreen() {
+      const naturalW = currentOrientation === 'portrait' ? 1275 : 1650;
+      const naturalH = currentOrientation === 'portrait' ? 1650 : 1275;
 
-      el.addEventListener("mousedown", (e) => {
-        isDragging = true;
-        offX = (e.clientX / zoom) - tbl.x;
-        offY = (e.clientY / zoom) - tbl.y;
-        el.style.zIndex = 30;
-      });
+      const toolbarHidden = document.getElementById('mainToolbar').classList.contains('hidden-ui');
+      const topOffset = toolbarHidden ? 20 : 76;
+      const availW = window.innerWidth - 40;
+      const availH = window.innerHeight - topOffset - 24;
 
-      window.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-        tbl.x = (e.clientX / zoom) - offX;
-        tbl.y = (e.clientY / zoom) - offY;
-        el.style.left = `${tbl.x}px`;
-        el.style.top = `${tbl.y}px`;
-        renderLines();
-      });
+      scale = Math.min(availW / naturalW, availH / naturalH, 1.15);
+      scale = Math.max(0.2, scale);
 
-      window.addEventListener("mouseup", () => {
-        if (isDragging) {
-          isDragging = false;
-          el.style.zIndex = 10;
-        }
-      });
-    }
+      panX = (window.innerWidth - naturalW * scale) / 2;
+      panY = topOffset + Math.max(0, (availH - naturalH * scale) / 2);
 
-    function selectTable(id) {
-      selectedTable = (selectedTable === id) ? null : id;
-      document.querySelectorAll(".table-card").forEach(c => c.classList.remove("selected"));
-      document.querySelectorAll(".bezier-line").forEach(l => {
-        l.classList.remove("highlighted", "dimmed");
-      });
-
-      if (!selectedTable) return;
-
-      const card = document.getElementById(`card-${selectedTable}`);
-      if (card) card.classList.add("selected");
-
-      document.querySelectorAll(".bezier-line").forEach(l => {
-        const from = l.getAttribute("data-from");
-        const to = l.getAttribute("data-to");
-        if (from === selectedTable || to === selectedTable) {
-          l.classList.add("highlighted");
-          l.setAttribute("marker-end", "url(#arrow-highlight)");
-        } else {
-          l.classList.add("dimmed");
-          l.setAttribute("marker-end", "url(#arrow)");
-        }
-      });
-    }
-
-    document.body.addEventListener("click", () => selectTable(null));
-
-    // Pan and Zoom
-    window.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.06 : 0.06;
-      zoom = Math.min(Math.max(0.35, zoom + delta), 1.75);
       updateTransform();
-    }, { passive: false });
+    }
 
-    window.addEventListener("mousedown", (e) => {
-      if (e.target.closest(".table-card") || e.target.closest("header") || e.target.closest("footer")) return;
-      isPanning = true;
+    function zoomBy(delta) {
+      const prevScale = scale;
+      scale = Math.min(Math.max(0.2, scale + delta), 2.5);
+
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      panX = cx - (cx - panX) * (scale / prevScale);
+      panY = cy - (cy - panY) * (scale / prevScale);
+
+      updateTransform();
+    }
+
+    function toggleUI(show) {
+      const toolbar = document.getElementById('mainToolbar');
+      const showBtn = document.getElementById('showUiBtn');
+      if (show) {
+        toolbar.classList.remove('hidden-ui');
+        showBtn.style.display = 'none';
+      } else {
+        toolbar.classList.add('hidden-ui');
+        showBtn.style.display = 'inline-flex';
+      }
+      fitToScreen();
+    }
+
+    // Pan & Zoom Events
+    viewport.addEventListener('mousedown', (e) => {
+      isDragging = true;
       startX = e.clientX - panX;
       startY = e.clientY - panY;
     });
 
-    window.addEventListener("mousemove", (e) => {
-      if (!isPanning) return;
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
       panX = e.clientX - startX;
       panY = e.clientY - startY;
       updateTransform();
     });
 
-    window.addEventListener("mouseup", () => { isPanning = false; });
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
 
-    function updateTransform() {
-      world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
-    }
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const prevScale = scale;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      scale = Math.min(Math.max(0.2, scale * factor), 2.5);
 
-    function zoomIn() { zoom = Math.min(1.75, zoom + 0.15); updateTransform(); }
-    function zoomOut() { zoom = Math.max(0.35, zoom - 0.15); updateTransform(); }
-
-    function resetView() {
-      zoom = 0.85;
-      panX = 40;
-      panY = 70;
+      panX = e.clientX - (e.clientX - panX) * (scale / prevScale);
+      panY = e.clientY - (e.clientY - panY) * (scale / prevScale);
       updateTransform();
-      // Reset default positions
-      const defaultPositions = {
-        users: { x: 40, y: 100 },
-        warehouses: { x: 400, y: 100 },
-        categories: { x: 760, y: 100 },
-        items: { x: 1120, y: 100 },
-        stock_ins: { x: 40, y: 450 },
-        stock_outs: { x: 370, y: 450 },
-        stock_transfers: { x: 700, y: 450 },
-        stock_adjustments: { x: 1040, y: 450 },
-        bad_products: { x: 1380, y: 450 },
-        stock_in_items: { x: 40, y: 920 },
-        stock_out_items: { x: 370, y: 920 },
-        stock_transfer_items: { x: 700, y: 920 },
-        stock_adjustment_items: { x: 1040, y: 920 },
-        stock_movements: { x: 520, y: 1170 },
-        inventory: { x: 520, y: 1680 }
+    }, { passive: false });
+
+    window.addEventListener('resize', () => fitToScreen());
+
+    // Build 300-DPI Short Bond Paper Canvas (2550 x 3300 px Portrait or 3300 x 2550 px Landscape)
+    function buildShortBondCanvas(callback) {
+      const svgEl = paperSheet.querySelector('svg');
+      if (!svgEl) return;
+
+      const w = currentOrientation === 'portrait' ? 1275 : 1650;
+      const h = currentOrientation === 'portrait' ? 1650 : 1275;
+
+      const svgString = new XMLSerializer().serializeToString(svgEl);
+      const encodedData = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+
+      const img = new Image();
+      img.onload = function () {
+        const scaleFactor = 2; // 2x = 2550x3300 (Exact 300 DPI for 8.5" x 11" Short Bond Paper!)
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = w * scaleFactor;
+        exportCanvas.height = h * scaleFactor;
+
+        const ctx = exportCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        ctx.scale(scaleFactor, scaleFactor);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        callback(exportCanvas);
       };
-      SCHEMA.forEach(tbl => {
-        if (defaultPositions[tbl.id]) {
-          tbl.x = defaultPositions[tbl.id].x;
-          tbl.y = defaultPositions[tbl.id].y;
-        }
-      });
-      renderTables();
+      img.src = encodedData;
     }
 
-    function filterTier(tier) {
-      document.querySelectorAll("[id^='tab-']").forEach(t => {
-        t.className = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+    function downloadPNG() {
+      buildShortBondCanvas((exportCanvas) => {
+        const pngUrl = exportCanvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = pngUrl;
+        a.download = `inventory_team_architecture_short_bond_${currentOrientation}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast(`Downloaded Short Bond (${currentOrientation}) 300-DPI PNG!`);
       });
-      document.getElementById(`tab-${tier}`).className = "px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium transition";
-
-      SCHEMA.forEach(tbl => {
-        const el = document.getElementById(`card-${tbl.id}`);
-        if (!el) return;
-        if (tier === "all" || tbl.tier === tier) {
-          el.style.display = "block";
-        } else {
-          el.style.display = "none";
-        }
-      });
-      renderLines();
     }
 
-    // Initialize
-    updateTransform();
-    renderTables();
+    function copyImageToClipboard() {
+      buildShortBondCanvas((exportCanvas) => {
+        exportCanvas.toBlob(async (blob) => {
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+            showToast('Copied Short Bond image! Open WPS Docs and press Ctrl + V.');
+          } catch (err) {
+            downloadPNG();
+          }
+        }, 'image/png');
+      });
+    }
+
+    // Initialize in Short Bond Portrait (8.5" x 11")
+    switchOrientation('portrait');
   </script>
 </body>
 </html>

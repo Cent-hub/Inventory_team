@@ -19,19 +19,6 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-$auth = $auth ?? new AuthController();
-$pdo  = $pdo ?? Database::getConnection();
-$currentUser = $currentUser ?? ($auth->getCurrentUser() ?? []);
-$currentWarehouseId = $currentWarehouseId ?? (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
-
-/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
-$assignedWarehouse = is_array($assignedWarehouse ?? null) ? $assignedWarehouse : [
-    'warehouse_id'   => $currentWarehouseId ?? 1,
-    'warehouse_code' => 'WH-MAIN',
-    'warehouse_name' => 'Main Warehouse',
-    'location'       => 'Default Location'
-];
-
 // Fetch Warehouses
 $warehouses = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -353,6 +340,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
         <!-- Buttons -->
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a id="resetFilterBtn" href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>" class="btn btn-secondary" style="height: 38px; text-decoration: none;" title="Reset Filters">
+                <span>Reset</span>
+            </a>
             <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -469,16 +459,19 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                     <?php if (empty($inboundData)): ?>
                         <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No inbound stock receipts found in this date range.</td></tr>
                     <?php else: ?>
-                        <?php foreach ($inboundData as $row): ?>
-                            <tr>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                        <?php foreach ($inboundData as $row): 
+                            $isCancelled = ($row['status'] === 'cancelled');
+                            $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
+                        ?>
+                            <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; color: #15803D;">+<?= formatQty((float)$row['total_qty']) ?></td>
-                                <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
+                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #15803D;' ?>">+<?= formatQty((float)$row['total_qty']) ?></td>
+                                <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -517,16 +510,19 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                     <?php if (empty($outboundData)): ?>
                         <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No outbound stock shipments found in this date range.</td></tr>
                     <?php else: ?>
-                        <?php foreach ($outboundData as $row): ?>
-                            <tr>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                        <?php foreach ($outboundData as $row): 
+                            $isCancelled = ($row['status'] === 'cancelled');
+                            $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
+                        ?>
+                            <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; color: #B91C1C;">-<?= formatQty((float)$row['total_qty']) ?></td>
-                                <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
+                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #B91C1C;' ?>">-<?= formatQty((float)$row['total_qty']) ?></td>
+                                <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -565,16 +561,19 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                     <?php if (empty($transferData)): ?>
                         <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No inter-branch transfers recorded in this date range.</td></tr>
                     <?php else: ?>
-                        <?php foreach ($transferData as $row): ?>
-                            <tr>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                        <?php foreach ($transferData as $row): 
+                            $isCancelled = ($row['status'] === 'cancelled');
+                            $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
+                        ?>
+                            <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transfer_date'])) ?></td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['from_code']) ?>"><?= htmlspecialchars($row['from_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['from_name']) ?></span></td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['to_code']) ?>"><?= htmlspecialchars($row['to_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['to_name']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?></td>
-                                <td style="text-align: right; font-weight: 700; color: #1D4ED8;"><?= formatQty((float)$row['total_qty']) ?></td>
-                                <td><span class="badge status-completed"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
+                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #1D4ED8;' ?>"><?= formatQty((float)$row['total_qty']) ?></td>
+                                <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -607,17 +606,21 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th style="text-align: right;">Adjusted Qty</th>
                         <th style="text-align: right;">Variance Delta</th>
                         <th>Reason</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($adjustmentData)): ?>
-                        <tr><td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded in this date range.</td></tr>
+                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No stock adjustments recorded in this date range.</td></tr>
                     <?php else: ?>
                         <?php foreach ($adjustmentData as $row): 
                             $diff = (float)$row['difference'];
+                            $adjStatus = $row['status'] ?? 'approved';
+                            $isCancelled = in_array($adjStatus, ['cancelled', 'rejected'], true);
+                            $adjStClass = in_array($adjStatus, ['approved', 'completed'], true) ? 'status-completed' : (($adjStatus === 'pending') ? 'status-pending' : 'status-cancelled');
                         ?>
-                            <tr>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                            <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['adjustment_date'])) ?></td>
                                 <td>
                                     <strong><?= htmlspecialchars($row['item_name']) ?></strong>
@@ -625,13 +628,14 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 </td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td style="text-align: right; color: var(--gray);"><?= formatQty((float)$row['previous_quantity']) ?></td>
-                                <td style="text-align: right; font-weight: 600; color: var(--panel-ink);"><?= formatQty((float)$row['adjusted_quantity']) ?></td>
-                                <td style="text-align: right; font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
+                                <td style="text-align: right; font-weight: 600; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: var(--panel-ink);' ?>"><?= formatQty((float)$row['adjusted_quantity']) ?></td>
+                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: ' . ($diff >= 0 ? '#15803D' : '#B91C1C') . ';' ?>">
                                     <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 200px;" title="<?= htmlspecialchars($row['reason']) ?>">
                                     <?= htmlspecialchars($row['reason'] ?: 'Cycle count adjustment') ?>
                                 </td>
+                                <td><span class="badge <?= $adjStClass ?>"><?= htmlspecialchars(ucfirst($adjStatus)) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -737,35 +741,20 @@ function filterActiveTransactionTable() {
     }
 }
 
-// Export active report table as CSV
+// Export active report table as CSV (delegates to global exportTableToCsv in footer.php)
 function exportReportCsv() {
-    const table = document.getElementById('table-' + currentActiveTab);
-    if (!table) return;
-
-    let csv = [];
-    const rows = table.querySelectorAll('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = [], cols = rows[i].querySelectorAll('td, th');
-        for (let j = 0; j < cols.length; j++) {
-            let text = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/\s+/g, ' ').trim();
-            text = text.replace(/"/g, '""');
-            row.push('"' + text + '"');
-        }
-        if (row.length > 0 && !row[0].includes('No records found') && !row[0].includes('No stock movement') && !row[0].includes('No inbound') && !row[0].includes('No outbound') && !row[0].includes('No inter-branch') && !row[0].includes('No stock adjustment')) {
-            csv.push(row.join(','));
-        }
-    }
-
-    const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
-    const downloadLink = document.createElement('a');
-    downloadLink.download = currentActiveTab + '_report_' + new Date().toISOString().slice(0, 10) + '.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    exportTableToCsv('table-' + currentActiveTab, currentActiveTab);
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('export') === 'csv') {
+        exportReportCsv();
+        const url = new URL(window.location.href);
+        url.searchParams.delete('export');
+        window.history.replaceState({ tab: currentActiveTab }, '', url.toString());
+    }
+});
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
