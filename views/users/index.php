@@ -60,7 +60,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                         $errorMessage = "An account with email '{$uEmail}' already exists.";
                     } else {
                         $passwordHash = password_hash($uPassword, PASSWORD_BCRYPT);
-                        $apiToken     = bin2hex(random_bytes(32));
+                        $rawApiToken  = bin2hex(random_bytes(32));
+                        $apiTokenHash = hash('sha256', $rawApiToken);
 
                         $stmtIns = $pdo->prepare("
                             INSERT INTO users (name, email, password, role, team, warehouse_id, api_token, status)
@@ -73,7 +74,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             $uRole,
                             $uTeam ?: 'Inventory',
                             $uWarehouse,
-                            $apiToken,
+                            $apiTokenHash,
                             $uStatus
                         ]);
                         $newUserId = (int)$pdo->lastInsertId();
@@ -89,10 +90,45 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             'notes'            => "Created user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}"
                         ]);
 
-                        $successMessage = "User account '{$uName}' ({$uEmail}) created successfully!";
+                        $successMessage = "User account '{$uName}' ({$uEmail}) created successfully! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
                     }
                 } catch (Exception $e) {
                     $errorMessage = "Failed to create user account: " . $e->getMessage();
+                }
+            }
+        } elseif ($action === 'regenerate_token') {
+            $targetUserId = (int)($_POST['user_id'] ?? 0);
+            if ($targetUserId <= 0) {
+                $errorMessage = "Invalid user account selected.";
+            } else {
+                try {
+                    $stmtUser = $pdo->prepare("SELECT name, email, warehouse_id FROM users WHERE user_id = ?");
+                    $stmtUser->execute([$targetUserId]);
+                    $targetUser = $stmtUser->fetch();
+                    if (!$targetUser) {
+                        $errorMessage = "User account not found.";
+                    } else {
+                        $rawApiToken  = bin2hex(random_bytes(32));
+                        $apiTokenHash = hash('sha256', $rawApiToken);
+
+                        $stmtUpd = $pdo->prepare("UPDATE users SET api_token = ? WHERE user_id = ?");
+                        $stmtUpd->execute([$apiTokenHash, $targetUserId]);
+
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => (int)($currentUser['id'] ?? 1),
+                            'team'             => 'Inventory',
+                            'action_type'      => 'USER_UPDATED',
+                            'channel'          => 'UI',
+                            'warehouse_id'     => (int)($targetUser['warehouse_id'] ?: ($currentWarehouseId ?: 1)),
+                            'reference_number' => "USR-{$targetUserId}",
+                            'notes'            => "Regenerated API Bearer token for user: {$targetUser['name']} ({$targetUser['email']})"
+                        ]);
+
+                        $successMessage = "API Token for user '{$targetUser['name']}' has been regenerated! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>New API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
+                    }
+                } catch (Exception $e) {
+                    $errorMessage = "Failed to regenerate API token: " . $e->getMessage();
                 }
             }
         } elseif ($action === 'update_user') {
@@ -610,6 +646,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     <label class="form-label" style="font-size: 11px;">Created Timestamp</label>
                     <div id="modalCreatedText" class="font-mono text-xs text-muted">—</div>
                 </div>
+                <div style="grid-column: 1 / -1; margin-top: 10px; padding-top: 14px; border-top: 1px solid #E2E8F0;">
+                    <form method="POST" action="index.php?page=users" onsubmit="return confirm('Regenerating will immediately revoke the current API token for this user and generate a new one. Do you want to proceed?');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="regenerate_token">
+                        <input type="hidden" name="user_id" id="modalRegenerateUserId" value="">
+                        <button type="submit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                            <span>Regenerate API Bearer Token</span>
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -884,6 +931,10 @@ function showUserDetails(userData) {
     document.getElementById('modalTeamText').innerText = userData.team;
     document.getElementById('modalFacilityText').innerText = userData.facility;
     document.getElementById('modalCreatedText').innerText = userData.created_at;
+    const regenInput = document.getElementById('modalRegenerateUserId');
+    if (regenInput) {
+        regenInput.value = userData.id || '';
+    }
 
     const modal = document.getElementById('userModal');
     modal.classList.add('open');

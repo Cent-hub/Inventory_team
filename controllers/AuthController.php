@@ -327,14 +327,9 @@ class AuthController {
         $_SESSION['logged_in']      = true;
         $_SESSION['login_time']     = time();
 
-        if ($remember) {
-            $rememberToken = bin2hex(random_bytes(32));
-            setcookie('casklog_remember', $rememberToken, [
-                'expires'  => time() + (30 * 86400),
-                'path'     => '/',
-                'httponly' => true,
-                'samesite' => 'Lax'
-            ]);
+        require_once __DIR__ . '/../helpers/csrf.php';
+        if (function_exists('regenerateCsrfToken')) {
+            regenerateCsrfToken();
         }
 
         $redirect = $this->getDashboardRedirectUrl();
@@ -396,10 +391,6 @@ class AuthController {
                 $params["secure"],
                 $params["httponly"]
             );
-        }
-
-        if (isset($_COOKIE['casklog_remember']) && !headers_sent()) {
-            setcookie('casklog_remember', '', time() - 3600, '/');
         }
 
         if (session_status() === PHP_SESSION_ACTIVE) {

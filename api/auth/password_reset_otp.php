@@ -9,6 +9,7 @@ header('Content-Type: application/json; charset=UTF-8');
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
+require_once __DIR__ . '/../../helpers/response.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -19,10 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Guard against OTP brute-force and spam (max 10 requests per 5 minutes per IP)
 checkRateLimit('auth/password_reset_otp', 10, 300);
 
-$input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input)) {
-    $input = $_POST;
-}
+$input = getRequestJson();
 
 $action = $input['action'] ?? '';
 $email  = trim(filter_var($input['email'] ?? '', FILTER_SANITIZE_EMAIL));

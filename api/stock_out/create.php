@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Production, or Sales)
-$authUser = requireApiAuth(['production', 'sales']);
+// Authenticate caller (Admin, Inventory, Production, or Sales)
+$authUser = requireApiAuth(['admin', 'inventory', 'production', 'sales']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce rate limiting per API token (30 req / 60s)
@@ -77,14 +77,26 @@ if (!in_array($sourceType, $validSourceTypes, true)) {
     ], 400);
 }
 
-// Team domain enforcement
+// Team domain and warehouse isolation enforcement
 $userRole = strtolower(trim((string)($authUser['role'] ?? '')));
 $userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
 $isSuperAdmin = ($userRole === 'super_admin');
+$isInventoryAdmin = ($userRole === 'super_admin' || $userRole === 'admin' || $userTeam === 'inventory');
 $isSalesUser = ($userTeam === 'sales' || $userRole === 'sales');
 $isProductionUser = ($userTeam === 'production' || $userRole === 'production');
 
-if ($isSalesUser && $sourceType !== 'SALES_DELIVERY') {
+if (!$isSuperAdmin) {
+    $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
+    if ($assignedWhId > 0 && $assignedWhId !== $warehouseId) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Access Denied: You cannot record stock out for warehouse {$warehouseId}. Your assigned warehouse is {$assignedWhId}."
+        ], 403);
+    }
+}
+
+if ($isSalesUser && $sourceType !== 'SALES_DELIVERY' && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -92,7 +104,7 @@ if ($isSalesUser && $sourceType !== 'SALES_DELIVERY') {
     ], 403);
 }
 
-if ($sourceType === 'MATERIAL_REQUEST' && !$isProductionUser && !$isSuperAdmin) {
+if ($sourceType === 'MATERIAL_REQUEST' && !$isProductionUser && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -100,7 +112,7 @@ if ($sourceType === 'MATERIAL_REQUEST' && !$isProductionUser && !$isSuperAdmin) 
     ], 403);
 }
 
-if ($sourceType === 'SALES_DELIVERY' && !$isSalesUser && !$isSuperAdmin) {
+if ($sourceType === 'SALES_DELIVERY' && !$isSalesUser && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -108,11 +120,11 @@ if ($sourceType === 'SALES_DELIVERY' && !$isSalesUser && !$isSuperAdmin) {
     ], 403);
 }
 
-if ($sourceType === 'MANUAL' && !$isSuperAdmin) {
+if ($sourceType === 'MANUAL' && !$isSuperAdmin && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
-        'detail'  => "Only Super Administrators can submit MANUAL stock adjustments via API. Your account is '{$authUser['name']}'."
+        'detail'  => "Only Administrators can submit MANUAL stock adjustments via API. Your account is '{$authUser['name']}'."
     ], 403);
 }
 
@@ -138,7 +150,8 @@ try {
         $sourceReferenceNo,
         $items,
         $userId,
-        $remarks
+        $remarks,
+        $authUser
     );
 
     jsonResponse([

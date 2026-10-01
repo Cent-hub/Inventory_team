@@ -386,12 +386,6 @@ const allInventoryItems = <?= json_encode(array_map(function($it) {
 let currentHighlightedIndex = -1;
 let currentFilteredItems = [];
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-}
-
 function highlightMatches(text, query) {
     if (!query || !text) return escapeHtml(text || '');
     const escapedText = escapeHtml(text);

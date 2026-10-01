@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-$authUser = requireApiAuth();
+$authUser = requireApiAuth(['admin', 'inventory']);
 $userId = (int)$authUser['user_id'];
 
 checkRateLimit('stock_adjustment_approve', 30, 60, $authUser['api_token']);

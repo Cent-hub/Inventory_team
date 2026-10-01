@@ -6,6 +6,7 @@
 
 header('Content-Type: application/json; charset=UTF-8');
 
+require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../controllers/AuthController.php';
 
 // Only allow POST
@@ -19,10 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // Parse JSON or form POST body
-$input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input)) {
-    $input = $_POST;
-}
+$input = getRequestJson();
 
 $email    = $input['email'] ?? '';
 $password = $input['password'] ?? '';

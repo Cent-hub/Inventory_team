@@ -133,6 +133,9 @@ class AccountabilityService {
      * Helper to infer team from user email
      */
     private static function inferTeamFromEmail(?string $email): string {
+        if (function_exists('resolveUserTeam')) {
+            return resolveUserTeam(null, $email);
+        }
         $e = strtolower(trim((string)$email));
         if (str_contains($e, 'procure')) return 'Procurement';
         if (str_contains($e, 'prod') || str_contains($e, 'brew') || str_contains($e, 'distill')) return 'Production';
@@ -467,10 +470,12 @@ class AccountabilityService {
         $logs = self::getLogs($warehouseId, $filters);
 
         $filename = 'accountability_log_' . date('Ymd_His') . '.csv';
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Pragma: no-cache');
-        header('Expires: 0');
+        if (!headers_sent()) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+        }
 
         $out = fopen('php://output', 'w');
         // Add UTF-8 BOM for Excel compatibility

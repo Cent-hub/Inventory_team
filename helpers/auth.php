@@ -77,6 +77,31 @@ function enforceHttpsSecurity(): void {
  * @param array $allowed List of permitted roles or teams (e.g. ['procurement', 'production', 'sales', 'admin'])
  * @return array Authenticated user record
  */
+/**
+ * Resolve user team with standardized heuristic fallback
+ */
+function resolveUserTeam(?string $team, ?string $email = ''): string {
+    $cleanTeam = trim((string)$team);
+    if (!empty($cleanTeam) && strcasecmp($cleanTeam, 'inventory') === 0) {
+        return 'Inventory';
+    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'procurement') === 0) {
+        return 'Procurement';
+    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'production') === 0) {
+        return 'Production';
+    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'sales') === 0) {
+        return 'Sales';
+    }
+    $emailLower = strtolower(trim((string)$email));
+    if (str_contains($emailLower, 'procure')) {
+        return 'Procurement';
+    } elseif (str_contains($emailLower, 'prod') || str_contains($emailLower, 'brew') || str_contains($emailLower, 'distill')) {
+        return 'Production';
+    } elseif (str_contains($emailLower, 'sale') || str_contains($emailLower, 'order')) {
+        return 'Sales';
+    }
+    return 'Inventory';
+}
+
 function requireApiAuth(array $allowed = []): array {
     // 1. Enforce HTTPS in production / when configured (SEC-06)
     enforceHttpsSecurity();
@@ -92,16 +117,17 @@ function requireApiAuth(array $allowed = []): array {
     }
 
     // 2. Hash incoming token with SHA-256 for secure constant-time DB lookup (SEC-04)
+    // Supports both SHA-256 hashed tokens and legacy plain tokens for backward compatibility
     $tokenHash = hash('sha256', $token);
 
     $pdo = Database::getConnection();
     $stmt = $pdo->prepare("
         SELECT user_id, name, email, role, team, warehouse_id, api_token, status
         FROM users
-        WHERE api_token = ? AND status = 'active'
+        WHERE (api_token = ? OR api_token = ?) AND status = 'active'
         LIMIT 1
     ");
-    $stmt->execute([$tokenHash]);
+    $stmt->execute([$tokenHash, $token]);
     $user = $stmt->fetch();
 
     if (!$user) {
@@ -112,19 +138,8 @@ function requireApiAuth(array $allowed = []): array {
         ], 401);
     }
 
-    // Infer team from email if not explicitly set in database
-    if (empty($user['team'])) {
-        $emailLower = strtolower(trim((string)($user['email'] ?? '')));
-        if (str_contains($emailLower, 'procure')) {
-            $user['team'] = 'Procurement';
-        } elseif (str_contains($emailLower, 'prod') || str_contains($emailLower, 'brew') || str_contains($emailLower, 'distill')) {
-            $user['team'] = 'Production';
-        } elseif (str_contains($emailLower, 'sale') || str_contains($emailLower, 'order')) {
-            $user['team'] = 'Sales';
-        } else {
-            $user['team'] = 'Inventory';
-        }
-    }
+    // Standardize team assignment
+    $user['team'] = resolveUserTeam($user['team'] ?? '', $user['email'] ?? '');
 
     // Always permit Super Admin
     if (($user['role'] ?? '') === 'super_admin') {

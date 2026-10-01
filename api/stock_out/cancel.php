@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Production, or Sales)
-$authUser = requireApiAuth(['production', 'sales']);
+// Authenticate caller (Admin, Inventory, Production, or Sales)
+$authUser = requireApiAuth(['admin', 'inventory', 'production', 'sales']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce strict rate limiting on cancellations (10 req / 60s)

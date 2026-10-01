@@ -72,14 +72,36 @@ function checkRateLimit(
             ], 429);
         }
 
-        // Probabilistic cleanup of records older than 1 hour (1% chance)
+        // Automated opportunistic database pruning of expired records older than 24 hours (1% lottery check)
         if (random_int(1, 100) === 1) {
-            $cutoff = $now - 3600;
-            $pdo->query("DELETE FROM api_rate_limits WHERE window_start < {$cutoff}");
+            pruneExpiredRateLimits($pdo, 86400);
         }
     } catch (PDOException $e) {
         // In case rate limit table has a momentary lock or error, do not break the whole API
         error_log("RateLimiter error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Automated opportunistic database pruning for expired rate limit records.
+ * Deletes records older than $maxAgeSeconds (defaults to 86400 = 24 hours).
+ *
+ * @param PDO|null $pdo Database connection (optional)
+ * @param int $maxAgeSeconds Max age in seconds before a record is pruned
+ * @return int Number of deleted rows
+ */
+function pruneExpiredRateLimits(?PDO $pdo = null, int $maxAgeSeconds = 86400): int {
+    try {
+        if ($pdo === null) {
+            $pdo = Database::getConnection();
+        }
+        $cutoff = time() - $maxAgeSeconds;
+        $stmt = $pdo->prepare("DELETE FROM api_rate_limits WHERE window_start < ?");
+        $stmt->execute([$cutoff]);
+        return (int)$stmt->rowCount();
+    } catch (PDOException $e) {
+        error_log("RateLimiter prune error: " . $e->getMessage());
+        return 0;
     }
 }
 

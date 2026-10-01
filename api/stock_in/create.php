@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller: Admin, Procurement (User 2, 5), or Production (User 3)
-$authUser = requireApiAuth(['procurement', 'production']);
+// Authenticate caller: Admin, Inventory, Procurement (User 2, 5), or Production (User 3)
+$authUser = requireApiAuth(['admin', 'inventory', 'procurement', 'production']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce rate limiting per API token (30 req / 60s)
@@ -82,14 +82,26 @@ if (empty($sourceReferenceNo)) {
     ], 400);
 }
 
-// Team domain enforcement
+// Team domain and warehouse isolation enforcement
 $userRole = strtolower(trim((string)($authUser['role'] ?? '')));
 $userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
 $isSuperAdmin = ($userRole === 'super_admin');
+$isInventoryAdmin = ($userRole === 'super_admin' || $userRole === 'admin' || $userTeam === 'inventory');
 $isProcurement = ($userTeam === 'procurement' || $userRole === 'procurement');
 $isProduction = ($userTeam === 'production' || $userRole === 'production');
 
-if ($sourceType === 'PURCHASE_ORDER' && !$isProcurement && !$isSuperAdmin) {
+if (!$isSuperAdmin) {
+    $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
+    if ($assignedWhId > 0 && $assignedWhId !== $warehouseId) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Access Denied: You cannot record stock in for warehouse {$warehouseId}. Your assigned warehouse is {$assignedWhId}."
+        ], 403);
+    }
+}
+
+if ($sourceType === 'PURCHASE_ORDER' && !$isProcurement && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -97,7 +109,7 @@ if ($sourceType === 'PURCHASE_ORDER' && !$isProcurement && !$isSuperAdmin) {
     ], 403);
 }
 
-if ($sourceType === 'PRODUCTION_RETURN' && !$isProduction && !$isSuperAdmin) {
+if ($sourceType === 'PRODUCTION_RETURN' && !$isProduction && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -120,7 +132,8 @@ try {
         $sourceReferenceNo,
         $items,
         $userId,
-        $remarks
+        $remarks,
+        $authUser
     );
 
     jsonResponse([

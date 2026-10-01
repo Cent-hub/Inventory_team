@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Procurement, or Production)
-$authUser = requireApiAuth(['production', 'procurement']);
+// Authenticate caller (Admin, Inventory, Production, or Procurement)
+$authUser = requireApiAuth(['admin', 'inventory', 'production', 'procurement']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce rate limiting per API token (30 req / 60s)
@@ -47,6 +47,20 @@ if ($sourceWhId === $destWhId) {
     ], 400);
 }
 
+// Warehouse isolation check (non-super-admin can only transfer stock OUT of assigned warehouse)
+$userRole = strtolower(trim((string)($authUser['role'] ?? '')));
+$isSuperAdmin = ($userRole === 'super_admin');
+if (!$isSuperAdmin) {
+    $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
+    if ($assignedWhId > 0 && $assignedWhId !== $sourceWhId) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Access Denied: You cannot transfer stock out of warehouse {$sourceWhId}. Your assigned warehouse is {$assignedWhId}."
+        ], 403);
+    }
+}
+
 if (!is_array($items) || empty($items)) {
     jsonResponse([
         'success' => false,
@@ -61,12 +75,13 @@ try {
         $destWhId,
         $items,
         $userId,
-        $remarks
+        $remarks,
+        $authUser
     );
 
     jsonResponse([
         'success' => true,
-        'message' => 'Stock transfer recorded successfully. Dual movements created and warehouse inventories updated.',
+        'message' => 'Stock transfer initiated successfully. Stock has been deducted from source warehouse and transfer is pending receipt at destination warehouse.',
         'data'    => $result
     ], 201);
 } catch (InvalidArgumentException $e) {

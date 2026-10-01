@@ -20,6 +20,7 @@
 </div><!-- /.app-shell -->
 
 <?php require_once __DIR__ . '/settings_modal.php'; ?>
+<script src="<?= BASE_URL ?>assets/js/settings_modal.js?v=<?= file_exists(__DIR__ . '/../../assets/js/settings_modal.js') ? filemtime(__DIR__ . '/../../assets/js/settings_modal.js') : time() ?>"></script>
 
 <script>
 // Toggle Accordion Nav Group
@@ -48,12 +49,12 @@ function toggleSidebar() {
 }
 
 // Shared HTML-escaping helper used across modals and dynamic table renders
-function escapeHtml(str) {
+window.escapeHtml = window.escapeHtml || function(str) {
     if (!str) return '';
     return String(str).replace(/[&<>"']/g, function(m) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
     });
-}
+};
 
 // Universal Client-side Table Filter with Pagination Integration
 function filterTable(inputId, tableId) {

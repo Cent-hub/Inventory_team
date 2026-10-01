@@ -145,13 +145,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // DATA QUERIES: SECTION 1 (INBOUND / STOCK IN)
 // =============================================================================
 
-// Fetch all active items for receiving dropdown
-$allItems = $pdo->query("
-    SELECT item_id, item_code, item_name, item_type, unit 
-    FROM items 
-    WHERE status = 'active' 
-    ORDER BY item_type ASC, item_name ASC
-")->fetchAll(PDO::FETCH_ASSOC);
+// Consolidated query: Fetch all active items with warehouse inventory balance
+$allItemsStmt = $pdo->prepare("
+    SELECT i.item_id, i.item_code, i.item_name, i.item_type, i.unit, COALESCE(inv.quantity, 0.000) AS current_stock
+    FROM items i 
+    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = :wid
+    WHERE i.status = 'active' 
+    ORDER BY i.item_type ASC, i.item_name ASC
+");
+$allItemsStmt->execute([':wid' => $currentWarehouseId]);
+$allItems = $allItemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch Stock In transactions strictly for assigned warehouse
 $stmtIn = $pdo->prepare("
@@ -214,16 +217,8 @@ $productionInbounds  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? 
 // DATA QUERIES: SECTION 2 (OUTBOUND / STOCK OUT)
 // =============================================================================
 
-// Fetch items available in this warehouse with positive balance
-$availStmt = $pdo->prepare("
-    SELECT i.item_id, i.item_code, i.item_name, i.item_type, i.unit, inv.quantity AS current_stock
-    FROM inventory inv
-    JOIN items i ON inv.item_id = i.item_id
-    WHERE inv.warehouse_id = :wid AND inv.quantity > 0 AND i.status = 'active'
-    ORDER BY i.item_type ASC, i.item_name ASC
-");
-$availStmt->execute([':wid' => $currentWarehouseId]);
-$availableItems = $availStmt->fetchAll(PDO::FETCH_ASSOC);
+// Items available in this warehouse with positive balance (reusing consolidated item query)
+$availableItems = array_values(array_filter($allItems, fn($it) => (float)$it['current_stock'] > 0));
 
 // Fetch Stock Out transactions strictly for assigned warehouse
 $stmtOut = $pdo->prepare("
@@ -1392,7 +1387,7 @@ function openDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #15803D;">+${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: #15803D;">+${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });
@@ -1509,7 +1504,7 @@ function openOutDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #B91C1C;">-${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: #B91C1C;">-${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });

@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
+require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -18,7 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-$authUser = requireApiAuth();
+$authUser = requireApiAuth(['admin', 'inventory', 'production']);
+checkRateLimit('bad_prod_get', 60, 60, $authUser['api_token']);
 $badProductId = (int)($_GET['id'] ?? $_GET['bad_product_id'] ?? 0);
 
 if ($badProductId <= 0) {

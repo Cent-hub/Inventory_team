@@ -31,10 +31,6 @@ if (isset($_GET['tab']) && in_array($_GET['tab'], ['transfer', 'adjustment', 'st
     $activeTab = 'stock_card';
 }
 
-// Total active warehouses check for single-warehouse transfer safety
-$stmtTotalWh = $pdo->query("SELECT COUNT(*) FROM warehouses WHERE status = 'active'");
-$totalActiveWarehouses = (int)$stmtTotalWh->fetchColumn();
-
 // Fetch available destination warehouses (other active facilities only)
 $destStmt = $pdo->prepare("
     SELECT warehouse_id, warehouse_code, warehouse_name, location 
@@ -45,7 +41,7 @@ $destStmt = $pdo->prepare("
 $destStmt->execute([':wid' => $currentWarehouseId]);
 $destinationWarehouses = $destStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$canInitiateTransfer = ($totalActiveWarehouses >= 2 && count($destinationWarehouses) > 0);
+$canInitiateTransfer = !empty($destinationWarehouses);
 
 // =============================================================================
 // POST ACTION DISPATCHER
@@ -231,24 +227,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // DATA QUERIES: SECTION 1 (STOCK TRANSFER)
 // =============================================================================
 
-// Items available in source warehouse with positive stock for transfer
-$trfItemsStmt = $pdo->prepare("
+// Consolidated query: Fetch all active items with warehouse inventory balance
+$allWhItemsStmt = $pdo->prepare("
     SELECT 
         i.item_id, 
         i.item_code, 
         i.item_name, 
         i.item_type, 
         i.unit, 
-        COALESCE(inv.quantity, 0) AS current_stock
-    FROM inventory inv
-    JOIN items i ON inv.item_id = i.item_id
-    WHERE inv.warehouse_id = :wid 
-      AND inv.quantity > 0 
-      AND i.status = 'active'
+        i.default_reorder_level,
+        COALESCE(inv.quantity, 0.000) AS current_stock
+    FROM items i
+    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = :wid
+    WHERE i.status = 'active'
     ORDER BY i.item_type ASC, i.item_name ASC
 ");
-$trfItemsStmt->execute([':wid' => $currentWarehouseId]);
-$transferAvailableItems = $trfItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+$allWhItemsStmt->execute([':wid' => $currentWarehouseId]);
+$allWarehouseItems = $allWhItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Items available in source warehouse with positive stock for transfer
+$transferAvailableItems = array_values(array_filter($allWarehouseItems, fn($it) => (float)$it['current_stock'] > 0));
 
 // Inbound Transfers (Destination = Current Warehouse)
 $stmtRecv = $pdo->prepare("
@@ -357,22 +355,8 @@ $completedCount      = count(array_filter($allInvolved, fn($t) => ($t['status'] 
 // DATA QUERIES: SECTION 2 (STOCK ADJUSTMENT)
 // =============================================================================
 
-// Items for adjustment dropdown
-$adjItemsStmt = $pdo->prepare("
-    SELECT 
-        i.item_id, 
-        i.item_code, 
-        i.item_name, 
-        i.item_type, 
-        i.unit,
-        COALESCE(inv.quantity, 0.000) AS current_stock
-    FROM items i
-    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = :wid
-    WHERE i.status = 'active'
-    ORDER BY i.item_name ASC
-");
-$adjItemsStmt->execute([':wid' => $currentWarehouseId]);
-$adjAvailableItems = $adjItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+// Items for adjustment dropdown (reusing consolidated item query)
+$adjAvailableItems = $allWarehouseItems;
 
 // Stock Adjustments for assigned warehouse
 $stmtAdj = $pdo->prepare("
@@ -453,25 +437,8 @@ foreach ($adjustments as $a) {
 // DATA QUERIES: SECTION 3 (STOCK CARD)
 // =============================================================================
 
-// Distinct items in assigned warehouse inventory for Stock Card selector
-$stmtCardItems = $pdo->prepare("
-    SELECT DISTINCT i.item_id, i.item_code, i.item_name, i.item_type, i.unit, i.default_reorder_level 
-    FROM items i 
-    JOIN inventory inv ON i.item_id = inv.item_id
-    WHERE i.status = 'active' AND inv.warehouse_id = :wid
-    ORDER BY i.item_type ASC, i.item_name ASC
-");
-$stmtCardItems->execute([':wid' => $currentWarehouseId]);
-$cardItems = $stmtCardItems->fetchAll(PDO::FETCH_ASSOC);
-
-if (empty($cardItems)) {
-    $cardItems = $pdo->query("
-        SELECT item_id, item_code, item_name, item_type, unit, default_reorder_level 
-        FROM items 
-        WHERE status = 'active' 
-        ORDER BY item_type ASC, item_name ASC
-    ")->fetchAll(PDO::FETCH_ASSOC);
-}
+// Distinct items in assigned warehouse inventory for Stock Card selector (reusing consolidated item query)
+$cardItems = $allWarehouseItems;
 
 // Selected filters
 $selectedItemId = (isset($_GET['item_id']) && is_numeric($_GET['item_id']) && (int)$_GET['item_id'] > 0)
@@ -1473,12 +1440,12 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
 
-            <div id="modalTrfRemarksContainer" style="margin-bottom: 12px; background: #F1F5F9; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
+            <div id="modalTrfRemarksContainer" style="margin-bottom: 12px; background: #F1F5F9; border-radius: 8px; padding: 10px 14px; font-size: 12.5px; display: none;">
                 <strong style="color: #475569; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Transfer Notes:</strong>
                 <span id="modalTrfRemarks" style="color: var(--panel-ink);"></span>
             </div>
 
-            <div id="modalTrfCancelContainer" style="margin-bottom: 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; display: none;">
+            <div id="modalTrfCancelContainer" style="margin-bottom: 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 10px 14px; font-size: 12.5px; display: none;">
                 <strong style="color: #B91C1C; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Cancellation Reason:</strong>
                 <span id="modalTrfCancelReason" style="color: #991B1B; font-weight: 600;"></span>
             </div>
@@ -1641,7 +1608,7 @@ if ($selectedItemId > 0) {
                     </div>
                 </div>
 
-                <div style="font-size: 12px; color: #475569; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+                <div style="font-size: 12px; color: #475569; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
                     <strong style="color: #0F172A;">Note:</strong> Confirming this receipt will immediately post the stock into your warehouse inventory and mark the transfer as Completed.
                 </div>
             </div>
@@ -1677,14 +1644,14 @@ if ($selectedItemId > 0) {
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <div>
                     <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Facility</label>
-                    <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--panel-ink);">
+                    <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--panel-ink);">
                         <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>
                     </div>
                 </div>
 
                 <div>
                     <label for="adjItemSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Item <span style="color: #DC2626;">*</span></label>
-                    <select name="item_id" id="adjItemSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px;" required onchange="handleAdjItemChange(this)">
+                    <select name="item_id" id="adjItemSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 8px;" required onchange="handleAdjItemChange(this)">
                         <option value="">-- Select Item to Adjust --</option>
                         <?php foreach ($adjAvailableItems as $item): ?>
                             <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
@@ -1696,7 +1663,7 @@ if ($selectedItemId > 0) {
 
                 <div>
                     <label for="adjEntryMode" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Adjustment Entry Mode</label>
-                    <select id="adjEntryMode" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px;" onchange="handleAdjModeChange()">
+                    <select id="adjEntryMode" class="select-filter" style="width: 100%; height: 38px; border-radius: 8px;" onchange="handleAdjModeChange()">
                         <option value="physical">Enter Actual Physical Shelf Count</option>
                         <option value="add">Add Quantity (+ Surplus)</option>
                         <option value="deduct">Deduct Quantity (- Shortage)</option>
@@ -1706,18 +1673,18 @@ if ($selectedItemId > 0) {
                 <div class="form-grid-2">
                     <div>
                         <label style="font-size: 12px; font-weight: 600; color: var(--gray); margin-bottom: 4px; display: block;">Previous System Stock</label>
-                        <div id="adjPrevStock" style="background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 6px; height: 38px; display: flex; align-items: center; padding: 0 12px; font-weight: 700; color: var(--panel-ink);">
+                        <div id="adjPrevStock" style="background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 8px; height: 38px; display: flex; align-items: center; padding: 0 12px; font-weight: 700; color: var(--panel-ink);">
                             —
                         </div>
                     </div>
                     <div>
                         <label id="adjCountLabel" for="adjInputQty" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Actual Physical Count <span style="color: #DC2626;">*</span></label>
-                        <input type="number" step="0.01" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 6px;" placeholder="0" required oninput="calcAdjDiff()">
+                        <input type="number" step="0.01" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" placeholder="0" required oninput="calcAdjDiff()">
                         <input type="hidden" name="adjusted_quantity" id="adjPhysicalCount" value="0">
                     </div>
                 </div>
 
-                <div id="adjDiffContainer" style="display: none; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 14px; font-size: 13px;">
+                <div id="adjDiffContainer" style="display: none; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 13px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="color: var(--gray); font-weight: 600;">Calculated Variance:</span>
                         <strong id="adjDiffValue" style="font-size: 15px;">—</strong>
@@ -1727,12 +1694,12 @@ if ($selectedItemId > 0) {
 
                 <div>
                     <label for="adjDate" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Count Date</label>
-                    <input type="date" name="adjustment_date" id="adjDate" class="search-box" style="width: 100%; height: 38px; border-radius: 6px;" value="<?= date('Y-m-d') ?>" required>
+                    <input type="date" name="adjustment_date" id="adjDate" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" value="<?= date('Y-m-d') ?>" required>
                 </div>
 
                 <div>
                     <label for="adjReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Reconciliation Notes / Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="reason" id="adjReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="e.g. Discrepancy discovered during monthly physical cycle count..." required></textarea>
+                    <textarea name="reason" id="adjReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="e.g. Discrepancy discovered during monthly physical cycle count..." required></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -1763,7 +1730,7 @@ if ($selectedItemId > 0) {
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <div>
                     <label for="badItemSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Item <span style="color: #DC2626;">*</span></label>
-                    <select name="item_id" id="badItemSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px;" required onchange="handleBadItemChange(this)">
+                    <select name="item_id" id="badItemSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 8px;" required onchange="handleBadItemChange(this)">
                         <option value="">-- Select Damaged Item --</option>
                         <?php foreach ($adjAvailableItems as $item): ?>
                             <?php if ((float)$item['current_stock'] > 0): ?>
@@ -1777,7 +1744,7 @@ if ($selectedItemId > 0) {
 
                 <div>
                     <label for="badConditionSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Condition / Defect Type <span style="color: #DC2626;">*</span></label>
-                    <select name="condition_type" id="badConditionSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px;" required>
+                    <select name="condition_type" id="badConditionSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 8px;" required>
                         <option value="damaged">Damaged (e.g. Broken bottle, cracked crate)</option>
                         <option value="defective">Defective (e.g. Bad seal, cork taint, cloudy liquid)</option>
                         <option value="expired">Expired (e.g. Passed shelf life / best before)</option>
@@ -1790,7 +1757,7 @@ if ($selectedItemId > 0) {
                 <div>
                     <label for="badQuantity" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Quantity to Write Off <span style="color: #DC2626;">*</span></label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 6px;" placeholder="0" required>
+                        <input type="number" step="0.01" min="0.01" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 8px;" placeholder="0" required>
                         <span id="badUnitIndicator" style="font-size: 12.5px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <small id="badStockHint" style="color: var(--gray); font-size: 11.5px; display: block; margin-top: 3px;">Select an item to view maximum write-off balance.</small>
@@ -1798,10 +1765,10 @@ if ($selectedItemId > 0) {
 
                 <div>
                     <label for="badReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Incident Details / Cause <span style="color: #DC2626;">*</span></label>
-                    <textarea name="reason" id="badReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="e.g. Pallet slipped during restack causing bottle breakage..." required></textarea>
+                    <textarea name="reason" id="badReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="e.g. Pallet slipped during restack causing bottle breakage..." required></textarea>
                 </div>
 
-                <div style="font-size: 11.5px; color: #991B1B; background: #FEE2E2; border: 1px solid #FCA5A5; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 11.5px; color: #991B1B; background: #FEE2E2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 8px 12px;">
                     <strong>Note:</strong> Submitting this report will immediately deduct the written-off quantity from active inventory.
                 </div>
             </div>
@@ -1835,11 +1802,11 @@ if ($selectedItemId > 0) {
                 <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
                     Are you sure you want to approve adjustment <strong id="approveTrfRef" style="font-family: monospace;">—</strong>?
                 </p>
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px; font-size: 13px;">
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; font-size: 13px;">
                     <div><strong>Item:</strong> <span id="approveItemName">—</span></div>
                     <div style="margin-top: 4px;"><strong>Variance:</strong> <span id="approveDiff">—</span></div>
                 </div>
-                <div style="font-size: 12px; color: #475569; background: #F1F5F9; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 12px; color: #475569; background: #F1F5F9; border-radius: 8px; padding: 8px 12px;">
                     Approving this adjustment will post an immutable stock movement and update the warehouse balance.
                 </div>
             </div>
@@ -1875,7 +1842,7 @@ if ($selectedItemId > 0) {
                 </p>
                 <div>
                     <label for="rejectReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Rejection Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="rejection_reason" id="rejectReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for rejecting adjustment..." required></textarea>
+                    <textarea name="rejection_reason" id="rejectReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px;" placeholder="Reason for rejecting adjustment..." required></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -1910,7 +1877,7 @@ if ($selectedItemId > 0) {
                 </p>
                 <div>
                     <label for="cancelAdjReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="cancellation_reason" id="cancelAdjReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling approved adjustment..." required></textarea>
+                    <textarea name="cancellation_reason" id="cancelAdjReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling approved adjustment..." required></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -1945,7 +1912,7 @@ if ($selectedItemId > 0) {
                 </p>
                 <div>
                     <label for="cancelBadReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation / Recovery Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="cancellation_reason" id="cancelBadReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="e.g. Logged in error; items passed secondary QC inspection..." required></textarea>
+                    <textarea name="cancellation_reason" id="cancelBadReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px;" placeholder="e.g. Logged in error; items passed secondary QC inspection..." required></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -1969,7 +1936,7 @@ if ($selectedItemId > 0) {
             </button>
         </div>
         <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-            <div class="form-grid-2" style="gap: 10px; font-size: 13px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px;">
+            <div class="form-grid-2" style="gap: 10px; font-size: 13px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px;">
                 <div>
                     <span style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Reference</span>
                     <strong id="modalAdjRef" style="font-family: monospace;">—</strong>
@@ -1988,7 +1955,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
 
-            <div style="background: #F1F5F9; border-radius: 6px; padding: 10px 12px; font-size: 12.5px;">
+            <div style="background: #F1F5F9; border-radius: 8px; padding: 10px 12px; font-size: 12.5px;">
                 <strong style="color: #475569; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px;">Item &amp; Discrepancy:</strong>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
                     <div>
@@ -2006,12 +1973,12 @@ if ($selectedItemId > 0) {
 
             <div style="font-size: 12.5px;">
                 <strong style="color: var(--panel-ink); display: block; margin-bottom: 2px;">Reason / Notes:</strong>
-                <div id="modalAdjReason" style="color: var(--gray); background: #FAF5FF; border: 1px solid #E9D5FF; border-radius: 6px; padding: 8px 12px;">—</div>
+                <div id="modalAdjReason" style="color: var(--gray); background: #FAF5FF; border: 1px solid #E9D5FF; border-radius: 8px; padding: 8px 12px;">—</div>
             </div>
 
             <div id="modalAdjCancelContainer" style="font-size: 12.5px; display: none;">
                 <strong id="modalAdjCancelLabel" style="color: #B91C1C; display: block; margin-bottom: 2px;">Cancellation / Rejection Reason:</strong>
-                <div id="modalAdjCancelReason" style="color: #991B1B; font-weight: 600; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 8px 12px;">—</div>
+                <div id="modalAdjCancelReason" style="color: #991B1B; font-weight: 600; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 8px 12px;">—</div>
             </div>
 
             <div id="modalAdjAuditRow" style="font-size: 11.5px; color: var(--gray);"></div>
@@ -2047,7 +2014,7 @@ if ($selectedItemId > 0) {
                 </p>
                 <div>
                     <label for="cancelTransferReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="cancellation_reason" id="cancelTransferReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this stock transfer..." required></textarea>
+                    <textarea name="cancellation_reason" id="cancelTransferReason" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this stock transfer..." required></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -2203,7 +2170,7 @@ function openTransferDetailModal(trf, direction) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: ${qtyColor}; text-align: right;">${qtySign}${Number(parseFloat(l.quantity).toFixed(2))} <small style="color: var(--gray); font-weight: normal;">${escapeHtml(l.unit)}</small></td>
+                <td style="font-weight: 700; color: ${qtyColor}; text-align: right;">${qtySign}${formatQty(l.quantity)} <small style="color: var(--gray); font-weight: normal;">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });

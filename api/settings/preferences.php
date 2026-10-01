@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../helpers/AccountabilityService.php';
 require_once __DIR__ . '/../../helpers/csrf.php';
+require_once __DIR__ . '/../../helpers/response.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -24,10 +25,7 @@ if (!$auth->isAuthenticated()) {
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input)) {
-    $input = $_POST;
-}
+$input = getRequestJson();
 
 if (!validateCsrfToken($input['csrf_token'] ?? null)) {
     http_response_code(403);

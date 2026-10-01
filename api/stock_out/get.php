@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Production, or Sales)
-$authUser = requireApiAuth(['production', 'sales']);
+// Authenticate caller (Admin, Inventory, Production, or Sales)
+$authUser = requireApiAuth(['admin', 'inventory', 'production', 'sales']);
 
 // Rate Limit: 60 req / min
 checkRateLimit('stock_out_get', 60, 60, $authUser['api_token']);

@@ -115,7 +115,8 @@ class StockService {
         ?string $sourceReferenceNo,
         array $items,
         int $userId,
-        ?string $remarks = null
+        ?string $remarks = null,
+        ?array $authUser = null
     ): array {
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for Stock IN.");
@@ -127,6 +128,22 @@ class StockService {
         }
         if ($sourceReferenceNo !== null && mb_strlen(trim($sourceReferenceNo)) > 100) {
             throw new InvalidArgumentException("source_reference_no cannot exceed 100 characters.");
+        }
+
+        // Warehouse authorization check (non-super-admin can only operate in assigned warehouse)
+        if (!$authUser && $userId > 0) {
+            $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
+            $stmtU->execute([$userId]);
+            $uRow = $stmtU->fetch();
+            if ($uRow) {
+                $authUser = $uRow;
+            }
+        }
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId > 0 && $userWhId !== $warehouseId) {
+                throw new DomainException("Access Denied: You cannot record stock in for a facility other than your assigned warehouse.");
+            }
         }
 
         // Validate warehouse exists and is active
@@ -307,7 +324,8 @@ class StockService {
         ?string $sourceReferenceNo,
         array $items,
         int $userId,
-        ?string $remarks = null
+        ?string $remarks = null,
+        ?array $authUser = null
     ): array {
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for Stock OUT.");
@@ -319,6 +337,22 @@ class StockService {
         }
         if ($sourceReferenceNo !== null && mb_strlen(trim($sourceReferenceNo)) > 100) {
             throw new InvalidArgumentException("source_reference_no cannot exceed 100 characters.");
+        }
+
+        // Warehouse authorization check (non-super-admin can only operate in assigned warehouse)
+        if (!$authUser && $userId > 0) {
+            $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
+            $stmtU->execute([$userId]);
+            $uRow = $stmtU->fetch();
+            if ($uRow) {
+                $authUser = $uRow;
+            }
+        }
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId > 0 && $userWhId !== $warehouseId) {
+                throw new DomainException("Access Denied: You cannot record stock out for a facility other than your assigned warehouse.");
+            }
         }
 
         // Validate warehouse
@@ -999,7 +1033,8 @@ class StockService {
         int $destWhId,
         array $items,
         int $userId,
-        ?string $remarks = null
+        ?string $remarks = null,
+        ?array $authUser = null
     ): array {
         if ($sourceWhId <= 0 || $destWhId <= 0) {
             throw new InvalidArgumentException("Valid source_warehouse_id and destination_warehouse_id are required.");
@@ -1009,6 +1044,22 @@ class StockService {
         }
         if (empty($items)) {
             throw new InvalidArgumentException("At least one item is required for transfer.");
+        }
+
+        // Warehouse authorization check (non-super-admin can only transfer stock OUT of assigned warehouse)
+        if (!$authUser && $userId > 0) {
+            $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
+            $stmtU->execute([$userId]);
+            $uRow = $stmtU->fetch();
+            if ($uRow) {
+                $authUser = $uRow;
+            }
+        }
+        if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            if ($userWhId > 0 && $userWhId !== $sourceWhId) {
+                throw new DomainException("Access Denied: You cannot transfer stock out of a facility other than your assigned warehouse.");
+            }
         }
 
         $stmtWh = $this->pdo->prepare("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE warehouse_id IN (?, ?) AND status = 'active'");
@@ -2075,15 +2126,41 @@ class StockService {
             ");
             $stmtReject->execute([$userId, $reason, $adjustmentId]);
 
-            AccountabilityService::log([
-                'user_id'          => $userId,
-                'team'             => 'Inventory',
-                'action_type'      => 'ADJUSTMENT_REJECTED',
-                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
-                'warehouse_id'     => (int)$adj['warehouse_id'],
-                'reference_number' => $adj['transaction_number'],
-                'notes'            => "Adjustment rejected: " . $reason
-            ]);
+            // Query affected items to enrich Accountability Log with item_id and quantity
+            $stmtItems = $this->pdo->prepare("
+                SELECT sai.item_id, sai.difference, i.item_name
+                FROM stock_adjustment_items sai
+                LEFT JOIN items i ON sai.item_id = i.item_id
+                WHERE sai.stock_adjustment_id = ?
+            ");
+            $stmtItems->execute([$adjustmentId]);
+            $adjLines = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($adjLines)) {
+                foreach ($adjLines as $line) {
+                    AccountabilityService::log([
+                        'user_id'          => $userId,
+                        'team'             => 'Inventory',
+                        'action_type'      => 'ADJUSTMENT_REJECTED',
+                        'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                        'warehouse_id'     => (int)$adj['warehouse_id'],
+                        'item_id'          => (int)$line['item_id'],
+                        'quantity'         => abs((float)$line['difference']),
+                        'reference_number' => $adj['transaction_number'],
+                        'notes'            => "Adjustment rejected: " . $reason
+                    ]);
+                }
+            } else {
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'ADJUSTMENT_REJECTED',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'warehouse_id'     => (int)$adj['warehouse_id'],
+                    'reference_number' => $adj['transaction_number'],
+                    'notes'            => "Adjustment rejected: " . $reason
+                ]);
+            }
 
             $this->pdo->commit();
 
@@ -2152,15 +2229,41 @@ class StockService {
             ");
             $stmtCancel->execute([$userId, $reason, $adjustmentId]);
 
-            AccountabilityService::log([
-                'user_id'          => $userId,
-                'team'             => 'Inventory',
-                'action_type'      => 'ADJUSTMENT_CANCELLED',
-                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
-                'warehouse_id'     => (int)$adj['warehouse_id'],
-                'reference_number' => $adj['transaction_number'],
-                'notes'            => "Adjustment cancelled: " . $reason
-            ]);
+            // Query affected items to enrich Accountability Log with item_id and quantity
+            $stmtItems = $this->pdo->prepare("
+                SELECT sai.item_id, sai.difference, i.item_name
+                FROM stock_adjustment_items sai
+                LEFT JOIN items i ON sai.item_id = i.item_id
+                WHERE sai.stock_adjustment_id = ?
+            ");
+            $stmtItems->execute([$adjustmentId]);
+            $adjLines = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($adjLines)) {
+                foreach ($adjLines as $line) {
+                    AccountabilityService::log([
+                        'user_id'          => $userId,
+                        'team'             => 'Inventory',
+                        'action_type'      => 'ADJUSTMENT_CANCELLED',
+                        'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                        'warehouse_id'     => (int)$adj['warehouse_id'],
+                        'item_id'          => (int)$line['item_id'],
+                        'quantity'         => abs((float)$line['difference']),
+                        'reference_number' => $adj['transaction_number'],
+                        'notes'            => "Adjustment cancelled: " . $reason
+                    ]);
+                }
+            } else {
+                AccountabilityService::log([
+                    'user_id'          => $userId,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'ADJUSTMENT_CANCELLED',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'warehouse_id'     => (int)$adj['warehouse_id'],
+                    'reference_number' => $adj['transaction_number'],
+                    'notes'            => "Adjustment cancelled: " . $reason
+                ]);
+            }
 
             $this->pdo->commit();
 
