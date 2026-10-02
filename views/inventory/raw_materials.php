@@ -16,41 +16,38 @@ require_once __DIR__ . '/../layouts/navbar.php';
 $stmt = $pdo->prepare("
     SELECT 
         i.item_id,
-        i.item_code,
-        i.item_name,
-        COALESCE(c.category_name, 'General Raw Materials') AS category_name,
+        i.code AS item_code,
+        i.name AS item_name,
+        'Raw Materials' AS category_name,
         i.unit,
-        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level,
+        COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level,
         w.warehouse_id,
-        w.warehouse_code,
-        w.warehouse_name,
-        COALESCE(inv.quantity, 0.000) AS current_stock,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(s.qty_on_hand, 0.000) AS current_stock,
         latest_in.last_received_date,
         latest_in.source_reference_no AS procurement_reference,
         latest_in.last_received_qty
     FROM items i
     JOIN warehouses w ON w.warehouse_id = :wid1
-    LEFT JOIN categories c ON i.category_id = c.category_id
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = w.warehouse_id
+    LEFT JOIN stock s ON s.item_id = i.item_id AND s.warehouse_id = w.warehouse_id
     LEFT JOIN (
         SELECT 
-            sii.item_id,
-            si.warehouse_id,
-            si.transaction_date AS last_received_date,
-            si.source_reference_no,
-            sii.quantity AS last_received_qty
-        FROM stock_in_items sii
-        JOIN stock_ins si ON sii.stock_in_id = si.stock_in_id
-        JOIN (
-            SELECT sii2.item_id, si2.warehouse_id, MAX(sii2.stock_in_item_id) AS max_sii_id
-            FROM stock_in_items sii2
-            JOIN stock_ins si2 ON sii2.stock_in_id = si2.stock_in_id
-            WHERE si2.status = 'completed' AND si2.warehouse_id = :wid2
-            GROUP BY sii2.item_id, si2.warehouse_id
-        ) latest_id ON sii.stock_in_item_id = latest_id.max_sii_id
+            sm.item_id,
+            sm.warehouse_id,
+            DATE(sm.created_at) AS last_received_date,
+            COALESCE(sm.remarks, CONCAT('IN #', sm.movement_id)) AS source_reference_no,
+            sm.quantity AS last_received_qty
+        FROM stock_movements sm
+        INNER JOIN (
+            SELECT item_id, warehouse_id, MAX(movement_id) AS max_m_id
+            FROM stock_movements
+            WHERE movement_type = 'STOCK_IN' AND warehouse_id = :wid2
+            GROUP BY item_id, warehouse_id
+        ) latest_m ON sm.movement_id = latest_m.max_m_id
     ) latest_in ON latest_in.item_id = i.item_id AND latest_in.warehouse_id = w.warehouse_id
-    WHERE i.item_type = 'raw_material' AND i.status = 'active'
-    ORDER BY i.item_name ASC, w.warehouse_code ASC
+    WHERE i.type = 'raw_material' AND i.status = 'active'
+    ORDER BY i.name ASC, w.code ASC
 ");
 $stmt->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $rawMaterials = $stmt->fetchAll(PDO::FETCH_ASSOC);

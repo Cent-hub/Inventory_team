@@ -14,15 +14,15 @@ class StockOutTest extends TestCase {
     }
 
     public function run(): TestResult {
-        $stockService = new StockService();
+        $stockService = new StockService($this->pdo);
         $whId = 1;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code AS item_code, unit FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
         // 1. Fetch current on-hand balance
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand AS quantity FROM stock WHERE item_id = ? AND warehouse_id = ?");
         $stmtBal->execute([$rmItem['item_id'], $whId]);
         $availableQty = (float)($stmtBal->fetchColumn() ?: 0.000);
 
@@ -59,7 +59,7 @@ class StockOutTest extends TestCase {
             $availableQty,
             $currentQtyAfterFailure,
             "Inventory balance must remain strictly unchanged when stock-out request is rejected",
-            "inventory table"
+            "stock table"
         );
 
         // 4. Attempt Stock-Out with zero or negative quantity

@@ -19,7 +19,7 @@ class StockTransferTest extends TestCase {
         $destWhId = 2;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code, unit FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
         // 1. Same-Warehouse Transfer Rejection
@@ -43,7 +43,7 @@ class StockTransferTest extends TestCase {
         );
 
         // 2. Ensure stock exists at source warehouse
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ?");
         $stmtBal->execute([$rmItem['item_id'], $sourceWhId]);
         $sourceInitial = (float)($stmtBal->fetchColumn() ?: 0.000);
 
@@ -83,7 +83,7 @@ class StockTransferTest extends TestCase {
             $sourceInitial - $transferQty,
             $sourceAfterDispatch,
             "Source warehouse inventory must decrease immediately upon transfer dispatch",
-            "inventory table"
+            "stock table"
         );
 
         // 5. Verify Destination Warehouse NOT Credited Until Receipt Confirmation
@@ -93,15 +93,15 @@ class StockTransferTest extends TestCase {
             $destInitial,
             $destBeforeReceipt,
             "Destination warehouse must NOT receive stock while transfer is in-transit (pending)",
-            "inventory table"
+            "stock table"
         );
 
         // 6. Destination Facility Confirms Transfer Receipt
         $confirmRes = $stockService->confirmStockTransferReceipt($transferId, $adminUserId);
         $this->assertEquals(
-            'completed',
+            'received',
             $confirmRes['status'] ?? '',
-            "Confirmed transfer status must update to 'completed'",
+            "Confirmed transfer status must update to 'received'",
             "StockService::confirmStockTransferReceipt"
         );
 
@@ -112,8 +112,29 @@ class StockTransferTest extends TestCase {
             $destInitial + $transferQty,
             $destAfterReceipt,
             "Destination warehouse inventory must increase upon receipt confirmation",
-            "inventory table"
+            "stock table"
         );
+
+        // 8. Verify Stock Movements for Transfer Out and Transfer In
+        $stmtMovOut = $this->pdo->prepare("
+            SELECT movement_id, movement_type, quantity, warehouse_id 
+            FROM stock_movements 
+            WHERE item_id = ? AND warehouse_id = ? AND movement_type = 'STOCK_TRANSFER_OUT'
+            ORDER BY movement_id DESC LIMIT 1
+        ");
+        $stmtMovOut->execute([$rmItem['item_id'], $sourceWhId]);
+        $movOut = $stmtMovOut->fetch(PDO::FETCH_ASSOC);
+        $this->assertNotEmpty($movOut, "Transfer dispatch must log STOCK_TRANSFER_OUT movement", "stock_movements table");
+
+        $stmtMovIn = $this->pdo->prepare("
+            SELECT movement_id, movement_type, quantity, warehouse_id 
+            FROM stock_movements 
+            WHERE item_id = ? AND warehouse_id = ? AND movement_type = 'STOCK_TRANSFER_IN'
+            ORDER BY movement_id DESC LIMIT 1
+        ");
+        $stmtMovIn->execute([$rmItem['item_id'], $destWhId]);
+        $movIn = $stmtMovIn->fetch(PDO::FETCH_ASSOC);
+        $this->assertNotEmpty($movIn, "Transfer receipt must log STOCK_TRANSFER_IN movement", "stock_movements table");
 
         return $this->getAggregateResult();
     }

@@ -26,21 +26,21 @@ require_once __DIR__ . '/../layouts/navbar.php';
 
 // Fetch active items in assigned warehouse inventory for selector dropdown
 $stmtItems = $pdo->prepare("
-    SELECT DISTINCT i.item_id, i.item_code, i.item_name, i.item_type, i.unit, i.default_reorder_level 
+    SELECT DISTINCT i.item_id, i.code AS item_code, i.name AS item_name, i.type AS item_type, i.unit, i.reorder_level AS default_reorder_level 
     FROM items i 
-    JOIN inventory inv ON i.item_id = inv.item_id
+    JOIN stock inv ON i.item_id = inv.item_id
     WHERE i.status = 'active' AND inv.warehouse_id = :wid
-    ORDER BY i.item_type ASC, i.item_name ASC
+    ORDER BY i.type ASC, i.name ASC
 ");
 $stmtItems->execute([':wid' => $currentWarehouseId]);
 $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
 if (empty($items)) {
     $items = $pdo->query("
-        SELECT item_id, item_code, item_name, item_type, unit, default_reorder_level 
+        SELECT item_id, code AS item_code, name AS item_name, type AS item_type, unit, reorder_level AS default_reorder_level 
         FROM items 
         WHERE status = 'active' 
-        ORDER BY item_type ASC, item_name ASC
+        ORDER BY type ASC, name ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -70,7 +70,7 @@ foreach ($items as $it) {
 // Fetch current stock snapshot for selected item in assigned warehouse
 $currentStock = 0.0;
 if ($selectedItem) {
-    $stockStmt = $pdo->prepare("SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+    $stockStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_on_hand), 0) FROM stock WHERE item_id = ? AND warehouse_id = ?");
     $stockStmt->execute([$selectedItemId, $currentWarehouseId]);
     $currentStock = (float)$stockStmt->fetchColumn();
 }
@@ -82,21 +82,22 @@ if ($selectedItemId > 0) {
         SELECT 
             sm.movement_id,
             sm.movement_type,
-            sm.reference_number,
-            sm.quantity_in,
-            sm.quantity_out,
-            sm.balance_after,
+            COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
+            CASE 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                ELSE 0 
+            END AS quantity_in,
+            CASE 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+                ELSE 0 
+            END AS quantity_out,
+            0 AS balance_after,
             sm.created_at,
-            w.warehouse_code,
-            w.warehouse_name,
-            COALESCE(si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, '') AS notes
+            w.code AS warehouse_code,
+            w.name AS warehouse_name,
+            COALESCE(sm.remarks, '') AS notes
         FROM stock_movements sm
         JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
-        LEFT JOIN stock_ins si ON sm.stock_in_id = si.stock_in_id
-        LEFT JOIN stock_outs so ON sm.stock_out_id = so.stock_out_id
-        LEFT JOIN stock_transfers st ON sm.stock_transfer_id = st.stock_transfer_id
-        LEFT JOIN stock_adjustments sa ON sm.stock_adjustment_id = sa.stock_adjustment_id
-        LEFT JOIN bad_products bp ON sm.bad_product_id = bp.bad_product_id
         WHERE sm.item_id = ? AND sm.warehouse_id = ?
     ";
     $params = [$selectedItemId, $currentWarehouseId];

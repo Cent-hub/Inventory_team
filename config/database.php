@@ -1,7 +1,7 @@
 <?php
 /**
  * Database Connection Manager (PDO)
- * Target: team_inventory
+ * Target: team_inventory_local
  */
 
 class Database {
@@ -11,7 +11,7 @@ class Database {
         if (self::$instance === null) {
             $host = getenv('DB_HOST') ?: '127.0.0.1';
             $port = getenv('DB_PORT') ?: '3306';
-            $dbname = getenv('DB_NAME') ?: 'team_inventory';
+            $dbname = getenv('DB_NAME') ?: 'team_inventory_local';
             $username = getenv('DB_USER') ?: 'root';
             $password = getenv('DB_PASS') ?: '';
             $charset = 'utf8mb4';

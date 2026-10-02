@@ -13,7 +13,7 @@ require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
 // Fetch warehouse options
-$warehouses = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$warehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, code, name FROM warehouses WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Filters
 // Filters - strictly enforce assigned warehouse
@@ -31,32 +31,33 @@ if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
     [$startDate, $endDate] = [$endDate, $startDate];
 }
 
-// Build Query matching exact MySQL team_inventory schema strictly for assigned warehouse
+// Build Query matching exact team_inventory_local schema strictly for assigned warehouse
 $sql = "
     SELECT 
         sm.movement_id,
         sm.movement_type,
-        sm.reference_number,
-        sm.quantity_in,
-        sm.quantity_out,
-        sm.balance_after,
+        COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            ELSE 0 
+        END AS quantity_in,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            ELSE 0 
+        END AS quantity_out,
+        0 AS balance_after,
         sm.created_at,
         i.item_id,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit,
-        w.warehouse_code,
-        w.warehouse_name,
-        COALESCE(si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, '') AS notes
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(sm.remarks, '') AS notes
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
-    LEFT JOIN stock_ins si ON sm.stock_in_id = si.stock_in_id
-    LEFT JOIN stock_outs so ON sm.stock_out_id = so.stock_out_id
-    LEFT JOIN stock_transfers st ON sm.stock_transfer_id = st.stock_transfer_id
-    LEFT JOIN stock_adjustments sa ON sm.stock_adjustment_id = sa.stock_adjustment_id
-    LEFT JOIN bad_products bp ON sm.bad_product_id = bp.bad_product_id
     WHERE sm.warehouse_id = ?
 ";
 

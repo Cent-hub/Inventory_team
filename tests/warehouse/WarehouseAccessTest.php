@@ -33,7 +33,7 @@ class WarehouseAccessTest extends TestCase {
         $stmtAdmin->execute();
         $admin = $stmtAdmin->fetch();
 
-        $stmtRm = $this->pdo->query("SELECT item_id FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
         // 1. Cross-Warehouse Violation Test: Operator 1 attempts to stock in to Warehouse 2

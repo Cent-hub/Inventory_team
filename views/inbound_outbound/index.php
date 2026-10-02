@@ -147,11 +147,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Consolidated query: Fetch all active items with warehouse inventory balance
 $allItemsStmt = $pdo->prepare("
-    SELECT i.item_id, i.item_code, i.item_name, i.item_type, i.unit, COALESCE(inv.quantity, 0.000) AS current_stock
+    SELECT i.item_id, i.code AS item_code, i.name AS item_name, i.type AS item_type, i.unit, COALESCE(s.qty_on_hand, 0.000) AS current_stock
     FROM items i 
-    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = :wid
+    LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = :wid
     WHERE i.status = 'active' 
-    ORDER BY i.item_type ASC, i.item_name ASC
+    ORDER BY i.type ASC, i.name ASC
 ");
 $allItemsStmt->execute([':wid' => $currentWarehouseId]);
 $allItems = $allItemsStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -159,53 +159,54 @@ $allItems = $allItemsStmt->fetchAll(PDO::FETCH_ASSOC);
 // Fetch Stock In transactions strictly for assigned warehouse
 $stmtIn = $pdo->prepare("
     SELECT 
-        si.stock_in_id,
-        si.transaction_number,
-        si.source_type,
-        si.source_reference_no,
-        si.transaction_date,
-        si.status,
-        si.remarks,
-        si.cancellation_reason,
-        si.cancelled_at,
-        si.created_at,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS operator_name,
-        COUNT(sii.item_id) AS total_item_count,
-        COALESCE(SUM(sii.quantity), 0) AS total_quantity,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sii.quantity, 2))), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
-    FROM stock_ins si
-    JOIN warehouses w ON si.warehouse_id = w.warehouse_id
-    JOIN users u ON si.created_by = u.user_id
-    LEFT JOIN stock_in_items sii ON si.stock_in_id = sii.stock_in_id
-    LEFT JOIN items i ON sii.item_id = i.item_id
-    WHERE si.warehouse_id = :wid
-    GROUP BY si.stock_in_id
-    ORDER BY si.stock_in_id DESC
+        sm.movement_id AS stock_in_id,
+        CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+        CASE 
+            WHEN i.type = 'finished_good' THEN 'PRODUCTION_RETURN'
+            WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
+            ELSE 'PURCHASE_ORDER'
+        END AS source_type,
+        COALESCE(
+            NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
+            CONCAT('REF-', sm.movement_id)
+        ) AS source_reference_no,
+        DATE(sm.created_at) AS transaction_date,
+        'completed' AS status,
+        sm.remarks,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
+        sm.created_at,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        1 AS total_item_count,
+        sm.quantity AS total_quantity,
+        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sm.quantity, 2))), ' ', i.unit, ')') AS item_breakdown,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit
+    FROM stock_movements sm
+    JOIN items i ON sm.item_id = i.item_id
+    JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
+    LEFT JOIN users u ON sm.created_by = u.user_id
+    WHERE sm.warehouse_id = :wid AND sm.movement_type = 'STOCK_IN'
+    ORDER BY sm.movement_id DESC
 ");
 $stmtIn->execute([':wid' => $currentWarehouseId]);
 $stockIns = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch line items strictly for this warehouse's stock ins
-$stmtInLines = $pdo->prepare("
-    SELECT 
-        sii.stock_in_id,
-        i.item_code,
-        i.item_name,
-        i.item_type,
-        i.unit,
-        sii.quantity
-    FROM stock_in_items sii
-    JOIN stock_ins si ON sii.stock_in_id = si.stock_in_id
-    JOIN items i ON sii.item_id = i.item_id
-    WHERE si.warehouse_id = :wid
-    ORDER BY sii.stock_in_item_id ASC
-");
-$stmtInLines->execute([':wid' => $currentWarehouseId]);
+// Build line items array for modal inspection
 $linesByStockIn = [];
-while ($row = $stmtInLines->fetch(PDO::FETCH_ASSOC)) {
-    $linesByStockIn[(int)$row['stock_in_id']][] = $row;
+foreach ($stockIns as $row) {
+    $linesByStockIn[(int)$row['stock_in_id']][] = [
+        'stock_in_id' => $row['stock_in_id'],
+        'item_code'   => $row['item_code'],
+        'item_name'   => $row['item_name'],
+        'item_type'   => $row['item_type'],
+        'unit'        => $row['unit'],
+        'quantity'    => $row['total_quantity']
+    ];
 }
 
 // KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
@@ -223,53 +224,53 @@ $availableItems = array_values(array_filter($allItems, fn($it) => (float)$it['cu
 // Fetch Stock Out transactions strictly for assigned warehouse
 $stmtOut = $pdo->prepare("
     SELECT 
-        so.stock_out_id,
-        so.transaction_number,
-        so.source_type,
-        so.source_reference_no,
-        so.transaction_date,
-        so.status,
-        so.remarks,
-        so.cancellation_reason,
-        so.cancelled_at,
-        so.created_at,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS operator_name,
-        COUNT(soi.item_id) AS total_item_count,
-        COALESCE(SUM(soi.quantity), 0) AS total_quantity,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(soi.quantity, 2))), ' ', i.unit, ')') SEPARATOR ', ') AS item_breakdown
-    FROM stock_outs so
-    JOIN warehouses w ON so.warehouse_id = w.warehouse_id
-    JOIN users u ON so.created_by = u.user_id
-    LEFT JOIN stock_out_items soi ON so.stock_out_id = soi.stock_out_id
-    LEFT JOIN items i ON soi.item_id = i.item_id
-    WHERE so.warehouse_id = :wid
-    GROUP BY so.stock_out_id
-    ORDER BY so.stock_out_id DESC
+        sm.movement_id AS stock_out_id,
+        CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+        CASE 
+            WHEN i.type = 'raw_material' THEN 'MATERIAL_REQUEST'
+            ELSE 'SALES_DELIVERY'
+        END AS source_type,
+        COALESCE(
+            NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
+            CONCAT('REF-', sm.movement_id)
+        ) AS source_reference_no,
+        DATE(sm.created_at) AS transaction_date,
+        'completed' AS status,
+        sm.remarks,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
+        sm.created_at,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        1 AS total_item_count,
+        sm.quantity AS total_quantity,
+        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sm.quantity, 2))), ' ', i.unit, ')') AS item_breakdown,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit
+    FROM stock_movements sm
+    JOIN items i ON sm.item_id = i.item_id
+    JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
+    LEFT JOIN users u ON sm.created_by = u.user_id
+    WHERE sm.warehouse_id = :wid AND sm.movement_type = 'STOCK_OUT'
+    ORDER BY sm.movement_id DESC
 ");
 $stmtOut->execute([':wid' => $currentWarehouseId]);
 $stockOuts = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch line items strictly for this warehouse's stock outs
-$stmtOutLines = $pdo->prepare("
-    SELECT 
-        soi.stock_out_id,
-        i.item_code,
-        i.item_name,
-        i.item_type,
-        i.unit,
-        soi.quantity
-    FROM stock_out_items soi
-    JOIN stock_outs so ON soi.stock_out_id = so.stock_out_id
-    JOIN items i ON soi.item_id = i.item_id
-    WHERE so.warehouse_id = :wid
-    ORDER BY soi.stock_out_item_id ASC
-");
-$stmtOutLines->execute([':wid' => $currentWarehouseId]);
+// Build line items array for modal inspection
 $linesByStockOut = [];
-while ($row = $stmtOutLines->fetch(PDO::FETCH_ASSOC)) {
-    $linesByStockOut[(int)$row['stock_out_id']][] = $row;
+foreach ($stockOuts as $row) {
+    $linesByStockOut[(int)$row['stock_out_id']][] = [
+        'stock_out_id' => $row['stock_out_id'],
+        'item_code'    => $row['item_code'],
+        'item_name'    => $row['item_name'],
+        'item_type'    => $row['item_type'],
+        'unit'         => $row['unit'],
+        'quantity'     => $row['total_quantity']
+    ];
 }
 
 // KPI Metrics scoped strictly to assigned warehouse (completed transactions only)

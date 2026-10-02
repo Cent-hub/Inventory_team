@@ -18,18 +18,21 @@ class ReportsTest extends TestCase {
         $reportSql = "
             SELECT 
                 i.item_id,
-                i.item_code,
-                i.item_name,
-                i.item_type,
+                i.code AS item_code,
+                i.name AS item_name,
+                i.type AS item_type,
                 i.unit,
-                i.default_reorder_level,
-                c.category_name,
-                COALESCE(inv.quantity, 0.000) AS current_stock
+                COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level,
+                CASE 
+                    WHEN i.type = 'raw_material' THEN 'Raw Materials'
+                    WHEN i.type = 'finished_good' THEN 'Finished Goods'
+                    ELSE 'General'
+                END AS category_name,
+                COALESCE(s.qty_on_hand, 0.00) AS current_stock
             FROM items i
-            LEFT JOIN categories c ON i.category_id = c.category_id
-            LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = ?
+            LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = ?
             WHERE i.status = 'active'
-            ORDER BY i.item_name ASC
+            ORDER BY i.name ASC
         ";
 
         $stmtReport = $this->pdo->prepare($reportSql);
@@ -42,21 +45,21 @@ class ReportsTest extends TestCase {
             "views/reports/index.php"
         );
 
-        // 2. Validate individual item stock balance matches direct inventory table lookup
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        // 2. Validate individual item stock balance matches direct stock table lookup
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ?");
         foreach ($reportRows as $row) {
             $itemId = (int)$row['item_id'];
             $reportedStock = (float)$row['current_stock'];
 
             $stmtBal->execute([$itemId, $whId]);
-            $dbStock = (float)($stmtBal->fetchColumn() ?: 0.000);
+            $dbStock = (float)($stmtBal->fetchColumn() ?: 0.00);
 
             if ($reportedStock !== $dbStock) {
                 $this->assertEquals(
                     $dbStock,
                     $reportedStock,
-                    "Report current_stock must match direct inventory table quantity for item {$row['item_code']}",
-                    "inventory vs reports"
+                    "Report current_stock must match direct stock table quantity for item {$row['item_code']}",
+                    "stock vs reports"
                 );
                 return $this->getAggregateResult();
             }

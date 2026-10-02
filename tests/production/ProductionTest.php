@@ -13,14 +13,14 @@ class ProductionTest extends TestCase {
     }
 
     public function run(): TestResult {
-        $stockService = new StockService();
+        $stockService = new StockService($this->pdo);
         $whId = 1;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code AS item_code, unit FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
-        $stmtFg = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-FG-GIN' LIMIT 1");
+        $stmtFg = $this->pdo->query("SELECT item_id, code AS item_code, unit FROM items WHERE code = 'TEST-FG-GIN' LIMIT 1");
         $fgItem = $stmtFg->fetch();
 
         // 1. Verify Material Request strictly rejects Finished Goods
@@ -47,7 +47,7 @@ class ProductionTest extends TestCase {
         );
 
         // 2. Ensure sufficient raw material exists for deduction
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand AS quantity FROM stock WHERE item_id = ? AND warehouse_id = ?");
         $stmtBal->execute([$rmItem['item_id'], $whId]);
         $initialBalance = (float)($stmtBal->fetchColumn() ?: 0.000);
 
@@ -87,7 +87,41 @@ class ProductionTest extends TestCase {
             $expectedBalance,
             $balanceAfter,
             "Raw material inventory must be deducted exactly by consumed quantity",
-            "inventory table"
+            "stock table"
+        );
+
+        // Verify Stock Movement for Production Consumption
+        $stmtMov = $this->pdo->prepare("
+            SELECT movement_id, movement_type, quantity 
+            FROM stock_movements 
+            WHERE item_id = ? AND warehouse_id = ? AND movement_type = 'STOCK_OUT'
+            ORDER BY movement_id DESC LIMIT 1
+        ");
+        $stmtMov->execute([$rmItem['item_id'], $whId]);
+        $movRow = $stmtMov->fetch(PDO::FETCH_ASSOC);
+        $this->assertNotEmpty($movRow, "Production material consumption must record a stock_movements entry", "stock_movements table");
+        $this->assertEquals($consumeQty, (float)$movRow['quantity'], "Movement entry quantity must match consumed raw materials", "stock_movements.quantity");
+
+        // 5. Recipe / Bill of Materials (BOM) Requirements Calculation Test
+        $this->pdo->exec("
+            INSERT INTO recipes (finished_item_id, raw_item_id, quantity_required, notes)
+            VALUES ({$fgItem['item_id']}, {$rmItem['item_id']}, 0.50, 'Test Gin recipe malt requirement')
+            ON DUPLICATE KEY UPDATE quantity_required = 0.50
+        ");
+
+        $recipes = $stockService->getRecipes((int)$fgItem['item_id']);
+        $this->assertTrue(
+            !empty($recipes),
+            "StockService::getRecipes must retrieve BOM relations for finished good",
+            "recipes table"
+        );
+
+        $requirements = $stockService->calculateProductionRequirements((int)$fgItem['item_id'], 10.0);
+        $this->assertEquals(
+            5.00,
+            (float)($requirements[0]['required_quantity'] ?? 0),
+            "StockService::calculateProductionRequirements must correctly compute 5.0kg malt for 10 units gin",
+            "StockService::calculateProductionRequirements"
         );
 
         return $this->getAggregateResult();

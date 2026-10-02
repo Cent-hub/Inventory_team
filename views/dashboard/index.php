@@ -15,24 +15,24 @@ require_once __DIR__ . '/../layouts/navbar.php';
 // 1. Primary Inventory Status Table for assigned warehouse (active catalog items only)
 $stmtInventory = $pdo->prepare("
     SELECT 
-        w.warehouse_code,
-        w.warehouse_name,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit,
-        COALESCE(inv.quantity, 0) AS quantity,
-        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level
+        COALESCE(s.qty_on_hand, 0) AS quantity,
+        COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level
     FROM items i
     JOIN warehouses w ON w.warehouse_id = :wid1
-    LEFT JOIN inventory inv ON inv.item_id = i.item_id AND inv.warehouse_id = :wid2
+    LEFT JOIN stock s ON s.item_id = i.item_id AND s.warehouse_id = :wid2
     WHERE i.status = 'active'
-    ORDER BY i.item_type ASC, i.item_name ASC
+    ORDER BY i.type ASC, i.name ASC
 ");
 $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
-// Compute KPI metrics directly from $inventoryRows (eliminating 4 redundant SQL queries)
+// Compute KPI metrics directly from $inventoryRows (eliminating redundant SQL queries)
 $totalRawMaterials  = 0;
 $totalFinishedGoods = 0;
 $totalStock         = 0.0;
@@ -55,13 +55,12 @@ foreach ($inventoryRows as $row) {
 // 2. Recent Stock In (combined count & volume received for assigned warehouse in last 30 days)
 $stmtSI = $pdo->prepare("
     SELECT 
-        COUNT(DISTINCT si.stock_in_id) AS txn_count,
-        COALESCE(SUM(sii.quantity), 0) AS total_qty
-    FROM stock_ins si
-    LEFT JOIN stock_in_items sii ON si.stock_in_id = sii.stock_in_id
-    WHERE si.status = 'completed'
-      AND si.warehouse_id = :wid
-      AND si.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        COUNT(sm.movement_id) AS txn_count,
+        COALESCE(SUM(sm.quantity), 0) AS total_qty
+    FROM stock_movements sm
+    WHERE sm.movement_type = 'STOCK_IN'
+      AND sm.warehouse_id = :wid
+      AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
 ");
 $stmtSI->execute([':wid' => $currentWarehouseId]);
 $siRow = $stmtSI->fetch(PDO::FETCH_ASSOC);
@@ -71,13 +70,12 @@ $recentStockInVolume = (float)($siRow['total_qty'] ?? 0);
 // 3. Recent Stock Out (combined count & volume dispatched for assigned warehouse in last 30 days)
 $stmtSO = $pdo->prepare("
     SELECT 
-        COUNT(DISTINCT so.stock_out_id) AS txn_count,
-        COALESCE(SUM(soi.quantity), 0) AS total_qty
-    FROM stock_outs so
-    LEFT JOIN stock_out_items soi ON so.stock_out_id = soi.stock_out_id
-    WHERE so.status = 'completed'
-      AND so.warehouse_id = :wid
-      AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        COUNT(sm.movement_id) AS txn_count,
+        COALESCE(SUM(sm.quantity), 0) AS total_qty
+    FROM stock_movements sm
+    WHERE sm.movement_type = 'STOCK_OUT'
+      AND sm.warehouse_id = :wid
+      AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
 ");
 $stmtSO->execute([':wid' => $currentWarehouseId]);
 $soRow = $stmtSO->fetch(PDO::FETCH_ASSOC);
@@ -89,17 +87,23 @@ $stmtRecent = $pdo->prepare("
     SELECT 
         sm.movement_id,
         sm.movement_type,
-        sm.reference_number,
-        sm.quantity_in,
-        sm.quantity_out,
-        sm.balance_after,
+        COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            ELSE 0 
+        END AS quantity_in,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            ELSE 0 
+        END AS quantity_out,
+        0 AS balance_after,
         sm.created_at,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit,
-        w.warehouse_code,
-        w.warehouse_name
+        w.code AS warehouse_code,
+        w.name AS warehouse_name
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
@@ -116,16 +120,6 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
         <p class="page-subtitle">Overview, stock levels, and recent warehouse activity in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')') ?></strong></p>
-    </div>
-    <div class="header-actions">
-        <a href="index.php" class="btn btn-secondary" aria-label="Refresh dashboard data">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="23 4 23 10 17 10"/>
-                <polyline points="1 20 1 14 7 14"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-            </svg>
-            <span>Refresh</span>
-        </a>
     </div>
 </div>
 

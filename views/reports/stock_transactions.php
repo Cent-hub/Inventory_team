@@ -20,7 +20,7 @@ require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
 // Fetch Warehouses
-$warehouses = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$warehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name FROM warehouses WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Filters
 $rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
@@ -60,17 +60,17 @@ $sqlM = "
     SELECT 
         sm.movement_id,
         sm.movement_type,
-        sm.reference_number,
-        sm.quantity_in,
-        sm.quantity_out,
-        sm.balance_after,
+        COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
+        CASE WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity ELSE 0 END AS quantity_in,
+        CASE WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity ELSE 0 END AS quantity_out,
+        0.00 AS balance_after,
         sm.created_at,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit,
-        w.warehouse_code,
-        w.warehouse_name
+        w.code AS warehouse_code,
+        w.name AS warehouse_name
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
@@ -79,7 +79,7 @@ $sqlM = "
 ";
 $paramsM = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
-    $sqlM .= " AND (i.item_name LIKE ? OR i.item_code LIKE ? OR sm.reference_number LIKE ?)";
+    $sqlM .= " AND (i.name LIKE ? OR i.code LIKE ? OR sm.remarks LIKE ?)";
     $paramsM[] = "%$search%";
     $paramsM[] = "%$search%";
     $paramsM[] = "%$search%";
@@ -92,33 +92,37 @@ $movementData = $stmtM->fetchAll(PDO::FETCH_ASSOC);
 // 2. Inbound Stock Receipts
 $sqlIn = "
     SELECT 
-        si.stock_in_id,
-        si.transaction_number,
-        si.source_type,
-        si.source_reference_no,
-        si.transaction_date,
-        si.status,
-        si.remarks,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS operator_name,
-        COUNT(sii.stock_in_item_id) AS total_items,
-        COALESCE(SUM(sii.quantity), 0) AS total_qty
-    FROM stock_ins si
-    JOIN warehouses w ON si.warehouse_id = w.warehouse_id
-    JOIN users u ON si.created_by = u.user_id
-    LEFT JOIN stock_in_items sii ON si.stock_in_id = sii.stock_in_id
-    WHERE DATE(si.transaction_date) BETWEEN ? AND ?
-      AND si.warehouse_id = ?
+        sm.movement_id AS stock_in_id,
+        CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+        CASE 
+            WHEN i.type = 'finished_good' THEN 'PRODUCTION_RETURN'
+            ELSE 'PURCHASE_ORDER'
+        END AS source_type,
+        COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
+        DATE(sm.created_at) AS transaction_date,
+        'completed' AS status,
+        sm.remarks,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        1 AS total_items,
+        sm.quantity AS total_qty
+    FROM stock_movements sm
+    JOIN items i ON sm.item_id = i.item_id
+    JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
+    LEFT JOIN users u ON sm.created_by = u.user_id
+    WHERE DATE(sm.created_at) BETWEEN ? AND ?
+      AND sm.warehouse_id = ?
+      AND sm.movement_type = 'STOCK_IN'
 ";
 $paramsIn = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
-    $sqlIn .= " AND (si.transaction_number LIKE ? OR si.source_reference_no LIKE ? OR si.remarks LIKE ?)";
+    $sqlIn .= " AND (sm.remarks LIKE ? OR i.name LIKE ? OR i.code LIKE ?)";
     $paramsIn[] = "%$search%";
     $paramsIn[] = "%$search%";
     $paramsIn[] = "%$search%";
 }
-$sqlIn .= " GROUP BY si.stock_in_id ORDER BY si.transaction_date DESC, si.stock_in_id DESC";
+$sqlIn .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
 $stmtIn = $pdo->prepare($sqlIn);
 $stmtIn->execute($paramsIn);
 $inboundData = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
@@ -126,33 +130,37 @@ $inboundData = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
 // 3. Outbound Stock Dispatches
 $sqlOut = "
     SELECT 
-        so.stock_out_id,
-        so.transaction_number,
-        so.source_type,
-        so.source_reference_no,
-        so.transaction_date,
-        so.status,
-        so.remarks,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS operator_name,
-        COUNT(soi.stock_out_item_id) AS total_items,
-        COALESCE(SUM(soi.quantity), 0) AS total_qty
-    FROM stock_outs so
-    JOIN warehouses w ON so.warehouse_id = w.warehouse_id
-    JOIN users u ON so.created_by = u.user_id
-    LEFT JOIN stock_out_items soi ON so.stock_out_id = soi.stock_out_id
-    WHERE DATE(so.transaction_date) BETWEEN ? AND ?
-      AND so.warehouse_id = ?
+        sm.movement_id AS stock_out_id,
+        CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+        CASE 
+            WHEN i.type = 'raw_material' THEN 'MATERIAL_REQUEST'
+            ELSE 'SALES_DELIVERY'
+        END AS source_type,
+        COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
+        DATE(sm.created_at) AS transaction_date,
+        'completed' AS status,
+        sm.remarks,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        1 AS total_items,
+        sm.quantity AS total_qty
+    FROM stock_movements sm
+    JOIN items i ON sm.item_id = i.item_id
+    JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
+    LEFT JOIN users u ON sm.created_by = u.user_id
+    WHERE DATE(sm.created_at) BETWEEN ? AND ?
+      AND sm.warehouse_id = ?
+      AND sm.movement_type = 'STOCK_OUT'
 ";
 $paramsOut = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
-    $sqlOut .= " AND (so.transaction_number LIKE ? OR so.source_reference_no LIKE ? OR so.remarks LIKE ?)";
+    $sqlOut .= " AND (sm.remarks LIKE ? OR i.name LIKE ? OR i.code LIKE ?)";
     $paramsOut[] = "%$search%";
     $paramsOut[] = "%$search%";
     $paramsOut[] = "%$search%";
 }
-$sqlOut .= " GROUP BY so.stock_out_id ORDER BY so.transaction_date DESC, so.stock_out_id DESC";
+$sqlOut .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
 $stmtOut = $pdo->prepare($sqlOut);
 $stmtOut->execute($paramsOut);
 $outboundData = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
@@ -160,33 +168,35 @@ $outboundData = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
 // 4. Inter-Branch Stock Transfers
 $sqlTr = "
     SELECT 
-        st.stock_transfer_id,
-        st.transaction_number,
-        st.transaction_date AS transfer_date,
+        st.transfer_id AS stock_transfer_id,
+        CONCAT('TRF-', LPAD(st.transfer_id, 6, '0')) AS transaction_number,
+        DATE(st.requested_at) AS transfer_date,
         st.status,
-        st.remarks,
-        sw.warehouse_code AS from_code,
-        sw.warehouse_name AS from_name,
-        dw.warehouse_code AS to_code,
-        dw.warehouse_name AS to_name,
-        u.name AS operator_name,
-        COUNT(sti.stock_transfer_item_id) AS total_items,
-        COALESCE(SUM(sti.quantity), 0) AS total_qty
+        '' AS remarks,
+        sw.code AS from_code,
+        sw.name AS from_name,
+        dw.code AS to_code,
+        dw.name AS to_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        1 AS total_items,
+        st.quantity AS total_qty
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
     JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
-    JOIN users u ON st.created_by = u.user_id
-    LEFT JOIN stock_transfer_items sti ON st.stock_transfer_id = sti.stock_transfer_id
-    WHERE DATE(st.transaction_date) BETWEEN ? AND ?
+    LEFT JOIN users u ON st.requested_by = u.user_id
+    JOIN items i ON st.item_id = i.item_id
+    WHERE DATE(st.requested_at) BETWEEN ? AND ?
       AND (st.source_warehouse_id = ? OR st.destination_warehouse_id = ?)
 ";
 $paramsTr = [$startDate, $endDate, $currentWarehouseId, $currentWarehouseId];
 if ($search !== '') {
-    $sqlTr .= " AND (st.transaction_number LIKE ? OR st.remarks LIKE ?)";
+    $sqlTr .= " AND (i.name LIKE ? OR i.code LIKE ? OR sw.name LIKE ? OR dw.name LIKE ?)";
+    $paramsTr[] = "%$search%";
+    $paramsTr[] = "%$search%";
     $paramsTr[] = "%$search%";
     $paramsTr[] = "%$search%";
 }
-$sqlTr .= " GROUP BY st.stock_transfer_id ORDER BY st.transaction_date DESC, st.stock_transfer_id DESC";
+$sqlTr .= " ORDER BY st.requested_at DESC, st.transfer_id DESC";
 $stmtTr = $pdo->prepare($sqlTr);
 $stmtTr->execute($paramsTr);
 $transferData = $stmtTr->fetchAll(PDO::FETCH_ASSOC);
@@ -194,37 +204,35 @@ $transferData = $stmtTr->fetchAll(PDO::FETCH_ASSOC);
 // 5. Stock Adjustments & Variances
 $sqlAdj = "
     SELECT 
-        sa.stock_adjustment_id,
-        sa.transaction_number,
-        sa.adjustment_date,
+        sa.adjustment_id AS stock_adjustment_id,
+        CONCAT('ADJ-', LPAD(sa.adjustment_id, 6, '0')) AS transaction_number,
+        DATE(sa.requested_at) AS adjustment_date,
         sa.reason,
         sa.status,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS operator_name,
-        i.item_code,
-        i.item_name,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        i.code AS item_code,
+        i.name AS item_name,
         i.unit,
-        sai.previous_quantity,
-        sai.adjusted_quantity,
-        sai.difference
+        sa.previous_quantity,
+        sa.adjusted_quantity,
+        sa.difference
     FROM stock_adjustments sa
     JOIN warehouses w ON sa.warehouse_id = w.warehouse_id
-    JOIN users u ON sa.created_by = u.user_id
-    JOIN stock_adjustment_items sai ON sa.stock_adjustment_id = sai.stock_adjustment_id
-    JOIN items i ON sai.item_id = i.item_id
-    WHERE DATE(sa.adjustment_date) BETWEEN ? AND ?
+    LEFT JOIN users u ON sa.requested_by = u.user_id
+    JOIN items i ON sa.item_id = i.item_id
+    WHERE DATE(sa.requested_at) BETWEEN ? AND ?
       AND sa.warehouse_id = ?
 ";
 $paramsAdj = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
-    $sqlAdj .= " AND (sa.transaction_number LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR sa.reason LIKE ?)";
-    $paramsAdj[] = "%$search%";
+    $sqlAdj .= " AND (i.name LIKE ? OR i.code LIKE ? OR sa.reason LIKE ?)";
     $paramsAdj[] = "%$search%";
     $paramsAdj[] = "%$search%";
     $paramsAdj[] = "%$search%";
 }
-$sqlAdj .= " ORDER BY sa.adjustment_date DESC, sa.stock_adjustment_id DESC";
+$sqlAdj .= " ORDER BY sa.requested_at DESC, sa.adjustment_id DESC";
 $stmtAdj = $pdo->prepare($sqlAdj);
 $stmtAdj->execute($paramsAdj);
 $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
@@ -320,7 +328,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
         <input type="hidden" name="tab" id="filterTabInput" value="<?= htmlspecialchars($activeTab) ?>">
 
         <!-- Search -->
-        <div class="search-wrap" style="flex: 1; min-width: 200px;">
+        <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/>

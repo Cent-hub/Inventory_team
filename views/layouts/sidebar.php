@@ -14,6 +14,10 @@ $isInventoryActive = in_array($activePage, [
     'raw_materials', 'finished_goods', 'items', 'stock_operations', 'inbound_outbound'
 ], true);
 
+$isInventoryReportsActive = ($activePage === 'reports');
+$isStockTransactionsActive = ($activePage === 'stock_transactions');
+$isReportsActive = ($activeGroup === 'reports' || $isInventoryReportsActive || $isStockTransactionsActive);
+
 $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && !$isSuperAdmin));
 ?>
 <aside id="appSidebar" class="sidebar" aria-label="Main Navigation">

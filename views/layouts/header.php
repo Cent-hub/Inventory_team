@@ -38,25 +38,14 @@ $userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
 // Only super_admin is permitted multi-warehouse switching across all facilities
 $isAuthorizedForMultiWarehouse = ($userRole === 'super_admin');
 
-// Enforce strict assigned warehouse resolution from database for regular admins
-$userAssignedWhId = !empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 0;
-if (!empty($currentUser['id']) && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0 || empty($_SESSION['user_team']))) {
-    $uStmt = $pdo->prepare("SELECT warehouse_id, team FROM users WHERE user_id = :uid LIMIT 1");
-    $uStmt->execute([':uid' => $currentUser['id']]);
-    $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
-    if ($uRow) {
-        $dbWhId = (int)($uRow['warehouse_id'] ?? 0);
-        if ($dbWhId > 0 && (!$isAuthorizedForMultiWarehouse || $userAssignedWhId <= 0)) {
-            $userAssignedWhId = $dbWhId;
-            $currentUser['warehouse_id'] = $userAssignedWhId;
-        }
-        $dbTeam = trim((string)($uRow['team'] ?? ''));
-        if ($dbTeam !== '') {
-            $currentUser['team'] = $dbTeam;
-            $_SESSION['user_team'] = $dbTeam;
-        }
-    }
-}
+// Enforce assigned warehouse and team resolution directly from cached session data
+$userAssignedWhId = !empty($_SESSION['warehouse_id']) 
+    ? (int)$_SESSION['warehouse_id'] 
+    : (!empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 1);
+
+$userTeam = !empty($_SESSION['user_team'])
+    ? $_SESSION['user_team']
+    : (!empty($currentUser['team']) ? $currentUser['team'] : 'Inventory');
 
 $requestedWhId = null;
 if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
@@ -98,7 +87,7 @@ if ($isAuthorizedForMultiWarehouse) {
 /** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
 $assignedWarehouse = null;
 if ($currentWarehouseId > 0) {
-    $whStmt = $pdo->prepare("SELECT warehouse_id, warehouse_code, warehouse_name, location FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
+    $whStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
     $whStmt->execute([':id' => $currentWarehouseId]);
     $res = $whStmt->fetch(PDO::FETCH_ASSOC);
     if (is_array($res)) {
@@ -108,7 +97,7 @@ if ($currentWarehouseId > 0) {
 
 if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
     // Fallback to first active warehouse
-    $fallbackStmt = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name, location FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
+    $fallbackStmt = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
     $res = $fallbackStmt ? $fallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
     if (is_array($res)) {
         $assignedWarehouse = $res;

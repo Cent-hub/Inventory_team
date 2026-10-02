@@ -19,7 +19,7 @@ class AccountabilityLogTest extends TestCase {
         $whId = 1;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code AS item_code FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
         // 1. Execute an audited Stock-In transaction with unique reference
@@ -37,13 +37,14 @@ class AccountabilityLogTest extends TestCase {
 
         // 2. Query accountability_logs for the recorded event
         $stmtLog = $this->pdo->prepare("
-            SELECT log_id, created_at, user_name, user_role, team, action_type,
-                   item_code, quantity, warehouse_id, reference_number, notes
+            SELECT log_id, created_at, user_id, team, action AS action_type,
+                   item_id, quantity, warehouse_id, details
             FROM accountability_logs
-            WHERE reference_number = ?
+            WHERE details LIKE ?
+            ORDER BY log_id DESC
             LIMIT 1
         ");
-        $stmtLog->execute([$auditTestRef]);
+        $stmtLog->execute(['%' . $auditTestRef . '%']);
         $logEntry = $stmtLog->fetch();
 
         $this->assertNotEmpty(
@@ -52,11 +53,13 @@ class AccountabilityLogTest extends TestCase {
             "accountability_logs table"
         );
 
+        $details = json_decode($logEntry['details'] ?? '{}', true) ?: [];
+
         $this->assertEquals(
             'STOCK_IN',
             $logEntry['action_type'] ?? '',
             "Audit action_type must match 'STOCK_IN'",
-            "accountability_logs.action_type"
+            "accountability_logs.action"
         );
 
         $this->assertEquals(
@@ -68,9 +71,9 @@ class AccountabilityLogTest extends TestCase {
 
         $this->assertEquals(
             'TEST-RM-MALT',
-            $logEntry['item_code'] ?? '',
+            $details['item_code'] ?? '',
             "Audit log must snapshot the exact item_code at transaction time",
-            "accountability_logs.item_code"
+            "accountability_logs.details->item_code"
         );
 
         $this->assertEquals(
@@ -85,6 +88,14 @@ class AccountabilityLogTest extends TestCase {
             (int)($logEntry['warehouse_id'] ?? 0),
             "Audit log must record the affected facility warehouse_id",
             "accountability_logs.warehouse_id"
+        );
+
+        // Also verify AccountabilityService::getLogs returns structured log correctly
+        $serviceLogs = AccountabilityService::getLogs($whId, ['search' => $auditTestRef]);
+        $this->assertTrue(
+            !empty($serviceLogs) && count($serviceLogs) > 0,
+            "AccountabilityService::getLogs must retrieve the audit log with unpacked metadata",
+            "AccountabilityService::getLogs"
         );
 
         return $this->getAggregateResult();

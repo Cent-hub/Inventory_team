@@ -18,7 +18,7 @@ class StockAdjustmentTest extends TestCase {
         $whId = 1;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code, unit FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
         // 1. Negative Adjusted Quantity Rejection
@@ -42,12 +42,12 @@ class StockAdjustmentTest extends TestCase {
         );
 
         // 2. Baseline inventory check
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ?");
         $stmtBal->execute([$rmItem['item_id'], $whId]);
         $bookQuantity = (float)($stmtBal->fetchColumn() ?: 0.000);
 
-        // Target physical reconciled count
-        $targetPhysicalCount = 100.000;
+        // Target physical reconciled count (ensure different from current stock to avoid no-op rejection)
+        $targetPhysicalCount = ($bookQuantity == 100.0) ? 105.000 : 100.000;
 
         // 3. Create Stock Adjustment (Cycle Count Request)
         $adjRes = $stockService->recordStockAdjustment(
@@ -69,7 +69,7 @@ class StockAdjustmentTest extends TestCase {
             $bookQuantity,
             $qtyWhilePending,
             "Inventory balance must NOT change while stock adjustment remains pending approval",
-            "inventory table"
+            "stock table"
         );
 
         // 5. Approve Adjustment
@@ -83,8 +83,19 @@ class StockAdjustmentTest extends TestCase {
             $targetPhysicalCount,
             $qtyAfterApproval,
             "Inventory balance after adjustment approval must match the reconciled physical quantity",
-            "inventory table"
+            "stock table"
         );
+
+        // 7. Verify Stock Movement Ledger Entry for Adjustment
+        $stmtMov = $this->pdo->prepare("
+            SELECT movement_id, movement_type, quantity, reference_id 
+            FROM stock_movements 
+            WHERE item_id = ? AND warehouse_id = ? AND movement_type = 'STOCK_ADJUSTMENT'
+            ORDER BY movement_id DESC LIMIT 1
+        ");
+        $stmtMov->execute([$rmItem['item_id'], $whId]);
+        $movRow = $stmtMov->fetch(PDO::FETCH_ASSOC);
+        $this->assertNotEmpty($movRow, "Approved adjustment must generate a STOCK_ADJUSTMENT movement", "stock_movements table");
 
         return $this->getAggregateResult();
     }

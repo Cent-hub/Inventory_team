@@ -82,7 +82,7 @@ class AccountabilityService {
 
         // Resolve item snapshot if itemId is given
         if ($itemId > 0) {
-            $stmtI = $pdo->prepare("SELECT item_code, item_name, unit FROM items WHERE item_id = ? LIMIT 1");
+            $stmtI = $pdo->prepare("SELECT code AS item_code, name AS item_name, unit FROM items WHERE item_id = ? LIMIT 1");
             $stmtI->execute([$itemId]);
             $item = $stmtI->fetch(PDO::FETCH_ASSOC);
             if ($item) {
@@ -94,36 +94,56 @@ class AccountabilityService {
             }
         }
 
+        // Validate warehouse_id foreign key
+        if ($warehouseId > 0) {
+            $stmtW = $pdo->prepare("SELECT warehouse_id FROM warehouses WHERE warehouse_id = ? LIMIT 1");
+            $stmtW->execute([$warehouseId]);
+            if (!$stmtW->fetchColumn()) {
+                $warehouseId = null;
+            }
+        } else {
+            $warehouseId = null;
+        }
+
+        // Pack rich operational metadata into details column
+        $detailsData = [
+            'user_name'                => $userName,
+            'user_role'                => $userRole,
+            'channel'                  => $channel,
+            'item_code'                => $itemCode,
+            'item_name'                => $itemName,
+            'unit'                     => $unit,
+            'destination_warehouse_id' => $destWhId,
+            'reference_number'         => $refNo ?: null,
+            'notes'                    => $notes ?: null
+        ];
+
+        if (!empty($params['details'])) {
+            if (is_array($params['details'])) {
+                $detailsData = array_merge($detailsData, $params['details']);
+            } else {
+                $detailsData['raw_details'] = $params['details'];
+            }
+        }
+
+        $detailsJson = json_encode($detailsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         $stmtIns = $pdo->prepare("
             INSERT INTO accountability_logs (
-                created_at, user_id, user_name, user_role, team,
-                action_type, channel, item_id, item_code, item_name,
-                quantity, unit, warehouse_id, destination_warehouse_id,
-                reference_number, notes
+                user_id, team, action, item_id, quantity, warehouse_id, details, created_at
             ) VALUES (
-                NOW(), ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?
+                ?, ?, ?, ?, ?, ?, ?, NOW()
             )
         ");
 
         $stmtIns->execute([
             $userId,
-            $userName,
-            $userRole,
             $team,
             $actionType,
-            $channel,
             $itemId,
-            $itemCode,
-            $itemName,
             $quantity,
-            $unit,
             $warehouseId,
-            $destWhId,
-            $refNo ?: null,
-            $notes ?: null
+            $detailsJson
         ]);
 
         return (int)$pdo->lastInsertId();
@@ -164,35 +184,31 @@ class AccountabilityService {
                 al.log_id,
                 al.created_at,
                 al.user_id,
-                al.user_name,
-                al.user_role,
+                COALESCE(u.name, 'System Service') AS user_name,
+                COALESCE(u.role, 'admin') AS user_role,
                 al.team,
-                al.action_type,
-                al.channel,
+                al.action AS action_type,
+                al.action,
                 al.item_id,
-                al.item_code,
-                al.item_name,
+                i.code AS item_code,
+                i.name AS item_name,
+                i.unit,
                 al.quantity,
-                al.unit,
                 al.warehouse_id,
-                al.destination_warehouse_id,
-                al.reference_number,
-                al.notes,
-                w.warehouse_code,
-                w.warehouse_name,
-                dw.warehouse_code AS dest_code,
-                dw.warehouse_name AS dest_name
+                al.details,
+                w.code AS warehouse_code,
+                w.name AS warehouse_name
             FROM accountability_logs al
-            JOIN warehouses w ON al.warehouse_id = w.warehouse_id
-            LEFT JOIN warehouses dw ON al.destination_warehouse_id = dw.warehouse_id
+            LEFT JOIN users u ON al.user_id = u.user_id
+            LEFT JOIN items i ON al.item_id = i.item_id
+            LEFT JOIN warehouses w ON al.warehouse_id = w.warehouse_id
             WHERE 1=1
         ";
         $params = [];
 
         // Warehouse scoping: logged-in user's assigned warehouse
         if ($warehouseId > 0) {
-            $sql .= " AND (al.warehouse_id = ? OR al.destination_warehouse_id = ?)";
-            $params[] = $warehouseId;
+            $sql .= " AND al.warehouse_id = ?";
             $params[] = $warehouseId;
         }
 
@@ -206,18 +222,18 @@ class AccountabilityService {
         if (!empty($filters['action']) && $filters['action'] !== 'all') {
             $act = strtoupper(trim((string)$filters['action']));
             if (in_array($act, ['TRANSFER', 'ADJUSTMENT'], true)) {
-                $sql .= " AND al.action_type LIKE ? AND al.action_type NOT LIKE '%CANCEL%'";
+                $sql .= " AND al.action LIKE ? AND al.action NOT LIKE '%CANCEL%'";
                 $params[] = $act . '%';
             } else {
-                $sql .= " AND al.action_type = ?";
+                $sql .= " AND al.action = ?";
                 $params[] = $act;
             }
         }
 
-        // Warehouse name filter (from UI filter bar)
+        // Warehouse filter (by name or code from UI filter bar)
         if (!empty($filters['warehouse']) && $filters['warehouse'] !== 'all') {
             $whFilter = trim((string)$filters['warehouse']);
-            $sql .= " AND (w.warehouse_name = ? OR dw.warehouse_name = ?)";
+            $sql .= " AND (w.name = ? OR w.code = ?)";
             $params[] = $whFilter;
             $params[] = $whFilter;
         }
@@ -226,12 +242,12 @@ class AccountabilityService {
         if (!empty($filters['search'])) {
             $s = "%" . trim($filters['search']) . "%";
             $sql .= " AND (
-                al.user_name LIKE ? 
-                OR al.item_name LIKE ? 
-                OR al.item_code LIKE ? 
-                OR al.reference_number LIKE ? 
-                OR al.notes LIKE ?
-                OR w.warehouse_name LIKE ?
+                u.name LIKE ? 
+                OR i.name LIKE ? 
+                OR i.code LIKE ? 
+                OR al.details LIKE ? 
+                OR w.name LIKE ?
+                OR al.action LIKE ?
             )";
             $params = array_merge($params, [$s, $s, $s, $s, $s, $s]);
         }
@@ -256,7 +272,59 @@ class AccountabilityService {
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as &$row) {
+            $channel  = 'UI';
+            $destWhId = null;
+            $refNo    = null;
+            $notes    = $row['details'] ?? '';
+            $destCode = null;
+            $destName = null;
+
+            if (!empty($row['details'])) {
+                $meta = json_decode($row['details'], true);
+                if (is_array($meta)) {
+                    if (!empty($meta['user_name'])) {
+                        $row['user_name'] = $meta['user_name'];
+                    }
+                    if (!empty($meta['user_role'])) {
+                        $row['user_role'] = $meta['user_role'];
+                    }
+                    if (!empty($meta['channel'])) {
+                        $channel = $meta['channel'];
+                    }
+                    if (!empty($meta['item_code'])) {
+                        $row['item_code'] = $meta['item_code'];
+                    }
+                    if (!empty($meta['item_name'])) {
+                        $row['item_name'] = $meta['item_name'];
+                    }
+                    if (!empty($meta['unit'])) {
+                        $row['unit'] = $meta['unit'];
+                    }
+                    if (!empty($meta['destination_warehouse_id'])) {
+                        $destWhId = (int)$meta['destination_warehouse_id'];
+                    }
+                    if (!empty($meta['reference_number'])) {
+                        $refNo = $meta['reference_number'];
+                    }
+                    if (isset($meta['notes'])) {
+                        $notes = $meta['notes'];
+                    }
+                }
+            }
+
+            $row['channel']                  = $channel;
+            $row['destination_warehouse_id'] = $destWhId;
+            $row['reference_number']         = $refNo;
+            $row['notes']                    = $notes;
+            $row['dest_code']                = $destCode;
+            $row['dest_name']                = $destName;
+        }
+        unset($row);
+
+        return $rows;
     }
 
     /**
@@ -268,8 +336,8 @@ class AccountabilityService {
         $where = "1=1";
         $params = [];
         if ($warehouseId > 0) {
-            $where = "(warehouse_id = ? OR destination_warehouse_id = ?)";
-            $params = [$warehouseId, $warehouseId];
+            $where = "warehouse_id = ?";
+            $params = [$warehouseId];
         }
 
         $sql = "

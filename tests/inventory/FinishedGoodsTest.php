@@ -14,14 +14,14 @@ class FinishedGoodsTest extends TestCase {
     }
 
     public function run(): TestResult {
-        $stockService = new StockService();
+        $stockService = new StockService($this->pdo);
         $whId = 1;
         $adminUserId = 1;
 
-        $stmtRm = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-RM-MALT' LIMIT 1");
+        $stmtRm = $this->pdo->query("SELECT item_id, code AS item_code, unit FROM items WHERE code = 'TEST-RM-MALT' LIMIT 1");
         $rmItem = $stmtRm->fetch();
 
-        $stmtFg = $this->pdo->query("SELECT item_id, item_code, unit FROM items WHERE item_code = 'TEST-FG-GIN' LIMIT 1");
+        $stmtFg = $this->pdo->query("SELECT item_id, code AS item_code, unit FROM items WHERE code = 'TEST-FG-GIN' LIMIT 1");
         $fgItem = $stmtFg->fetch();
 
         // 1. Verify Production Return strictly rejects Raw Materials
@@ -48,7 +48,7 @@ class FinishedGoodsTest extends TestCase {
         );
 
         // 2. Fetch baseline finished goods inventory
-        $stmtBal = $this->pdo->prepare("SELECT quantity FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+        $stmtBal = $this->pdo->prepare("SELECT qty_on_hand AS quantity FROM stock WHERE item_id = ? AND warehouse_id = ?");
         $stmtBal->execute([$fgItem['item_id'], $whId]);
         $initialFgBalance = (float)($stmtBal->fetchColumn() ?: 0.000);
 
@@ -75,8 +75,20 @@ class FinishedGoodsTest extends TestCase {
             $expectedFgBalance,
             $newFgBalance,
             "Finished goods inventory must increase exactly by produced yield quantity",
-            "inventory table"
+            "stock table"
         );
+
+        // 5. Verify Stock Movement Ledger Record for Finished Goods
+        $stmtMov = $this->pdo->prepare("
+            SELECT movement_id, movement_type, quantity 
+            FROM stock_movements 
+            WHERE item_id = ? AND warehouse_id = ? AND movement_type = 'STOCK_IN'
+            ORDER BY movement_id DESC LIMIT 1
+        ");
+        $stmtMov->execute([$fgItem['item_id'], $whId]);
+        $movRow = $stmtMov->fetch(PDO::FETCH_ASSOC);
+        $this->assertNotEmpty($movRow, "Finished goods stock-in must create a stock_movements entry", "stock_movements table");
+        $this->assertEquals($fgProduceQty, (float)$movRow['quantity'], "Movement entry quantity must match finished goods yield", "stock_movements.quantity");
 
         return $this->getAggregateResult();
     }

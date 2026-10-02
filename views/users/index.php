@@ -63,11 +63,15 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                         $rawApiToken  = bin2hex(random_bytes(32));
                         $apiTokenHash = hash('sha256', $rawApiToken);
 
+                        $nextUserIdStmt = $pdo->query("SELECT COALESCE(MAX(user_id), 0) + 1 FROM users");
+                        $nextUserId = (int)$nextUserIdStmt->fetchColumn();
+
                         $stmtIns = $pdo->prepare("
-                            INSERT INTO users (name, email, password, role, team, warehouse_id, api_token, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO users (user_id, name, email, password, role, team, warehouse_id, api_token, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmtIns->execute([
+                            $nextUserId,
                             $uName,
                             $uEmail,
                             $passwordHash,
@@ -77,7 +81,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             $apiTokenHash,
                             $uStatus
                         ]);
-                        $newUserId = (int)$pdo->lastInsertId();
+                        $newUserId = $nextUserId;
 
                         require_once __DIR__ . '/../../helpers/AccountabilityService.php';
                         AccountabilityService::log([
@@ -218,11 +222,12 @@ $adminCount = 0;
 $totalWarehouses = 0;
 
 if ($isSuperAdmin) {
-    $warehousesList = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $warehousesList = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-    // Query users from database with assigned warehouse (Super Admin only)
+    // Query users from database with assigned warehouse & linked employee data (Super Admin only)
     $sql = "
         SELECT 
+            u.id,
             u.user_id,
             u.name,
             u.email,
@@ -230,12 +235,17 @@ if ($isSuperAdmin) {
             u.team,
             u.status,
             u.warehouse_id,
-            w.warehouse_code,
-            w.warehouse_name,
+            w.code AS warehouse_code,
+            w.name AS warehouse_name,
             u.created_at,
-            u.updated_at
+            u.updated_at,
+            e.employee_id,
+            e.employee_code,
+            e.position AS employee_position,
+            e.department AS employee_department
         FROM users u
         LEFT JOIN warehouses w ON u.warehouse_id = w.warehouse_id
+        LEFT JOIN employees e ON e.user_id = u.user_id
         WHERE 1=1
     ";
     $params = [];
@@ -455,7 +465,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="card">
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <!-- Search -->
-        <div class="search-wrap" style="flex: 1; min-width: 220px;">
+        <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/>
@@ -531,7 +541,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 <span class="badge badge-teal text-xs" style="font-size: 10px; padding: 1px 6px;">You</span>
                                             <?php endif; ?>
                                         </div>
-                                        <div class="font-mono text-xs text-muted"><?= htmlspecialchars($u['email']) ?></div>
+                                        <div class="font-mono text-xs text-muted">
+                                            <?= htmlspecialchars($u['email']) ?>
+                                            <?php if (!empty($u['employee_code'])): ?>
+                                                &middot; <span style="color: #1F7A6C; font-weight: 600;" title="Linked Employee (employees.user_id = users.user_id)">Emp #<?= htmlspecialchars($u['employee_code']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
@@ -572,6 +587,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                         'status' => $u['status'],
                                         'team' => $team,
                                         'facility' => $facility,
+                                        'employee_code' => $u['employee_code'] ?? '',
+                                        'employee_position' => $u['employee_position'] ?? '',
                                         'created_at' => $u['created_at'] ? date('M d, Y H:i:s', strtotime($u['created_at'])) : '—'
                                     ])) ?>)">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">

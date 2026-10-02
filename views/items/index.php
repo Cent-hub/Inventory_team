@@ -26,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $itemCode        = strtoupper(trim($_POST['item_code'] ?? ''));
         $itemName        = trim($_POST['item_name'] ?? '');
         $itemType        = trim($_POST['item_type'] ?? '');
-        $categoryId      = (int)($_POST['category_id'] ?? 0);
         $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
         $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
         $description     = trim($_POST['description'] ?? '');
@@ -39,10 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Item Name is required.";
         } elseif (mb_strlen($itemName) > 150) {
             $errorMessage = "Item Name cannot exceed 150 characters.";
-        } elseif (!in_array($itemType, ['raw_material', 'finished_good'], true)) {
-            $errorMessage = "Item classification must be either 'Raw Material' or 'Finished Good'.";
-        } elseif ($categoryId <= 0) {
-            $errorMessage = "Please select a valid category.";
+        } elseif (!in_array($itemType, ['raw_material', 'finished_good', 'packaging', 'consumable'], true)) {
+            $errorMessage = "Item classification must be 'Raw Material', 'Finished Good', 'Packaging', or 'Consumable'.";
         } elseif (empty($unit) || mb_strlen($unit) > 20) {
             $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
         } elseif ($rawReorderLevel !== '' && !is_numeric($rawReorderLevel)) {
@@ -55,63 +52,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
                 try {
-                    // Verify active category exists
-                    $stmtCat = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE category_id = ? AND status = 'active'");
-                    $stmtCat->execute([$categoryId]);
-                    if ((int)$stmtCat->fetchColumn() === 0) {
-                        $errorMessage = "Selected category does not exist or is inactive.";
+                    // Check uniqueness of item code
+                    $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE code = ?");
+                    $stmtChk->execute([$itemCode]);
+                    if ((int)$stmtChk->fetchColumn() > 0) {
+                        $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
                     } else {
-                        // Check uniqueness of item code
-                        $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE item_code = ?");
-                        $stmtChk->execute([$itemCode]);
-                        if ((int)$stmtChk->fetchColumn() > 0) {
-                            $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
-                        } else {
-                            $userId = (int)($currentUser['id'] ?? 1);
-                            $stmtIns = $pdo->prepare("
-                                INSERT INTO items (
-                                    item_code, item_name, description, item_type,
-                                    category_id, unit, default_reorder_level, status, created_by
-                                ) VALUES (
-                                    ?, ?, ?, ?,
-                                    ?, ?, ?, 'active', ?
-                                )
-                            ");
-                            $stmtIns->execute([
-                                $itemCode,
-                                $itemName,
-                                $description ?: null,
-                                $itemType,
-                                $categoryId,
-                                $unit,
-                                round($reorderLevel, 3),
-                                $userId
-                            ]);
-                            $newId = (int)$pdo->lastInsertId();
+                        $userId = (int)($currentUser['id'] ?? 1);
+                        $stmtIns = $pdo->prepare("
+                            INSERT INTO items (
+                                code, name, type, unit, reorder_level, status
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, 'active'
+                            )
+                        ");
+                        $stmtIns->execute([
+                            $itemCode,
+                            $itemName,
+                            $itemType,
+                            $unit,
+                            round($reorderLevel, 3)
+                        ]);
+                        $newId = (int)$pdo->lastInsertId();
 
-                            // Initialize 0-stock inventory snapshot rows across all active warehouses
-                            $stmtSeedInv = $pdo->prepare("
-                                INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
-                                SELECT ?, warehouse_id, 0.000, ?
-                                FROM warehouses
-                                WHERE status = 'active'
-                            ");
-                            $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
+                        // Initialize 0-stock stock snapshot rows across all active warehouses
+                        $stmtSeedInv = $pdo->prepare("
+                            INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                            SELECT ?, warehouse_id, 0.00, ?
+                            FROM warehouses
+                            WHERE status = 'active'
+                        ");
+                        $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
 
-                            require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                            AccountabilityService::log([
-                                'user_id'          => $userId,
-                                'team'             => 'Inventory',
-                                'action_type'      => 'ITEM_CREATED',
-                                'channel'          => 'UI',
-                                'item_id'          => $newId,
-                                'warehouse_id'     => $currentWarehouseId ?: 1,
-                                'reference_number' => $itemCode,
-                                'notes'            => "Master item created: {$itemName} ({$itemType})"
-                            ]);
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => $userId,
+                            'team'             => 'Inventory',
+                            'action_type'      => 'ITEM_CREATED',
+                            'channel'          => 'UI',
+                            'item_id'          => $newId,
+                            'warehouse_id'     => $currentWarehouseId ?: 1,
+                            'reference_number' => $itemCode,
+                            'notes'            => "Master item created: {$itemName} ({$itemType})"
+                        ]);
 
-                            $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
-                        }
+                        $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
                     }
                 } catch (Exception $e) {
                     $errorMessage = "Failed to create item: " . $e->getMessage();
@@ -130,7 +115,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
         $itemId          = (int)($_POST['item_id'] ?? 0);
         $itemName        = trim($_POST['item_name'] ?? '');
-        $categoryId      = (int)($_POST['category_id'] ?? 0);
         $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
         $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
         $description     = trim($_POST['description'] ?? '');
@@ -140,8 +124,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Invalid item ID selected for update.";
         } elseif (empty($itemName) || mb_strlen($itemName) > 150) {
             $errorMessage = "Item Name is required and cannot exceed 150 characters.";
-        } elseif ($categoryId <= 0) {
-            $errorMessage = "Please select a valid category.";
         } elseif (empty($unit) || mb_strlen($unit) > 20) {
             $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
         } elseif (!in_array($itemStatus, ['active', 'inactive'], true)) {
@@ -156,71 +138,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
                 try {
-                    // Verify active category exists
-                    $stmtCat = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE category_id = ? AND status = 'active'");
-                    $stmtCat->execute([$categoryId]);
-                    if ((int)$stmtCat->fetchColumn() === 0) {
-                        $errorMessage = "Selected category does not exist or is inactive.";
+                    $stmtExist = $pdo->prepare("SELECT code AS item_code, type AS item_type FROM items WHERE item_id = ?");
+                    $stmtExist->execute([$itemId]);
+                    $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$existingItem) {
+                        $errorMessage = "Selected catalog item does not exist.";
                     } else {
-                        $stmtExist = $pdo->prepare("SELECT item_code, item_type FROM items WHERE item_id = ?");
-                        $stmtExist->execute([$itemId]);
-                        $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
+                        $stmtUpd = $pdo->prepare("
+                            UPDATE items
+                            SET name = ?,
+                                unit = ?,
+                                reorder_level = ?,
+                                status = ?
+                            WHERE item_id = ?
+                        ");
+                        $stmtUpd->execute([
+                            $itemName,
+                            $unit,
+                            round($reorderLevel, 3),
+                            $itemStatus,
+                            $itemId
+                        ]);
 
-                        if (!$existingItem) {
-                            $errorMessage = "Selected catalog item does not exist.";
-                        } else {
-                            $stmtUpd = $pdo->prepare("
-                                UPDATE items
-                                SET item_name = ?,
-                                    description = ?,
-                                    category_id = ?,
-                                    unit = ?,
-                                    default_reorder_level = ?,
-                                    status = ?
-                                WHERE item_id = ?
-                            ");
-                            $stmtUpd->execute([
-                                $itemName,
-                                $description ?: null,
-                                $categoryId,
-                                $unit,
-                                round($reorderLevel, 3),
-                                $itemStatus,
-                                $itemId
-                            ]);
+                        // Keep warehouse stock reorder levels synchronized with master catalog
+                        $stmtSyncInv = $pdo->prepare("
+                            UPDATE stock
+                            SET reorder_level = ?
+                            WHERE item_id = ?
+                        ");
+                        $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
 
-                            // Keep warehouse inventory reorder levels synchronized with master catalog
-                            $stmtSyncInv = $pdo->prepare("
-                                UPDATE inventory
-                                SET reorder_level = ?
-                                WHERE item_id = ?
-                            ");
-                            $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
+                        // Ensure all active warehouses have a stock row for this item
+                        $stmtSeedMissing = $pdo->prepare("
+                            INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                            SELECT ?, warehouse_id, 0.00, ?
+                            FROM warehouses
+                            WHERE status = 'active'
+                        ");
+                        $stmtSeedMissing->execute([$itemId, round($reorderLevel, 3)]);
 
-                            // Ensure all active warehouses have an inventory row for this item
-                            $stmtSeedMissing = $pdo->prepare("
-                                INSERT IGNORE INTO inventory (item_id, warehouse_id, quantity, reorder_level)
-                                SELECT ?, warehouse_id, 0.000, ?
-                                FROM warehouses
-                                WHERE status = 'active'
-                            ");
-                            $stmtSeedMissing->execute([$itemId, round($reorderLevel, 3)]);
+                        $userId = (int)($currentUser['id'] ?? 1);
+                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                        AccountabilityService::log([
+                            'user_id'          => $userId,
+                            'team'             => 'Inventory',
+                            'action_type'      => 'ITEM_UPDATED',
+                            'channel'          => 'UI',
+                            'item_id'          => $itemId,
+                            'warehouse_id'     => $currentWarehouseId ?: 1,
+                            'reference_number' => $existingItem['item_code'],
+                            'notes'            => "Master item updated: {$itemName} (Status: {$itemStatus}, Reorder: " . round($reorderLevel, 3) . " {$unit})"
+                        ]);
 
-                            $userId = (int)($currentUser['id'] ?? 1);
-                            require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                            AccountabilityService::log([
-                                'user_id'          => $userId,
-                                'team'             => 'Inventory',
-                                'action_type'      => 'ITEM_UPDATED',
-                                'channel'          => 'UI',
-                                'item_id'          => $itemId,
-                                'warehouse_id'     => $currentWarehouseId ?: 1,
-                                'reference_number' => $existingItem['item_code'],
-                                'notes'            => "Master item updated: {$itemName} (Status: {$itemStatus}, Reorder: " . round($reorderLevel, 3) . " {$unit})"
-                            ]);
-
-                            $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
-                        }
+                        $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
                     }
                 } catch (Exception $e) {
                     $errorMessage = "Failed to update item: " . $e->getMessage();
@@ -230,27 +201,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Fetch all categories for dropdown
-$categories = $pdo->query("SELECT category_id, category_code, category_name FROM categories WHERE status = 'active' ORDER BY category_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+// System classification categories
+$categories = [
+    ['category_id' => 1, 'category_code' => 'RAW', 'category_name' => 'Raw Materials'],
+    ['category_id' => 2, 'category_code' => 'FG',  'category_name' => 'Finished Goods'],
+    ['category_id' => 3, 'category_code' => 'PKG', 'category_name' => 'Packaging'],
+    ['category_id' => 4, 'category_code' => 'CNS', 'category_name' => 'Consumables']
+];
 
-// Fetch items list
+// Fetch items list from team_inventory_local.items
 $stmtItems = $pdo->query("
     SELECT 
         i.item_id,
-        i.item_code,
-        i.item_name,
-        i.description,
-        i.item_type,
-        i.category_id,
+        i.code,
+        i.code AS item_code,
+        i.name,
+        i.name AS item_name,
+        '' AS description,
+        i.type,
+        i.type AS item_type,
+        CASE 
+            WHEN i.type = 'raw_material' THEN 1
+            WHEN i.type = 'finished_good' THEN 2
+            WHEN i.type = 'packaging' THEN 3
+            ELSE 4
+        END AS category_id,
         i.unit,
-        i.default_reorder_level,
+        i.reorder_level,
+        i.reorder_level AS default_reorder_level,
         i.status,
         i.created_at,
-        c.category_name,
-        c.category_code
+        CASE 
+            WHEN i.type = 'raw_material' THEN 'Raw Materials'
+            WHEN i.type = 'finished_good' THEN 'Finished Goods'
+            WHEN i.type = 'packaging' THEN 'Packaging'
+            WHEN i.type = 'consumable' THEN 'Consumables'
+            ELSE 'General'
+        END AS category_name,
+        UPPER(SUBSTRING(i.type, 1, 3)) AS category_code
     FROM items i
-    LEFT JOIN categories c ON i.category_id = c.category_id
-    ORDER BY i.item_type ASC, i.item_name ASC
+    ORDER BY i.type ASC, i.name ASC
 ");
 $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 

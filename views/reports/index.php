@@ -66,31 +66,34 @@ if (in_array($requestedType, ['raw_materials', 'finished_goods', 'current_balanc
 $sql = "
     SELECT 
         i.item_id,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit,
-        COALESCE(NULLIF(inv.reorder_level, 0), i.default_reorder_level) AS default_reorder_level,
-        COALESCE(c.category_name, 'General') AS category_name,
-        w.warehouse_code,
-        w.warehouse_name,
-        COALESCE(inv.quantity, 0) AS current_quantity
+        COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level,
+        CASE 
+            WHEN i.type = 'raw_material' THEN 'Raw Materials'
+            WHEN i.type = 'finished_good' THEN 'Finished Goods'
+            WHEN i.type = 'packaging' THEN 'Packaging'
+            ELSE 'General'
+        END AS category_name,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(s.qty_on_hand, 0) AS current_quantity
     FROM items i
     JOIN warehouses w ON w.warehouse_id = ?
-    LEFT JOIN categories c ON i.category_id = c.category_id
-    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = w.warehouse_id
+    LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = w.warehouse_id
     WHERE i.status = 'active'
 ";
 $params = [$currentWarehouseId];
 
 if ($search !== '') {
-    $sql .= " AND (i.item_name LIKE ? OR i.item_code LIKE ? OR c.category_name LIKE ?)";
-    $params[] = "%$search%";
+    $sql .= " AND (i.name LIKE ? OR i.code LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
 
-$sql .= " ORDER BY w.warehouse_name ASC, i.item_name ASC";
+$sql .= " ORDER BY w.name ASC, i.name ASC";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $allInventoryData = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -177,7 +180,7 @@ $currentBalanceData = $allInventoryData;
         <input type="hidden" name="type" id="filterReportTypeInput" value="<?= htmlspecialchars($activeTab) ?>">
 
         <!-- Search -->
-        <div class="search-wrap" style="flex: 1; min-width: 220px;">
+        <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/>

@@ -6,7 +6,7 @@
 $navbarWarehouses = [];
 if (!empty($isAuthorizedForMultiWarehouse) && isset($pdo)) {
     try {
-        $nwStmt = $pdo->query("SELECT warehouse_id, warehouse_code, warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC");
+        $nwStmt = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC");
         if ($nwStmt) {
             $navbarWarehouses = $nwStmt->fetchAll(PDO::FETCH_ASSOC);
         }

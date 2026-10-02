@@ -43,32 +43,6 @@ class AuthController {
     }
 
     /**
-     * Ensure api_rate_limits table exists in database
-     */
-    private function ensureRateLimitTable(): void {
-        if (self::$rateLimitTableEnsured) {
-            return;
-        }
-        try {
-            $this->db->exec("
-                CREATE TABLE IF NOT EXISTS `api_rate_limits` (
-                    `rate_limit_id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-                    `client_key` VARCHAR(100) NOT NULL COMMENT 'Client IP or API Token Hash',
-                    `endpoint` VARCHAR(100) NOT NULL,
-                    `request_count` INT(10) UNSIGNED NOT NULL DEFAULT 1,
-                    `window_start` INT(10) UNSIGNED NOT NULL,
-                    PRIMARY KEY (`rate_limit_id`),
-                    UNIQUE KEY `uq_client_endpoint_window` (`client_key`, `endpoint`, `window_start`),
-                    KEY `idx_window` (`window_start`)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-            ");
-            self::$rateLimitTableEnsured = true;
-        } catch (PDOException $e) {
-            error_log("RateLimiter table check error: " . $e->getMessage());
-        }
-    }
-
-    /**
      * Determine client IP address safely
      */
     public function getClientIp(): string {
@@ -92,127 +66,79 @@ class AuthController {
         return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 
+    private function getRateLimitCacheFile(): string {
+        $clientKey = 'login_' . hash('sha256', $this->getClientIp());
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_rl_' . substr($clientKey, 0, 16) . '.json';
+    }
+
     /**
      * Check if client IP is currently rate limited
      */
     public function checkLoginRateLimit(int $maxAttempts = self::LOGIN_MAX_ATTEMPTS, int $windowSeconds = self::LOGIN_LOCKOUT_SECONDS): array {
-        $this->ensureRateLimitTable();
         $now = time();
-        $cutoff = $now - $windowSeconds;
-        $clientKey = 'login:ip:' . hash('sha256', $this->getClientIp());
-
-        try {
-            $stmt = $this->db->prepare("
-                SELECT rate_limit_id, request_count, window_start 
-                FROM api_rate_limits 
-                WHERE client_key = ? AND endpoint = 'auth/login' AND window_start > ?
-                ORDER BY window_start DESC 
-                LIMIT 1
-            ");
-            $stmt->execute([$clientKey, $cutoff]);
-            $row = $stmt->fetch();
-
-            if ($row && (int)$row['request_count'] >= $maxAttempts) {
-                $retryAfter = max(1, ((int)$row['window_start'] + $windowSeconds) - $now);
-                return [
-                    'allowed'     => false,
-                    'retry_after' => $retryAfter,
-                    'remaining'   => 0
-                ];
-            }
-
-            $currentCount = $row ? (int)$row['request_count'] : 0;
-            return [
-                'allowed'     => true,
-                'retry_after' => 0,
-                'remaining'   => max(0, $maxAttempts - $currentCount)
-            ];
-        } catch (PDOException $e) {
-            error_log("RateLimiter check error: " . $e->getMessage());
+        $cacheFile = $this->getRateLimitCacheFile();
+        if (!file_exists($cacheFile)) {
             return ['allowed' => true, 'retry_after' => 0, 'remaining' => $maxAttempts];
         }
+
+        $data = @json_decode(@file_get_contents($cacheFile), true);
+        if (!$data || !is_array($data) || ($now - ($data['window_start'] ?? 0)) > $windowSeconds) {
+            @unlink($cacheFile);
+            return ['allowed' => true, 'retry_after' => 0, 'remaining' => $maxAttempts];
+        }
+
+        $currentCount = (int)($data['count'] ?? 0);
+        if ($currentCount >= $maxAttempts) {
+            $retryAfter = max(1, ((int)$data['window_start'] + $windowSeconds) - $now);
+            return [
+                'allowed'     => false,
+                'retry_after' => $retryAfter,
+                'remaining'   => 0
+            ];
+        }
+
+        return [
+            'allowed'     => true,
+            'retry_after' => 0,
+            'remaining'   => max(0, $maxAttempts - $currentCount)
+        ];
     }
 
     /**
      * Record a failed login attempt for the client IP
      */
     public function recordFailedLogin(int $maxAttempts = self::LOGIN_MAX_ATTEMPTS, int $windowSeconds = self::LOGIN_LOCKOUT_SECONDS): array {
-        $this->ensureRateLimitTable();
         $now = time();
-        $cutoff = $now - $windowSeconds;
-        $clientKey = 'login:ip:' . hash('sha256', $this->getClientIp());
+        $cacheFile = $this->getRateLimitCacheFile();
+        $data = file_exists($cacheFile) ? @json_decode(@file_get_contents($cacheFile), true) : null;
 
-        try {
-            $stmt = $this->db->prepare("
-                SELECT rate_limit_id, request_count, window_start 
-                FROM api_rate_limits 
-                WHERE client_key = ? AND endpoint = 'auth/login' AND window_start > ?
-                ORDER BY window_start DESC 
-                LIMIT 1
-            ");
-            $stmt->execute([$clientKey, $cutoff]);
-            $row = $stmt->fetch();
-
-            if ($row) {
-                $newCount = (int)$row['request_count'] + 1;
-                $updateStmt = $this->db->prepare("
-                    UPDATE api_rate_limits 
-                    SET request_count = ? 
-                    WHERE rate_limit_id = ?
-                ");
-                $updateStmt->execute([$newCount, $row['rate_limit_id']]);
-                $windowStart = (int)$row['window_start'];
-            } else {
-                $newCount = 1;
-                $windowStart = $now;
-                $insertStmt = $this->db->prepare("
-                    INSERT INTO api_rate_limits (client_key, endpoint, request_count, window_start)
-                    VALUES (?, 'auth/login', 1, ?)
-                    ON DUPLICATE KEY UPDATE request_count = request_count + 1
-                ");
-                $insertStmt->execute([$clientKey, $windowStart]);
-            }
-
-            // Probabilistic cleanup of older records (> 2 hours)
-            if (random_int(1, 20) === 1) {
-                $oldCutoff = $now - 7200;
-                $this->db->query("DELETE FROM api_rate_limits WHERE endpoint = 'auth/login' AND window_start < {$oldCutoff}");
-            }
-
-            $remaining = max(0, $maxAttempts - $newCount);
-            $retryAfter = max(1, ($windowStart + $windowSeconds) - $now);
-
-            return [
-                'rate_limited' => ($newCount >= $maxAttempts),
-                'retry_after'  => $retryAfter,
-                'remaining'    => $remaining,
-                'count'        => $newCount
-            ];
-        } catch (PDOException $e) {
-            error_log("RateLimiter record error: " . $e->getMessage());
-            return [
-                'rate_limited' => false,
-                'retry_after'  => 0,
-                'remaining'    => $maxAttempts - 1,
-                'count'        => 1
-            ];
+        if (!$data || !is_array($data) || ($now - ($data['window_start'] ?? 0)) > $windowSeconds) {
+            $data = ['count' => 1, 'window_start' => $now];
+        } else {
+            $data['count'] = (int)($data['count'] ?? 0) + 1;
         }
+
+        @file_put_contents($cacheFile, json_encode($data), LOCK_EX);
+
+        $newCount = (int)$data['count'];
+        $remaining = max(0, $maxAttempts - $newCount);
+        $retryAfter = max(1, ((int)$data['window_start'] + $windowSeconds) - $now);
+
+        return [
+            'rate_limited' => ($newCount >= $maxAttempts),
+            'retry_after'  => $retryAfter,
+            'remaining'    => $remaining,
+            'count'        => $newCount
+        ];
     }
 
     /**
      * Clear login rate limiting for the client IP upon successful login
      */
     public function clearLoginRateLimit(): void {
-        $this->ensureRateLimitTable();
-        $clientKey = 'login:ip:' . hash('sha256', $this->getClientIp());
-        try {
-            $stmt = $this->db->prepare("
-                DELETE FROM api_rate_limits 
-                WHERE client_key = ? AND endpoint = 'auth/login'
-            ");
-            $stmt->execute([$clientKey]);
-        } catch (PDOException $e) {
-            error_log("RateLimiter clear error: " . $e->getMessage());
+        $cacheFile = $this->getRateLimitCacheFile();
+        if (file_exists($cacheFile)) {
+            @unlink($cacheFile);
         }
     }
 

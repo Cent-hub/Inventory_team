@@ -67,7 +67,7 @@ require_once __DIR__ . '/../layouts/navbar.php';
 $scopeWarehouseId = $isSuperAdmin ? 0 : $currentWarehouseId;
 $kpis = AccountabilityService::getKpis($scopeWarehouseId);
 
-$warehousesStmt = $pdo->query("SELECT warehouse_id, warehouse_name, warehouse_code FROM warehouses ORDER BY warehouse_name ASC");
+$warehousesStmt = $pdo->query("SELECT warehouse_id, name AS warehouse_name, code AS warehouse_code, code, name FROM warehouses ORDER BY name ASC");
 $allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch logs with verified warehouse scope (all facilities for Super Admin so the Warehouse Filter works across branches)
@@ -185,7 +185,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <!-- Filter & Search Toolbar -->
         <div class="filter-group">
             <!-- Search Box -->
-            <div class="search-wrap" style="width: 280px;">
+            <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"/>

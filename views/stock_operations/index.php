@@ -33,10 +33,10 @@ if (isset($_GET['tab']) && in_array($_GET['tab'], ['transfer', 'adjustment', 'st
 
 // Fetch available destination warehouses (other active facilities only)
 $destStmt = $pdo->prepare("
-    SELECT warehouse_id, warehouse_code, warehouse_name, location 
+    SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location 
     FROM warehouses 
     WHERE warehouse_id != :wid AND status = 'active' 
-    ORDER BY warehouse_name ASC
+    ORDER BY name ASC
 ");
 $destStmt->execute([':wid' => $currentWarehouseId]);
 $destinationWarehouses = $destStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -231,16 +231,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $allWhItemsStmt = $pdo->prepare("
     SELECT 
         i.item_id, 
-        i.item_code, 
-        i.item_name, 
-        i.item_type, 
+        i.code AS item_code, 
+        i.name AS item_name, 
+        i.type AS item_type, 
         i.unit, 
-        i.default_reorder_level,
-        COALESCE(inv.quantity, 0.000) AS current_stock
+        i.reorder_level AS default_reorder_level,
+        COALESCE(s.qty_on_hand, 0.000) AS current_stock
     FROM items i
-    LEFT JOIN inventory inv ON i.item_id = inv.item_id AND inv.warehouse_id = :wid
+    LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = :wid
     WHERE i.status = 'active'
-    ORDER BY i.item_type ASC, i.item_name ASC
+    ORDER BY i.type ASC, i.name ASC
 ");
 $allWhItemsStmt->execute([':wid' => $currentWarehouseId]);
 $allWarehouseItems = $allWhItemsStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -251,37 +251,36 @@ $transferAvailableItems = array_values(array_filter($allWarehouseItems, fn($it) 
 // Inbound Transfers (Destination = Current Warehouse)
 $stmtRecv = $pdo->prepare("
     SELECT 
-        st.stock_transfer_id,
-        st.transaction_number,
+        st.transfer_id AS stock_transfer_id,
+        CONCAT('TRF-', LPAD(st.transfer_id, 6, '0')) AS transaction_number,
         st.source_warehouse_id,
-        sw.warehouse_code AS src_code,
-        sw.warehouse_name AS src_name,
+        sw.code AS src_code,
+        sw.name AS src_name,
         st.destination_warehouse_id,
-        dw.warehouse_code AS dest_code,
-        dw.warehouse_name AS dest_name,
-        st.transaction_date,
+        dw.code AS dest_code,
+        dw.name AS dest_name,
+        DATE(st.requested_at) AS transaction_date,
         st.status,
-        st.remarks,
-        st.cancellation_reason,
-        st.cancelled_at,
-        st.created_at,
-        u.name AS requested_by,
-        COUNT(sti.item_id) AS total_items,
-        COALESCE(SUM(sti.quantity), 0) AS total_quantity,
-        MIN(i.item_name) AS first_item_name,
-        MIN(i.item_code) AS first_item_code,
-        MIN(i.item_type) AS first_item_type,
-        MIN(i.unit) AS first_unit,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sti.quantity, 2))), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
+        '' AS remarks,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
+        st.requested_at AS created_at,
+        COALESCE(u.name, 'Warehouse Operator') AS requested_by,
+        1 AS total_items,
+        st.quantity AS total_quantity,
+        i.name AS first_item_name,
+        i.code AS first_item_code,
+        i.type AS first_item_type,
+        i.unit AS first_unit,
+        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(st.quantity, 2))), ' ', i.unit, ')') AS items_summary,
+        st.item_id
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
     JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
-    JOIN users u ON st.created_by = u.user_id
-    LEFT JOIN stock_transfer_items sti ON st.stock_transfer_id = sti.stock_transfer_id
-    LEFT JOIN items i ON sti.item_id = i.item_id
+    LEFT JOIN users u ON st.requested_by = u.user_id
+    JOIN items i ON st.item_id = i.item_id
     WHERE st.destination_warehouse_id = :wid
-    GROUP BY st.stock_transfer_id
-    ORDER BY st.created_at DESC, st.stock_transfer_id DESC
+    ORDER BY st.requested_at DESC, st.transfer_id DESC
 ");
 $stmtRecv->execute([':wid' => $currentWarehouseId]);
 $receivedTransfers = $stmtRecv->fetchAll(PDO::FETCH_ASSOC);
@@ -289,67 +288,58 @@ $receivedTransfers = $stmtRecv->fetchAll(PDO::FETCH_ASSOC);
 // Outbound Transfers (Source = Current Warehouse)
 $stmtSent = $pdo->prepare("
     SELECT 
-        st.stock_transfer_id,
-        st.transaction_number,
+        st.transfer_id AS stock_transfer_id,
+        CONCAT('TRF-', LPAD(st.transfer_id, 6, '0')) AS transaction_number,
         st.source_warehouse_id,
-        sw.warehouse_code AS src_code,
-        sw.warehouse_name AS src_name,
+        sw.code AS src_code,
+        sw.name AS src_name,
         st.destination_warehouse_id,
-        dw.warehouse_code AS dest_code,
-        dw.warehouse_name AS dest_name,
-        st.transaction_date,
+        dw.code AS dest_code,
+        dw.name AS dest_name,
+        DATE(st.requested_at) AS transaction_date,
         st.status,
-        st.remarks,
-        st.cancellation_reason,
-        st.cancelled_at,
-        st.created_at,
-        u.name AS requested_by,
-        COUNT(sti.item_id) AS total_items,
-        COALESCE(SUM(sti.quantity), 0) AS total_quantity,
-        MIN(i.item_name) AS first_item_name,
-        MIN(i.item_code) AS first_item_code,
-        MIN(i.item_type) AS first_item_type,
-        MIN(i.unit) AS first_unit,
-        GROUP_CONCAT(CONCAT(i.item_name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sti.quantity, 2))), ' ', i.unit, ')') SEPARATOR '; ') AS items_summary
+        '' AS remarks,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
+        st.requested_at AS created_at,
+        COALESCE(u.name, 'Warehouse Operator') AS requested_by,
+        1 AS total_items,
+        st.quantity AS total_quantity,
+        i.name AS first_item_name,
+        i.code AS first_item_code,
+        i.type AS first_item_type,
+        i.unit AS first_unit,
+        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(st.quantity, 2))), ' ', i.unit, ')') AS items_summary,
+        st.item_id
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
     JOIN warehouses dw ON st.destination_warehouse_id = dw.warehouse_id
-    JOIN users u ON st.created_by = u.user_id
-    LEFT JOIN stock_transfer_items sti ON st.stock_transfer_id = sti.stock_transfer_id
-    LEFT JOIN items i ON sti.item_id = i.item_id
+    LEFT JOIN users u ON st.requested_by = u.user_id
+    JOIN items i ON st.item_id = i.item_id
     WHERE st.source_warehouse_id = :wid
-    GROUP BY st.stock_transfer_id
-    ORDER BY st.created_at DESC, st.stock_transfer_id DESC
+    ORDER BY st.requested_at DESC, st.transfer_id DESC
 ");
 $stmtSent->execute([':wid' => $currentWarehouseId]);
 $transferredTransfers = $stmtSent->fetchAll(PDO::FETCH_ASSOC);
 
 // Line items for modal inspection
-$stmtLines = $pdo->prepare("
-    SELECT 
-        sti.stock_transfer_id,
-        i.item_code,
-        i.item_name,
-        i.item_type,
-        i.unit,
-        sti.quantity
-    FROM stock_transfer_items sti
-    JOIN stock_transfers st ON sti.stock_transfer_id = st.stock_transfer_id
-    JOIN items i ON sti.item_id = i.item_id
-    WHERE st.source_warehouse_id = :wid1 OR st.destination_warehouse_id = :wid2
-    ORDER BY sti.stock_transfer_item_id ASC
-");
-$stmtLines->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $linesByTransfer = [];
-while ($row = $stmtLines->fetch(PDO::FETCH_ASSOC)) {
-    $linesByTransfer[(int)$row['stock_transfer_id']][] = $row;
+foreach (array_merge($receivedTransfers, $transferredTransfers) as $row) {
+    $linesByTransfer[(int)$row['stock_transfer_id']][] = [
+        'stock_transfer_id' => $row['stock_transfer_id'],
+        'item_code'         => $row['first_item_code'],
+        'item_name'         => $row['first_item_name'],
+        'item_type'         => $row['first_item_type'],
+        'unit'              => $row['first_unit'],
+        'quantity'          => $row['total_quantity']
+    ];
 }
 
 $totalReceived       = count(array_filter($receivedTransfers, fn($t) => ($t['status'] ?? '') !== 'cancelled'));
 $totalTransferred    = count(array_filter($transferredTransfers, fn($t) => ($t['status'] ?? '') !== 'cancelled'));
 $totalTransfersCount = $totalReceived + $totalTransferred;
 $allInvolved         = array_merge($receivedTransfers, $transferredTransfers);
-$completedCount      = count(array_filter($allInvolved, fn($t) => ($t['status'] ?? '') === 'completed'));
+$completedCount      = count(array_filter($allInvolved, fn($t) => in_array(($t['status'] ?? ''), ['received', 'completed'], true)));
 
 // =============================================================================
 // DATA QUERIES: SECTION 2 (STOCK ADJUSTMENT)
@@ -361,35 +351,33 @@ $adjAvailableItems = $allWarehouseItems;
 // Stock Adjustments for assigned warehouse
 $stmtAdj = $pdo->prepare("
     SELECT 
-        sa.stock_adjustment_id,
-        sa.transaction_number,
-        sa.adjustment_date,
+        sa.adjustment_id AS stock_adjustment_id,
+        CONCAT('ADJ-', LPAD(sa.adjustment_id, 6, '0')) AS transaction_number,
+        DATE(sa.requested_at) AS adjustment_date,
         sa.reason,
-        sa.cancellation_reason,
-        sa.cancelled_at,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
         sa.status,
-        sa.created_at,
-        w.warehouse_code,
-        w.warehouse_name,
-        u.name AS logged_by,
+        sa.requested_at AS created_at,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        COALESCE(u.name, 'Warehouse Operator') AS logged_by,
         ua.name AS approved_by_name,
-        ux.name AS cancelled_by_name,
-        sai.previous_quantity,
-        sai.adjusted_quantity,
-        sai.difference,
-        i.item_code,
-        i.item_name,
-        i.item_type,
+        NULL AS cancelled_by_name,
+        sa.previous_quantity,
+        sa.adjusted_quantity,
+        sa.difference,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
         i.unit
     FROM stock_adjustments sa
     JOIN warehouses w ON sa.warehouse_id = w.warehouse_id
-    JOIN users u ON sa.created_by = u.user_id
+    LEFT JOIN users u ON sa.requested_by = u.user_id
     LEFT JOIN users ua ON sa.approved_by = ua.user_id
-    LEFT JOIN users ux ON sa.cancelled_by = ux.user_id
-    LEFT JOIN stock_adjustment_items sai ON sa.stock_adjustment_id = sai.stock_adjustment_id
-    LEFT JOIN items i ON sai.item_id = i.item_id
+    JOIN items i ON sa.item_id = i.item_id
     WHERE sa.warehouse_id = :wid
-    ORDER BY sa.stock_adjustment_id DESC
+    ORDER BY sa.adjustment_id DESC
 ");
 $stmtAdj->execute([':wid' => $currentWarehouseId]);
 $adjustments = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
@@ -398,26 +386,25 @@ $adjustments = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 $stmtBad = $pdo->prepare("
     SELECT 
         bp.bad_product_id,
-        bp.bad_product_number,
-        bp.condition_type,
+        CONCAT('BP-', LPAD(bp.bad_product_id, 6, '0')) AS bad_product_number,
+        'damaged' AS condition_type,
         bp.quantity,
         bp.reason,
-        bp.cancellation_reason,
-        bp.cancelled_at,
+        NULL AS cancellation_reason,
+        NULL AS cancelled_at,
         bp.status,
-        bp.created_at,
-        w.warehouse_code,
-        w.warehouse_name,
-        i.item_code,
-        i.item_name,
+        bp.reported_at AS created_at,
+        w.code AS warehouse_code,
+        w.name AS warehouse_name,
+        i.code AS item_code,
+        i.name AS item_name,
         i.unit,
-        u.name AS reported_by_name,
-        ux.name AS cancelled_by_name
+        COALESCE(u.name, 'Warehouse Operator') AS reported_by_name,
+        NULL AS cancelled_by_name
     FROM bad_products bp
     JOIN warehouses w ON bp.warehouse_id = w.warehouse_id
     JOIN items i ON bp.item_id = i.item_id
-    JOIN users u ON bp.reported_by = u.user_id
-    LEFT JOIN users ux ON bp.cancelled_by = ux.user_id
+    LEFT JOIN users u ON bp.reported_by = u.user_id
     WHERE bp.warehouse_id = :wid
     ORDER BY bp.bad_product_id DESC
 ");
@@ -467,7 +454,7 @@ foreach ($cardItems as $it) {
 // Current stock snapshot
 $cardCurrentStock = 0.0;
 if ($selectedItem) {
-    $stockStmt = $pdo->prepare("SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE item_id = ? AND warehouse_id = ?");
+    $stockStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_on_hand), 0) FROM stock WHERE item_id = ? AND warehouse_id = ?");
     $stockStmt->execute([$selectedItemId, $currentWarehouseId]);
     $cardCurrentStock = (float)$stockStmt->fetchColumn();
 }
@@ -479,31 +466,16 @@ if ($selectedItemId > 0) {
         SELECT 
             sm.movement_id,
             sm.movement_type,
-            sm.reference_number,
-            sm.quantity_in,
-            sm.quantity_out,
-            sm.balance_after,
+            COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
+            CASE WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity ELSE 0 END AS quantity_in,
+            CASE WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity ELSE 0 END AS quantity_out,
+            0.00 AS balance_after,
             sm.created_at,
-            w.warehouse_code,
-            w.warehouse_name,
-            CASE
-                WHEN sm.movement_type LIKE '%_CANCEL' THEN COALESCE(
-                    NULLIF(TRIM(si.cancellation_reason), ''),
-                    NULLIF(TRIM(so.cancellation_reason), ''),
-                    NULLIF(TRIM(st.cancellation_reason), ''),
-                    NULLIF(TRIM(sa.cancellation_reason), ''),
-                    NULLIF(TRIM(bp.cancellation_reason), ''),
-                    si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, ''
-                )
-                ELSE COALESCE(si.remarks, so.remarks, st.remarks, sa.reason, bp.reason, '')
-            END AS notes
+            w.code AS warehouse_code,
+            w.name AS warehouse_name,
+            COALESCE(sm.remarks, '') AS notes
         FROM stock_movements sm
         JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
-        LEFT JOIN stock_ins si ON sm.stock_in_id = si.stock_in_id
-        LEFT JOIN stock_outs so ON sm.stock_out_id = so.stock_out_id
-        LEFT JOIN stock_transfers st ON sm.stock_transfer_id = st.stock_transfer_id
-        LEFT JOIN stock_adjustments sa ON sm.stock_adjustment_id = sa.stock_adjustment_id
-        LEFT JOIN bad_products bp ON sm.bad_product_id = bp.bad_product_id
         WHERE sm.item_id = ? AND sm.warehouse_id = ?
     ";
     $params = [$selectedItemId, $currentWarehouseId];
