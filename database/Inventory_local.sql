@@ -145,7 +145,7 @@ CREATE TABLE `items` (
   `name` VARCHAR(150) NOT NULL,
   `description` TEXT DEFAULT NULL,
   `type` ENUM('raw_material','finished_good') NOT NULL,
-  `unit` ENUM('pcs','kg','box','liter') NOT NULL,
+  `unit` ENUM('pcs','box') NOT NULL,
   `reorder_level` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -177,8 +177,6 @@ CREATE TABLE `stock` (
 
   PRIMARY KEY (`stock_id`),
   UNIQUE KEY `uq_stock_item_wh`
-    (`item_id`, `warehouse_id`),
-  UNIQUE KEY `uq_stock_item_warehouse`
     (`item_id`, `warehouse_id`),
 
   KEY `idx_stock_item` (`item_id`),
@@ -502,6 +500,7 @@ CREATE TABLE IF NOT EXISTS `recipes` (
   CONSTRAINT `fk_recipe_finished_item`
     FOREIGN KEY (`finished_item_id`)
     REFERENCES `items` (`item_id`)
+
     ON UPDATE CASCADE
     ON DELETE CASCADE,
 
