@@ -171,10 +171,14 @@ $stmtIn = $pdo->prepare("
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
-        'completed' AS status,
+        CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
-        NULL AS cancellation_reason,
-        NULL AS cancelled_at,
+        CASE 
+            WHEN rev.movement_id IS NOT NULL THEN 
+                COALESCE(NULLIF(SUBSTRING(rev.remarks, LOCATE(': ', rev.remarks) + 2), ''), rev.remarks)
+            ELSE NULL 
+        END AS cancellation_reason,
+        rev.created_at AS cancelled_at,
         sm.created_at,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
@@ -190,7 +194,13 @@ $stmtIn = $pdo->prepare("
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
-    WHERE sm.warehouse_id = :wid AND sm.movement_type = 'STOCK_IN'
+    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
+        AND rev.movement_type = 'STOCK_OUT' 
+        AND rev.remarks LIKE 'Cancelled Stock IN %'
+    WHERE sm.warehouse_id = :wid 
+      AND sm.movement_type = 'STOCK_IN'
+      AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
+      AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
     ORDER BY sm.movement_id DESC
 ");
 $stmtIn->execute([':wid' => $currentWarehouseId]);
@@ -235,10 +245,14 @@ $stmtOut = $pdo->prepare("
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
-        'completed' AS status,
+        CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
-        NULL AS cancellation_reason,
-        NULL AS cancelled_at,
+        CASE 
+            WHEN rev.movement_id IS NOT NULL THEN 
+                COALESCE(NULLIF(SUBSTRING(rev.remarks, LOCATE(': ', rev.remarks) + 2), ''), rev.remarks)
+            ELSE NULL 
+        END AS cancellation_reason,
+        rev.created_at AS cancelled_at,
         sm.created_at,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
@@ -254,7 +268,12 @@ $stmtOut = $pdo->prepare("
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
-    WHERE sm.warehouse_id = :wid AND sm.movement_type = 'STOCK_OUT'
+    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
+        AND rev.movement_type = 'STOCK_IN' 
+        AND rev.remarks LIKE 'Cancelled Stock OUT %'
+    WHERE sm.warehouse_id = :wid 
+      AND sm.movement_type = 'STOCK_OUT'
+      AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
     ORDER BY sm.movement_id DESC
 ");
 $stmtOut->execute([':wid' => $currentWarehouseId]);
@@ -1192,7 +1211,38 @@ function closeRecordStockInModal() {
 }
 
 function filterStockInModalItems() {
-    // All items remain selectable so users can test ERP business rule violation checks
+    const sourceSelect = document.getElementById('stockInSourceType');
+    const itemSelect = document.getElementById('stockInItemSelect');
+    if (!sourceSelect || !itemSelect) return;
+
+    const source = sourceSelect.value;
+    const targetType = (source === 'PRODUCTION_RETURN') ? 'finished_good' : 'raw_material';
+
+    let validCount = 0;
+    Array.from(itemSelect.options).forEach((opt, idx) => {
+        if (idx === 0) return;
+        const itemType = opt.getAttribute('data-type');
+        const matches = (itemType === targetType);
+        opt.hidden = !matches;
+        opt.disabled = !matches;
+        opt.style.display = matches ? '' : 'none';
+        if (matches) validCount++;
+    });
+
+    const selectedOpt = itemSelect.selectedOptions[0];
+    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
+        itemSelect.value = '';
+        handleStockInItemChange(itemSelect);
+    }
+
+    const defaultOpt = itemSelect.options[0];
+    if (defaultOpt) {
+        if (targetType === 'finished_good') {
+            defaultOpt.textContent = validCount > 0 ? '-- Select Finished Good to Receive --' : '-- No active finished goods available --';
+        } else {
+            defaultOpt.textContent = validCount > 0 ? '-- Select Raw Material to Receive --' : '-- No active raw materials available --';
+        }
+    }
 }
 
 function handleStockInItemChange(selectEl) {
@@ -1223,7 +1273,38 @@ function closeRecordStockOutModal() {
 }
 
 function filterStockOutModalItems() {
-    // All items remain selectable so users can test ERP business rule violation checks
+    const sourceSelect = document.getElementById('stockOutSourceType');
+    const itemSelect = document.getElementById('stockOutItemSelect');
+    if (!sourceSelect || !itemSelect) return;
+
+    const source = sourceSelect.value;
+    const targetType = (source === 'SALES_DELIVERY') ? 'finished_good' : 'raw_material';
+
+    let validCount = 0;
+    Array.from(itemSelect.options).forEach((opt, idx) => {
+        if (idx === 0) return;
+        const itemType = opt.getAttribute('data-type');
+        const matches = (itemType === targetType);
+        opt.hidden = !matches;
+        opt.disabled = !matches;
+        opt.style.display = matches ? '' : 'none';
+        if (matches) validCount++;
+    });
+
+    const selectedOpt = itemSelect.selectedOptions[0];
+    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
+        itemSelect.value = '';
+        handleStockOutItemChange(itemSelect);
+    }
+
+    const defaultOpt = itemSelect.options[0];
+    if (defaultOpt) {
+        if (targetType === 'finished_good') {
+            defaultOpt.textContent = validCount > 0 ? '-- Select Finished Good to Dispatch --' : '-- No finished goods with available stock in warehouse --';
+        } else {
+            defaultOpt.textContent = validCount > 0 ? '-- Select Raw Material to Dispatch --' : '-- No raw materials with available stock in warehouse --';
+        }
+    }
 }
 
 function handleStockOutItemChange(selectEl) {
@@ -1564,6 +1645,11 @@ function closeCancelStockOutModal() {
         modal.style.display = 'none';
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    filterStockInModalItems();
+    filterStockOutModalItems();
+});
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

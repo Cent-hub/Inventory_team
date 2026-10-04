@@ -30,7 +30,7 @@ if (!empty($isAuthorizedForMultiWarehouse) && isset($pdo)) {
             </span>
         </div>
         <div class="navbar-right">
-            <?php if (!empty($isSuperAdmin) && count($navbarWarehouses) > 1): ?>
+            <?php if (!empty($isAuthorizedForMultiWarehouse) && count($navbarWarehouses) > 1): ?>
                 <form method="GET" style="margin: 0; display: inline-flex; align-items: center;">
                     <?php foreach ($_GET as $k => $v): if ($k === 'warehouse_id' || is_array($v)) continue; ?>
                         <input type="hidden" name="<?= htmlspecialchars((string)$k) ?>" value="<?= htmlspecialchars((string)$v) ?>">

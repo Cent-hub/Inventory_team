@@ -79,24 +79,45 @@ if ($selectedItem) {
 $movements = [];
 if ($selectedItemId > 0) {
     $sql = "
+        WITH movement_ledger AS (
+            SELECT 
+                sm.movement_id,
+                sm.item_id,
+                sm.warehouse_id,
+                sm.movement_type,
+                sm.quantity,
+                sm.remarks,
+                sm.created_at,
+                sa.difference AS adjustment_difference,
+                SUM(CASE 
+                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                    WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                    WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
+                    ELSE 0 
+                END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
+            FROM stock_movements sm
+            LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+        )
         SELECT 
             sm.movement_id,
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
             CASE 
                 WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
                 ELSE 0 
             END AS quantity_in,
             CASE 
                 WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
                 ELSE 0 
             END AS quantity_out,
-            0 AS balance_after,
+            sm.balance_after,
             sm.created_at,
             w.code AS warehouse_code,
             w.name AS warehouse_name,
             COALESCE(sm.remarks, '') AS notes
-        FROM stock_movements sm
+        FROM movement_ledger sm
         JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
         WHERE sm.item_id = ? AND sm.warehouse_id = ?
     ";

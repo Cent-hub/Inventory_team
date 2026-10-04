@@ -141,7 +141,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $userId,
                         $currentUser
                     );
-                    $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " created successfully and marked as Pending approval.";
+
+                    // Auto-approve adjustment immediately for instant inventory balance update
+                    $adjId = (int)($result['stock_adjustment_id'] ?? 0);
+                    if ($adjId > 0) {
+                        $apprResult = $stockService->approveStockAdjustment($adjId, $userId, $currentUser);
+                        $successMessage = "Stock adjustment " . htmlspecialchars($apprResult['transaction_number']) . " applied and approved immediately! Physical inventory updated.";
+                    } else {
+                        $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " created successfully!";
+                    }
                     break;
 
                 case 'approve_adjustment':
@@ -463,18 +471,45 @@ if ($selectedItem) {
 $movements = [];
 if ($selectedItemId > 0) {
     $sql = "
+        WITH movement_ledger AS (
+            SELECT 
+                sm.movement_id,
+                sm.item_id,
+                sm.warehouse_id,
+                sm.movement_type,
+                sm.quantity,
+                sm.remarks,
+                sm.created_at,
+                sa.difference AS adjustment_difference,
+                SUM(CASE 
+                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                    WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                    WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
+                    ELSE 0 
+                END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
+            FROM stock_movements sm
+            LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+        )
         SELECT 
             sm.movement_id,
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
-            CASE WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity ELSE 0 END AS quantity_in,
-            CASE WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity ELSE 0 END AS quantity_out,
-            0.00 AS balance_after,
+            CASE 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
+                ELSE 0 
+            END AS quantity_in,
+            CASE 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
+                ELSE 0 
+            END AS quantity_out,
+            sm.balance_after,
             sm.created_at,
             w.code AS warehouse_code,
             w.name AS warehouse_name,
             COALESCE(sm.remarks, '') AS notes
-        FROM stock_movements sm
+        FROM movement_ledger sm
         JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
         WHERE sm.item_id = ? AND sm.warehouse_id = ?
     ";
@@ -1609,7 +1644,7 @@ if ($selectedItemId > 0) {
             <div class="modal-header">
                 <div>
                     <h3 id="newAdjustmentModalTitle" class="card-title" style="margin: 0;">New Stock Adjustment</h3>
-                    <p class="card-desc" style="margin: 0;">Record discrepancy between system records and physical shelf count</p>
+                    <p class="card-desc" style="margin: 0;">Record discrepancy and immediately update physical inventory balance</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewAdjustmentModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1678,7 +1713,7 @@ if ($selectedItemId > 0) {
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeNewAdjustmentModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Submit for Approval</button>
+                <button type="submit" class="btn btn-primary">Apply Adjustment Immediately</button>
             </div>
         </form>
     </div>

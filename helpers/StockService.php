@@ -669,7 +669,22 @@ class StockService {
             $txn = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$txn) {
-                throw new InvalidArgumentException("Stock IN transaction #{$stockInId} not found or already cancelled.");
+                throw new InvalidArgumentException("Stock IN transaction #{$stockInId} not found.");
+            }
+
+            if (str_starts_with($txn['remarks'] ?? '', 'Cancelled Stock')) {
+                throw new DomainException("Cannot cancel a cancellation reversal transaction.");
+            }
+
+            // Check if already cancelled
+            $stmtChkRev = $this->pdo->prepare("
+                SELECT movement_id FROM stock_movements 
+                WHERE reference_id = ? AND movement_type = 'STOCK_OUT' AND remarks LIKE 'Cancelled Stock IN %'
+                LIMIT 1
+            ");
+            $stmtChkRev->execute([$stockInId]);
+            if ($stmtChkRev->fetch()) {
+                throw new DomainException("Stock IN transaction #{$stockInId} has already been cancelled.");
             }
 
             // IDOR Protection
@@ -776,7 +791,22 @@ class StockService {
             $txn = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$txn) {
-                throw new InvalidArgumentException("Stock OUT transaction #{$stockOutId} not found or already cancelled.");
+                throw new InvalidArgumentException("Stock OUT transaction #{$stockOutId} not found.");
+            }
+
+            if (str_starts_with($txn['remarks'] ?? '', 'Cancelled Stock')) {
+                throw new DomainException("Cannot cancel a cancellation reversal transaction.");
+            }
+
+            // Check if already cancelled
+            $stmtChkRev = $this->pdo->prepare("
+                SELECT movement_id FROM stock_movements 
+                WHERE reference_id = ? AND movement_type = 'STOCK_IN' AND remarks LIKE 'Cancelled Stock OUT %'
+                LIMIT 1
+            ");
+            $stmtChkRev->execute([$stockOutId]);
+            if ($stmtChkRev->fetch()) {
+                throw new DomainException("Stock OUT transaction #{$stockOutId} has already been cancelled.");
             }
 
             // IDOR Protection

@@ -57,13 +57,40 @@ $activeTab = $tabMap[$requestedTab] ?? 'movements';
 
 // 1. Stock Movement Ledger
 $sqlM = "
+    WITH movement_ledger AS (
+        SELECT 
+            sm.movement_id,
+            sm.item_id,
+            sm.warehouse_id,
+            sm.movement_type,
+            sm.quantity,
+            sm.remarks,
+            sm.created_at,
+            sa.difference AS adjustment_difference,
+            SUM(CASE 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
+                ELSE 0 
+            END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
+        FROM stock_movements sm
+        LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+    )
     SELECT 
         sm.movement_id,
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
-        CASE WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity ELSE 0 END AS quantity_in,
-        CASE WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity ELSE 0 END AS quantity_out,
-        0.00 AS balance_after,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
+            ELSE 0 
+        END AS quantity_in,
+        CASE 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
+            ELSE 0 
+        END AS quantity_out,
+        sm.balance_after,
         sm.created_at,
         i.code AS item_code,
         i.name AS item_name,
@@ -71,7 +98,7 @@ $sqlM = "
         i.unit,
         w.code AS warehouse_code,
         w.name AS warehouse_name
-    FROM stock_movements sm
+    FROM movement_ledger sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
@@ -100,7 +127,7 @@ $sqlIn = "
         END AS source_type,
         COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
-        'completed' AS status,
+        CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
@@ -111,9 +138,14 @@ $sqlIn = "
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
+    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
+        AND rev.movement_type = 'STOCK_OUT' 
+        AND rev.remarks LIKE 'Cancelled Stock IN %'
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_IN'
+      AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
+      AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
 ";
 $paramsIn = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
@@ -138,7 +170,7 @@ $sqlOut = "
         END AS source_type,
         COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
-        'completed' AS status,
+        CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
@@ -149,9 +181,13 @@ $sqlOut = "
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
+    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
+        AND rev.movement_type = 'STOCK_IN' 
+        AND rev.remarks LIKE 'Cancelled Stock OUT %'
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_OUT'
+      AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
 ";
 $paramsOut = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
