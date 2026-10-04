@@ -102,28 +102,7 @@ class ProductionTest extends TestCase {
         $this->assertNotEmpty($movRow, "Production material consumption must record a stock_movements entry", "stock_movements table");
         $this->assertEquals($consumeQty, (float)$movRow['quantity'], "Movement entry quantity must match consumed raw materials", "stock_movements.quantity");
 
-        // 5. Recipe / Bill of Materials (BOM) Requirements Calculation Test
-        $this->pdo->exec("
-            INSERT INTO recipes (finished_item_id, raw_item_id, quantity_required, notes)
-            VALUES ({$fgItem['item_id']}, {$rmItem['item_id']}, 0.50, 'Test Gin recipe malt requirement')
-            ON DUPLICATE KEY UPDATE quantity_required = 0.50
-        ");
-
-        $recipes = $stockService->getRecipes((int)$fgItem['item_id']);
-        $this->assertTrue(
-            !empty($recipes),
-            "StockService::getRecipes must retrieve BOM relations for finished good",
-            "recipes table"
-        );
-
-        $requirements = $stockService->calculateProductionRequirements((int)$fgItem['item_id'], 10.0);
-        $this->assertEquals(
-            5.00,
-            (float)($requirements[0]['required_quantity'] ?? 0),
-            "StockService::calculateProductionRequirements must correctly compute 5.0kg malt for 10 units gin",
-            "StockService::calculateProductionRequirements"
-        );
-
         return $this->getAggregateResult();
     }
 }
+

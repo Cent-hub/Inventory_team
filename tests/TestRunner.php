@@ -115,11 +115,12 @@ class TestRunner {
         if (!$rmId) {
             $stmtIns = $this->pdo->prepare("
                 INSERT INTO items (code, name, type, unit, reorder_level, status)
-                VALUES ('TEST-RM-MALT', 'Test Distilling Malt', 'raw_material', 'kg', 50.00, 'active')
+                VALUES ('TEST-RM-MALT', 'Test Distilling Malt', 'raw_material', 'box', 50.00, 'active')
             ");
             $stmtIns->execute();
             $rmId = (int)$this->pdo->lastInsertId();
         }
+
 
         // 4. Finished Good Test SKU
         $stmtFg = $this->pdo->prepare("SELECT item_id FROM items WHERE code = 'TEST-FG-GIN' LIMIT 1");
