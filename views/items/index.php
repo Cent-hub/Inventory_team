@@ -25,10 +25,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
         $itemCode        = strtoupper(trim($_POST['item_code'] ?? ''));
         $itemName        = trim($_POST['item_name'] ?? '');
-        $itemType        = trim($_POST['item_type'] ?? '');
+        $rawItemType     = trim($_POST['item_type'] ?? '');
         $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
         $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
         $description     = trim($_POST['description'] ?? '');
+
+        // Set item classification based on selected classification or SKU prefix
+        if ($rawItemType === 'finished_good' || str_starts_with($itemCode, 'FG-')) {
+            $itemType = 'finished_good';
+        } else {
+            $itemType = 'raw_material';
+        }
 
         if (empty($itemCode)) {
             $errorMessage = "Item Code (SKU) is required.";
@@ -38,13 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Item Name is required.";
         } elseif (mb_strlen($itemName) > 150) {
             $errorMessage = "Item Name cannot exceed 150 characters.";
-        } elseif (!in_array($itemType, ['raw_material', 'finished_good', 'packaging', 'consumable'], true)) {
-            $errorMessage = "Item classification must be 'Raw Material', 'Finished Good', 'Packaging', or 'Consumable'.";
         } elseif (empty($unit) || mb_strlen($unit) > 20) {
             $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
         } elseif ($rawReorderLevel !== '' && !is_numeric($rawReorderLevel)) {
             $errorMessage = "Default reorder level must be a valid number.";
         } else {
+
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
             if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
                 $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
@@ -145,9 +151,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (!$existingItem) {
                         $errorMessage = "Selected catalog item does not exist.";
                     } else {
+                        $rawItemType = trim($_POST['item_type'] ?? '');
+                        if ($rawItemType === 'finished_good') {
+                            $itemType = 'finished_good';
+                        } elseif ($rawItemType === 'raw_material') {
+                            $itemType = 'raw_material';
+                        } else {
+                            $itemType = $existingItem['item_type'] ?? 'raw_material';
+                        }
+
                         $stmtUpd = $pdo->prepare("
                             UPDATE items
                             SET name = ?,
+                                type = ?,
                                 unit = ?,
                                 reorder_level = ?,
                                 status = ?
@@ -155,11 +171,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ");
                         $stmtUpd->execute([
                             $itemName,
+                            $itemType,
                             $unit,
                             round($reorderLevel, 3),
                             $itemStatus,
                             $itemId
                         ]);
+
 
                         // Keep warehouse stock reorder levels synchronized with master catalog
                         $stmtSyncInv = $pdo->prepare("
@@ -201,56 +219,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// System classification categories
-$categories = [
-    ['category_id' => 1, 'category_code' => 'RAW', 'category_name' => 'Raw Materials'],
-    ['category_id' => 2, 'category_code' => 'FG',  'category_name' => 'Finished Goods'],
-    ['category_id' => 3, 'category_code' => 'PKG', 'category_name' => 'Packaging'],
-    ['category_id' => 4, 'category_code' => 'CNS', 'category_name' => 'Consumables']
-];
+// Fetch active units of measure
+$uoms = $pdo->query("SELECT uom_code, uom_name FROM units_of_measure ORDER BY uom_code ASC")->fetchAll(PDO::FETCH_ASSOC);
+if (empty($uoms)) {
+    $uoms = [
+        ['uom_code' => 'pcs', 'uom_name' => 'Pieces'],
+        ['uom_code' => 'box', 'uom_name' => 'Boxes']
+    ];
+}
 
 // Fetch items list from team_inventory_local.items
 $stmtItems = $pdo->query("
-    SELECT 
+    SELECT    
         i.item_id,
         i.code,
         i.code AS item_code,
         i.name,
         i.name AS item_name,
-        '' AS description,
+        COALESCE(i.description, '') AS description,
         i.type,
         i.type AS item_type,
-        CASE 
-            WHEN i.type = 'raw_material' THEN 1
-            WHEN i.type = 'finished_good' THEN 2
-            WHEN i.type = 'packaging' THEN 3
-            ELSE 4
-        END AS category_id,
         i.unit,
         i.reorder_level,
         i.reorder_level AS default_reorder_level,
         i.status,
-        i.created_at,
-        CASE 
-            WHEN i.type = 'raw_material' THEN 'Raw Materials'
-            WHEN i.type = 'finished_good' THEN 'Finished Goods'
-            WHEN i.type = 'packaging' THEN 'Packaging'
-            WHEN i.type = 'consumable' THEN 'Consumables'
-            ELSE 'General'
-        END AS category_name,
-        UPPER(SUBSTRING(i.type, 1, 3)) AS category_code
+        i.created_at
     FROM items i
     ORDER BY i.type ASC, i.name ASC
 ");
 $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
-// KPI metrics (count active SKUs for Raw Materials & Finished Goods so totals match Inventory pages)
+// KPI metrics
 $totalSKUs    = count($itemsList);
 $activeSKUs   = count(array_filter($itemsList, fn($x) => ($x['status'] ?? 'active') === 'active'));
 $inactiveSKUs = $totalSKUs - $activeSKUs;
 $rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material' && ($x['status'] ?? 'active') === 'active'));
 $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good' && ($x['status'] ?? 'active') === 'active'));
-$catCount     = count($categories);
 ?>
 
 <!-- Page Header -->
@@ -292,7 +296,7 @@ $catCount     = count($categories);
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <div class="stat-meta"><?= $inactiveSKUs > 0 ? "{$activeSKUs} active · {$inactiveSKUs} inactive" : 'Across all categories' ?></div>
+        <div class="stat-meta"><?= $inactiveSKUs > 0 ? "{$activeSKUs} active · {$inactiveSKUs} inactive" : 'All active in catalog' ?></div>
     </div>
 
     <div class="stat-card stat-gold">
@@ -319,13 +323,13 @@ $catCount     = count($categories);
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Active Categories</span>
+            <span class="stat-label">Units of Measure</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #6D28D9; background: #F5F3FF;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><circle cx="12" cy="12" r="4"/></svg>
             </div>
         </div>
-        <div class="stat-value"><?= $catCount ?></div>
-        <div class="stat-meta">System categories</div>
+        <div class="stat-value"><?= count($uoms) ?></div>
+        <div class="stat-meta">Standard: <?= implode(', ', array_column($uoms, 'uom_code')) ?></div>
     </div>
 </div>
 
@@ -359,7 +363,6 @@ $catCount     = count($categories);
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Classification</th>
-                    <th>Category</th>
                     <th>Unit</th>
                     <th>Default Reorder Level</th>
                     <th>Status</th>
@@ -371,7 +374,7 @@ $catCount     = count($categories);
             <tbody>
                 <?php if (empty($itemsList)): ?>
                     <tr>
-                        <td colspan="<?= $canManageItems ? 9 : 8 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first SKU.</td>
+                        <td colspan="<?= $canManageItems ? 8 : 7 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first SKU.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
@@ -399,9 +402,6 @@ $catCount     = count($categories);
                                     </span>
                                 <?php endif; ?>
                             </td>
-                            <td>
-                                <?= htmlspecialchars($row['category_name'] ?: 'General') ?>
-                            </td>
                             <td style="font-weight: 600; text-transform: uppercase; font-size: 12px; color: #475569;">
                                 <?= htmlspecialchars($row['unit']) ?>
                             </td>
@@ -422,7 +422,6 @@ $catCount     = count($categories);
                                         'item_code'             => $row['item_code'],
                                         'item_name'             => $row['item_name'],
                                         'item_type'             => $row['item_type'],
-                                        'category_id'           => (int)$row['category_id'],
                                         'unit'                  => $row['unit'],
                                         'default_reorder_level' => (float)$row['default_reorder_level'],
                                         'description'           => (string)($row['description'] ?? ''),
@@ -459,7 +458,7 @@ $catCount     = count($categories);
                     <label for="modalItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Classification <span style="color: #DC2626;">*</span>
                     </label>
-                    <select name="item_type" id="modalItemType" class="select-filter" style="width: 100%;" required onchange="autoSuggestCodePrefix(this.value)">
+                    <select name="item_type" id="modalItemType" class="select-filter" style="width: 100%;" required onchange="onModalTypeChange(this.value)">
                         <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
                         <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
                     </select>
@@ -471,7 +470,7 @@ $catCount     = count($categories);
                         <label for="modalItemCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Item Code <span style="color: #DC2626;">*</span>
                         </label>
-                        <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; padding-left: 12px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required>
+                        <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; padding-left: 12px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required oninput="onModalCodeInput(this.value)">
                     </div>
                     <div>
                         <label for="modalItemName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
@@ -481,40 +480,26 @@ $catCount     = count($categories);
                     </div>
                 </div>
 
-                <!-- Category & Unit -->
-                <div class="form-grid-2" style="grid-template-columns: 1.5fr 1fr; gap: 12px;">
-                    <div>
-                        <label for="modalCategory" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Category <span style="color: #DC2626;">*</span>
-                        </label>
-                        <select name="category_id" id="modalCategory" class="select-filter" style="width: 100%;" required>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= (int)$cat['category_id'] ?>">
-                                    <?= htmlspecialchars($cat['category_name']) ?> (<?= htmlspecialchars($cat['category_code']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+                <!-- Unit & Reorder Level -->
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1.3fr; gap: 12px;">
                     <div>
                         <label for="modalUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Unit <span style="color: #DC2626;">*</span>
                         </label>
                         <select name="unit" id="modalUnit" class="select-filter" style="width: 100%;" required>
-                            <option value="pcs">pcs (Pieces / Bottles)</option>
-                            <option value="liter">liter (Bulk Liquids)</option>
-                            <option value="kg">kg (Weight / Botanicals)</option>
-                            <option value="box">box (Cases / Cartons)</option>
+                            <?php foreach ($uoms as $u): ?>
+                                <option value="<?= htmlspecialchars($u['uom_code']) ?>">
+                                    <?= htmlspecialchars($u['uom_code']) ?> (<?= htmlspecialchars($u['uom_name']) ?>)
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
-                </div>
-
-                <!-- Reorder Level -->
-                <div>
-                    <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Default Low Stock Reorder Threshold
-                    </label>
-                    <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" required>
-                    <small style="color: var(--gray); font-size: 11px;">Triggers replenishment alert when warehouse quantity drops below this level.</small>
+                    <div>
+                        <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Default Reorder Threshold <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" required>
+                    </div>
                 </div>
 
                 <!-- Description -->
@@ -565,42 +550,39 @@ $catCount     = count($categories);
                     </div>
                 </div>
 
-                <div class="form-grid-2" style="grid-template-columns: 1.5fr 1fr; gap: 12px;">
-                    <div>
-                        <label for="editCategory" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Category <span style="color: #DC2626;">*</span>
-                        </label>
-                        <select name="category_id" id="editCategory" class="select-filter" style="width: 100%;" required>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= (int)$cat['category_id'] ?>">
-                                    <?= htmlspecialchars($cat['category_name']) ?> (<?= htmlspecialchars($cat['category_code']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+                <!-- Classification -->
+                <div>
+                    <label for="editItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Classification <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_type" id="editItemType" class="select-filter" style="width: 100%;" required>
+                        <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
+                        <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
+                    </select>
+                </div>
+
+                <div class="form-grid-3" style="grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; display: grid;">
                     <div>
                         <label for="editUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Unit <span style="color: #DC2626;">*</span>
                         </label>
                         <select name="unit" id="editUnit" class="select-filter" style="width: 100%;" required>
-                            <option value="pcs">pcs (Pieces / Bottles)</option>
-                            <option value="liter">liter (Bulk Liquids)</option>
-                            <option value="kg">kg (Weight / Botanicals)</option>
-                            <option value="box">box (Cases / Cartons)</option>
+                            <?php foreach ($uoms as $u): ?>
+                                <option value="<?= htmlspecialchars($u['uom_code']) ?>">
+                                    <?= htmlspecialchars($u['uom_code']) ?> (<?= htmlspecialchars($u['uom_name']) ?>)
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
-                </div>
-
-                <div class="form-grid-2" style="grid-template-columns: 1.3fr 1fr; gap: 12px;">
                     <div>
                         <label for="editReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Default Reorder Threshold <span style="color: #DC2626;">*</span>
+                            Reorder Threshold <span style="color: #DC2626;">*</span>
                         </label>
                         <input type="number" step="0.01" min="0" name="default_reorder_level" id="editReorder" class="search-box" style="width: 100%; padding-left: 12px;" required>
                     </div>
                     <div>
                         <label for="editStatus" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Catalog Status <span style="color: #DC2626;">*</span>
+                            Status <span style="color: #DC2626;">*</span>
                         </label>
                         <select name="status" id="editStatus" class="select-filter" style="width: 100%;" required>
                             <option value="active">Active</option>
@@ -635,7 +617,9 @@ function openEditItemModal(item) {
     document.getElementById('editItemId').value = item.item_id;
     document.getElementById('editItemCode').value = item.item_code;
     document.getElementById('editItemName').value = item.item_name;
-    document.getElementById('editCategory').value = item.category_id;
+    const itemType = item.item_type || (item.item_code && item.item_code.startsWith('FG-') ? 'finished_good' : 'raw_material');
+    const editTypeElem = document.getElementById('editItemType');
+    if (editTypeElem) editTypeElem.value = itemType;
     document.getElementById('editUnit').value = item.unit;
     document.getElementById('editReorder').value = item.default_reorder_level;
     document.getElementById('editStatus').value = item.status || 'active';
@@ -648,7 +632,19 @@ function closeEditItemModal() {
 function autoSuggestCodePrefix(type) {
     const codeInput = document.getElementById('modalItemCode');
     if (!codeInput.value || codeInput.value.startsWith('RM-') || codeInput.value.startsWith('FG-')) {
-        codeInput.value = (type === 'raw_material') ? 'RM-' : 'FG-';
+        codeInput.value = (type === 'finished_good') ? 'FG-' : 'RM-';
+    }
+}
+function onModalTypeChange(type) {
+    autoSuggestCodePrefix(type);
+}
+function onModalCodeInput(val) {
+    val = (val || '').toUpperCase();
+    const typeSelect = document.getElementById('modalItemType');
+    if (val.startsWith('FG-')) {
+        if (typeSelect && typeSelect.value !== 'finished_good') typeSelect.value = 'finished_good';
+    } else if (val.startsWith('RM-')) {
+        if (typeSelect && typeSelect.value !== 'raw_material') typeSelect.value = 'raw_material';
     }
 }
 function filterItemsTable() {

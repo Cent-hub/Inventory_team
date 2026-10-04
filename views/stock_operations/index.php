@@ -775,9 +775,9 @@ if ($selectedItemId > 0) {
                                     <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['src_name']) ?></span>
                                 </td>
                                 <td>
-                                    <?php if ($row['status'] === 'completed'): ?>
+                                    <?php if ($row['status'] === 'received' || $row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Received</span>
-                                    <?php elseif ($row['status'] === 'pending'): ?>
+                                    <?php elseif ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
                                         <span class="badge status-pending">In Transit</span>
                                     <?php else: ?>
                                         <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
@@ -785,12 +785,12 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td style="text-align: right;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                                        <?php if ($row['status'] === 'pending'): ?>
+                                        <?php if ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
                                             <button type="button" class="btn btn-primary" style="height: 30px; padding: 0 11px; font-size: 11.5px; background: #15803D; border-color: #15803D; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;" onclick='openConfirmReceiptModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                                                 <span>Received Stock</span>
                                             </button>
-                                        <?php elseif ($row['status'] === 'completed'): ?>
+                                        <?php elseif ($row['status'] === 'received' || $row['status'] === 'completed'): ?>
                                             <span style="color: #15803D; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; margin-right: 4px;">
                                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                                                 Received
@@ -801,6 +801,7 @@ if ($selectedItemId > 0) {
                                         </button>
                                     </div>
                                 </td>
+
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -905,9 +906,9 @@ if ($selectedItemId > 0) {
                                     <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['dest_name']) ?></span>
                                 </td>
                                 <td>
-                                    <?php if ($row['status'] === 'completed'): ?>
+                                    <?php if ($row['status'] === 'received' || $row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Received</span>
-                                    <?php elseif ($row['status'] === 'pending'): ?>
+                                    <?php elseif ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
                                         <span class="badge status-pending">In Transit</span>
                                     <?php else: ?>
                                         <span class="badge status-cancelled"><?= ucfirst($row['status']) ?></span>
@@ -915,7 +916,7 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                                        <?php if (in_array($row['status'], ['pending', 'completed'], true)): ?>
+                                        <?php if ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
                                             <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelTransferModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                                                 Cancel
                                             </button>
@@ -925,6 +926,7 @@ if ($selectedItemId > 0) {
                                         </button>
                                     </div>
                                 </td>
+
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -2092,12 +2094,13 @@ function openTransferDetailModal(trf, direction) {
     document.getElementById('modalTrfTitle').textContent = 'Transfer ' + trf.transaction_number;
     document.getElementById('modalTrfRef').textContent = trf.transaction_number;
     
-    let statusBadge = '<span class="badge status-completed">Completed</span>';
-    if (trf.status === 'pending') {
+    let statusBadge = '<span class="badge status-completed">Received</span>';
+    if (trf.status === 'in_transit' || trf.status === 'pending') {
         statusBadge = '<span class="badge status-pending">In Transit</span>';
     } else if (trf.status === 'cancelled') {
         statusBadge = '<span class="badge status-cancelled">Cancelled</span>';
     }
+
     document.getElementById('modalTrfStatus').innerHTML = statusBadge;
 
     document.getElementById('modalTrfSrc').textContent = (trf.src_code || '') + ' - ' + (trf.src_name || '');
