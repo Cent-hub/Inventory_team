@@ -1025,7 +1025,6 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     <select name="source_type" id="stockInSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockInModalItems()">
                         <option value="PURCHASE_ORDER">Procurement Purchase Order (Raw Materials)</option>
                         <option value="PRODUCTION_RETURN">Production Batch Receipt (Finished Goods)</option>
-                        <option value="MANUAL">Internal / Manual Receipt (All Items)</option>
                     </select>
                 </div>
 
@@ -1046,7 +1045,7 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                         <option value="">-- Select Item to Receive --</option>
                         <?php foreach ($allItems as $it): ?>
                             <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
-                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
+                                [<?= $it['item_type'] === 'finished_good' ? 'Finished Good' : 'Raw Material' ?>] <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1107,7 +1106,6 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     <select name="source_type" id="stockOutSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockOutModalItems()">
                         <option value="SALES_DELIVERY">Sales Delivery (Finished Goods)</option>
                         <option value="MATERIAL_REQUEST">Production Material Request (Raw Materials)</option>
-                        <option value="MANUAL">Internal / Manual Dispatch (All Items)</option>
                     </select>
                 </div>
 
@@ -1194,25 +1192,7 @@ function closeRecordStockInModal() {
 }
 
 function filterStockInModalItems() {
-    const sourceSelect = document.getElementById('stockInSourceType');
-    const itemSelect = document.getElementById('stockInItemSelect');
-    if (!sourceSelect || !itemSelect) return;
-
-    const src = sourceSelect.value;
-    const requiredType = (src === 'PURCHASE_ORDER') ? 'raw_material' : (src === 'PRODUCTION_RETURN' ? 'finished_good' : '');
-
-    Array.from(itemSelect.options).forEach(opt => {
-        if (!opt.value) return;
-        const optType = opt.getAttribute('data-type') || '';
-        const allowed = !requiredType || optType === requiredType;
-        opt.hidden = !allowed;
-        opt.disabled = !allowed;
-    });
-
-    if (itemSelect.selectedOptions[0] && itemSelect.selectedOptions[0].disabled) {
-        itemSelect.value = '';
-        handleStockInItemChange(itemSelect);
-    }
+    // All items remain selectable so users can test ERP business rule violation checks
 }
 
 function handleStockInItemChange(selectEl) {
@@ -1243,25 +1223,7 @@ function closeRecordStockOutModal() {
 }
 
 function filterStockOutModalItems() {
-    const sourceSelect = document.getElementById('stockOutSourceType');
-    const itemSelect = document.getElementById('stockOutItemSelect');
-    if (!sourceSelect || !itemSelect) return;
-
-    const src = sourceSelect.value;
-    const requiredType = (src === 'SALES_DELIVERY') ? 'finished_good' : (src === 'MATERIAL_REQUEST' ? 'raw_material' : '');
-
-    Array.from(itemSelect.options).forEach(opt => {
-        if (!opt.value) return;
-        const optType = opt.getAttribute('data-type') || '';
-        const allowed = !requiredType || optType === requiredType;
-        opt.hidden = !allowed;
-        opt.disabled = !allowed;
-    });
-
-    if (itemSelect.selectedOptions[0] && itemSelect.selectedOptions[0].disabled) {
-        itemSelect.value = '';
-        handleStockOutItemChange(itemSelect);
-    }
+    // All items remain selectable so users can test ERP business rule violation checks
 }
 
 function handleStockOutItemChange(selectEl) {
