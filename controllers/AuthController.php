@@ -8,7 +8,7 @@
 require_once __DIR__ . '/../config/database.php';
 
 class AuthController {
-    public const LOGIN_MAX_ATTEMPTS = 3;
+    public const LOGIN_MAX_ATTEMPTS = 5;
     public const LOGIN_LOCKOUT_SECONDS = 300;
 
     private PDO $db;
