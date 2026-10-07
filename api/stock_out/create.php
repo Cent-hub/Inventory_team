@@ -128,6 +128,51 @@ if ($sourceType === 'MANUAL' && !$isSuperAdmin && !$isInventoryAdmin) {
     ], 403);
 }
 
+// Restrict item types on manual entries
+if ($sourceType === 'MANUAL') {
+    $manualItemType = !empty($payload['item_type']) ? strtolower(trim((string)$payload['item_type'])) : null;
+    if ($manualItemType !== null && !in_array($manualItemType, ['raw_material', 'finished_good'], true)) {
+        jsonResponse([
+            'success' => false,
+            'error'   => "Validation Error: item_type must be either 'raw_material' or 'finished_good'."
+        ], 400);
+    }
+
+    $pdo = Database::getConnection();
+    if (is_array($items)) {
+        foreach ($items as &$entry) {
+            $checkItemId = (int)($entry['item_id'] ?? 0);
+            if ($checkItemId > 0) {
+                $stmtItemChk = $pdo->prepare("SELECT code, type, status FROM items WHERE item_id = ?");
+                $stmtItemChk->execute([$checkItemId]);
+                $itemRow = $stmtItemChk->fetch(PDO::FETCH_ASSOC);
+                if (!$itemRow || $itemRow['status'] !== 'active') {
+                    jsonResponse([
+                        'success' => false,
+                        'error'   => "Validation Error: Item ID {$checkItemId} is invalid or inactive."
+                    ], 400);
+                }
+                if (!in_array($itemRow['type'], ['raw_material', 'finished_good'], true)) {
+                    jsonResponse([
+                        'success' => false,
+                        'error'   => "Validation Error: Item '{$itemRow['code']}' has an unsupported classification '{$itemRow['type']}' for manual entries."
+                    ], 400);
+                }
+                if ($manualItemType !== null && $itemRow['type'] !== $manualItemType) {
+                    jsonResponse([
+                        'success' => false,
+                        'error'   => "Validation Error: Item '{$itemRow['code']}' type ('{$itemRow['type']}') does not match restricted manual entry type '{$manualItemType}'."
+                    ], 400);
+                }
+                if (!isset($entry['item_type'])) {
+                    $entry['item_type'] = $itemRow['type'];
+                }
+            }
+        }
+        unset($entry);
+    }
+}
+
 if (empty($sourceReferenceNo)) {
     jsonResponse([
         'success' => false,

@@ -156,7 +156,7 @@ CREATE TABLE `stock_movements` (
   `movement_id` INT(11) NOT NULL AUTO_INCREMENT,
   `item_id` INT(11) NOT NULL,
   `warehouse_id` INT(11) NOT NULL,
-  `movement_type` ENUM('STOCK_IN','STOCK_OUT','STOCK_TRANSFER_IN','STOCK_TRANSFER_OUT','STOCK_ADJUSTMENT') NOT NULL,
+  `movement_type` ENUM('STOCK_IN','STOCK_OUT','STOCK_TRANSFER_IN','STOCK_TRANSFER_OUT','STOCK_ADJUSTMENT','BAD_PRODUCT_DISCARD','CANCELLED_INBOUND','CANCELLED_OUTBOUND') NOT NULL,
   `quantity` DECIMAL(12,4) NOT NULL,
   `lot_no` VARCHAR(50) DEFAULT NULL,
   `reference_id` INT(11) DEFAULT NULL,
@@ -248,5 +248,75 @@ CREATE TABLE IF NOT EXISTS `api_rate_limits` (
   PRIMARY KEY (`rate_limit_id`),
   UNIQUE KEY `uq_client_endpoint_window` (`client_key`,`endpoint`,`window_start`),
   KEY `idx_window` (`window_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- ERP DOCUMENT WORKFLOWS (INBOUND & OUTBOUND QUEUES)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `inbound_orders` (
+  `inbound_order_id` INT(11) NOT NULL AUTO_INCREMENT,
+  `order_number` VARCHAR(50) NOT NULL,
+  `source_type` ENUM('PURCHASE_ORDER','PRODUCTION_RECEIPT','CUSTOMER_RETURN','PRODUCTION_RETURN') NOT NULL,
+  `entity_name` VARCHAR(150) NOT NULL,
+  `warehouse_id` INT(11) NOT NULL,
+  `expected_date` DATE DEFAULT NULL,
+  `status` ENUM('pending','partially_received','received','cancelled') NOT NULL DEFAULT 'pending',
+  `notes` TEXT DEFAULT NULL,
+  `created_by` INT(11) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`inbound_order_id`),
+  UNIQUE KEY `uq_inbound_order_number` (`order_number`),
+  KEY `idx_inbound_orders_warehouse` (`warehouse_id`),
+  KEY `idx_inbound_orders_status` (`status`),
+  CONSTRAINT `fk_inbound_orders_wh` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT `fk_inbound_orders_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `inbound_order_items` (
+  `item_entry_id` INT(11) NOT NULL AUTO_INCREMENT,
+  `inbound_order_id` INT(11) NOT NULL,
+  `item_id` INT(11) NOT NULL,
+  `expected_quantity` DECIMAL(12,4) NOT NULL,
+  `received_quantity` DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
+  PRIMARY KEY (`item_entry_id`),
+  KEY `idx_inbound_items_order` (`inbound_order_id`),
+  KEY `idx_inbound_items_item` (`item_id`),
+  CONSTRAINT `fk_inbound_items_order` FOREIGN KEY (`inbound_order_id`) REFERENCES `inbound_orders` (`inbound_order_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT `fk_inbound_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `outbound_orders` (
+  `outbound_order_id` INT(11) NOT NULL AUTO_INCREMENT,
+  `order_number` VARCHAR(50) NOT NULL,
+  `source_type` ENUM('SALES_DELIVERY','MATERIAL_REQUEST','SUPPLIER_RETURN') NOT NULL,
+  `entity_name` VARCHAR(150) NOT NULL,
+  `warehouse_id` INT(11) NOT NULL,
+  `required_date` DATE DEFAULT NULL,
+  `status` ENUM('pending','partially_dispatched','dispatched','cancelled') NOT NULL DEFAULT 'pending',
+  `notes` TEXT DEFAULT NULL,
+  `created_by` INT(11) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`outbound_order_id`),
+  UNIQUE KEY `uq_outbound_order_number` (`order_number`),
+  KEY `idx_outbound_orders_warehouse` (`warehouse_id`),
+  KEY `idx_outbound_orders_status` (`status`),
+  CONSTRAINT `fk_outbound_orders_wh` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT `fk_outbound_orders_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `outbound_order_items` (
+  `item_entry_id` INT(11) NOT NULL AUTO_INCREMENT,
+  `outbound_order_id` INT(11) NOT NULL,
+  `item_id` INT(11) NOT NULL,
+  `requested_quantity` DECIMAL(12,4) NOT NULL,
+  `dispatched_quantity` DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
+  PRIMARY KEY (`item_entry_id`),
+  KEY `idx_outbound_items_order` (`outbound_order_id`),
+  KEY `idx_outbound_items_item` (`item_id`),
+  CONSTRAINT `fk_outbound_items_order` FOREIGN KEY (`outbound_order_id`) REFERENCES `outbound_orders` (`outbound_order_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT `fk_outbound_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

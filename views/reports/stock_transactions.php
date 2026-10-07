@@ -68,8 +68,8 @@ $sqlM = "
             sm.created_at,
             sa.difference AS adjustment_difference,
             SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 ELSE 0 
             END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
@@ -81,12 +81,12 @@ $sqlM = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
             ELSE 0 
         END AS quantity_in,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
             ELSE 0 
         END AS quantity_out,
@@ -139,8 +139,8 @@ $sqlIn = "
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
-        AND rev.movement_type = 'STOCK_OUT' 
-        AND rev.remarks LIKE 'Cancelled Stock IN %'
+        AND rev.movement_type IN ('CANCELLED_INBOUND', 'STOCK_OUT')
+        AND (rev.movement_type = 'CANCELLED_INBOUND' OR rev.remarks LIKE 'Cancelled Stock IN %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_IN'
@@ -182,8 +182,8 @@ $sqlOut = "
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
-        AND rev.movement_type = 'STOCK_IN' 
-        AND rev.remarks LIKE 'Cancelled Stock OUT %'
+        AND rev.movement_type IN ('CANCELLED_OUTBOUND', 'STOCK_IN')
+        AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR rev.remarks LIKE 'Cancelled Stock OUT %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_OUT'
@@ -441,7 +441,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             $isIncoming = (float)$row['quantity_in'] > 0;
                             $isTransfer = strpos($type, 'TRANSFER') !== false;
                             $isAdj = strpos($type, 'ADJUSTMENT') !== false;
-                            $pillClass = $isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($isIncoming ? 'mov-in' : 'mov-out'));
+                            $isBad = strpos($type, 'BAD') !== false;
+                            $isCancel = strpos($type, 'CANCEL') !== false;
+                            $pillClass = $isCancel ? 'status-cancelled' : ($isBad ? 'mov-out' : ($isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($isIncoming ? 'mov-in' : 'mov-out'))));
                         ?>
                             <tr>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y H:i', strtotime($row['created_at'])) ?></td>

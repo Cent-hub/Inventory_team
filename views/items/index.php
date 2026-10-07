@@ -160,23 +160,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $itemType = $existingItem['item_type'] ?? 'raw_material';
                         }
 
-                        $stmtUpd = $pdo->prepare("
-                            UPDATE items
-                            SET name = ?,
-                                type = ?,
-                                unit = ?,
-                                reorder_level = ?,
-                                status = ?
-                            WHERE item_id = ?
-                        ");
-                        $stmtUpd->execute([
-                            $itemName,
-                            $itemType,
-                            $unit,
-                            round($reorderLevel, 3),
-                            $itemStatus,
-                            $itemId
-                        ]);
+                        // Catalog Item Lock: Disallow mutating items.type if historical transactions or active stock exist for that SKU
+                        if ($itemType !== $existingItem['item_type']) {
+                            $stmtTxCheck = $pdo->prepare("
+                                SELECT 
+                                    (SELECT COUNT(*) FROM stock_movements WHERE item_id = ?) +
+                                    (SELECT COUNT(*) FROM stock_adjustments WHERE item_id = ?) +
+                                    (SELECT COUNT(*) FROM bad_products WHERE item_id = ?) +
+                                    (SELECT COALESCE(SUM(qty_on_hand), 0) FROM stock WHERE item_id = ?)
+                            ");
+                            $stmtTxCheck->execute([$itemId, $itemId, $itemId, $itemId]);
+                            $txCount = (float)$stmtTxCheck->fetchColumn();
+                            if ($txCount > 0) {
+                                $errorMessage = "Classification is locked for SKU '{$existingItem['item_code']}': cannot modify item type because recorded stock or transactions exist in the ledger.";
+                            }
+                        }
+
+                        if (empty($errorMessage)) {
+                            $stmtUpd = $pdo->prepare("
+                                UPDATE items
+                                SET name = ?,
+                                    type = ?,
+                                    unit = ?,
+                                    reorder_level = ?,
+                                    status = ?
+                                WHERE item_id = ?
+                            ");
+                            $stmtUpd->execute([
+                                $itemName,
+                                $itemType,
+                                $unit,
+                                round($reorderLevel, 3),
+                                $itemStatus,
+                                $itemId
+                            ]);
 
 
                         // Keep warehouse stock reorder levels synchronized with master catalog
@@ -210,6 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ]);
 
                         $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
+                        }
                     }
                 } catch (Exception $e) {
                     $errorMessage = "Failed to update item: " . $e->getMessage();
@@ -242,6 +260,11 @@ $stmtItems = $pdo->query("
         i.unit,
         i.reorder_level,
         i.reorder_level AS default_reorder_level,
+        (
+            (SELECT COUNT(*) FROM stock_movements sm WHERE sm.item_id = i.item_id) +
+            (SELECT COUNT(*) FROM stock_adjustments sa WHERE sa.item_id = i.item_id) +
+            (SELECT COUNT(*) FROM bad_products bp WHERE bp.item_id = i.item_id)
+        ) AS tx_count,
         i.status,
         i.created_at
     FROM items i
@@ -425,7 +448,8 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                                         'unit'                  => $row['unit'],
                                         'default_reorder_level' => (float)$row['default_reorder_level'],
                                         'description'           => (string)($row['description'] ?? ''),
-                                        'status'                => $row['status'] ?? 'active'
+                                        'status'                => $row['status'] ?? 'active',
+                                        'tx_count'              => (int)($row['tx_count'] ?? 0)
                                     ])) ?>)">Edit</button>
                                 </td>
                             <?php endif; ?>
@@ -521,7 +545,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
 <!-- Modal: Edit Existing Item -->
 <div id="editItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editItemModalTitle" onclick="if(event.target === this) closeEditItemModal()">
     <div class="modal-card" style="max-width: 520px;">
-        <form method="POST" action="index.php">
+        <form method="POST" action="index.php" onsubmit="if(document.getElementById('editItemType')) document.getElementById('editItemType').disabled = false;">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="update_item">
             <input type="hidden" name="item_id" id="editItemId" value="">
@@ -559,6 +583,9 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                         <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
                         <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
                     </select>
+                    <small id="editTypeLockNote" style="display: none; color: #DC2626; font-size: 12px; margin-top: 4px;">
+                        Classification locked: historical inventory movements/adjustments exist for this SKU.
+                    </small>
                 </div>
 
                 <div class="form-grid-3" style="grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; display: grid;">
@@ -619,7 +646,15 @@ function openEditItemModal(item) {
     document.getElementById('editItemName').value = item.item_name;
     const itemType = item.item_type || (item.item_code && item.item_code.startsWith('FG-') ? 'finished_good' : 'raw_material');
     const editTypeElem = document.getElementById('editItemType');
-    if (editTypeElem) editTypeElem.value = itemType;
+    const lockNoteElem = document.getElementById('editTypeLockNote');
+    const isLocked = Boolean(item.tx_count && item.tx_count > 0);
+    if (editTypeElem) {
+        editTypeElem.value = itemType;
+        editTypeElem.disabled = isLocked;
+    }
+    if (lockNoteElem) {
+        lockNoteElem.style.display = isLocked ? 'block' : 'none';
+    }
     document.getElementById('editUnit').value = item.unit;
     document.getElementById('editReorder').value = item.default_reorder_level;
     document.getElementById('editStatus').value = item.status || 'active';

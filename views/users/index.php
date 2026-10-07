@@ -63,15 +63,11 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                         $rawApiToken  = bin2hex(random_bytes(32));
                         $apiTokenHash = hash('sha256', $rawApiToken);
 
-                        $nextUserIdStmt = $pdo->query("SELECT COALESCE(MAX(user_id), 0) + 1 FROM users");
-                        $nextUserId = (int)$nextUserIdStmt->fetchColumn();
-
                         $stmtIns = $pdo->prepare("
-                            INSERT INTO users (user_id, name, email, password, role, team, warehouse_id, api_token, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO users (name, email, password, role, team, warehouse_id, api_token, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmtIns->execute([
-                            $nextUserId,
                             $uName,
                             $uEmail,
                             $passwordHash,
@@ -81,7 +77,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             $apiTokenHash,
                             $uStatus
                         ]);
-                        $newUserId = $nextUserId;
+                        $newUserId = (int)$pdo->lastInsertId();
 
                         require_once __DIR__ . '/../../helpers/AccountabilityService.php';
                         AccountabilityService::log([
@@ -227,7 +223,6 @@ if ($isSuperAdmin) {
     // Query users from database with assigned warehouse & linked employee data (Super Admin only)
     $sql = "
         SELECT 
-            u.id,
             u.user_id,
             u.name,
             u.email,

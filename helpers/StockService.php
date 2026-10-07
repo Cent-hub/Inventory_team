@@ -18,8 +18,8 @@ class StockService {
         'pack', 'packs',
         'can', 'cans'
     ];
-    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RETURN', 'MANUAL'];
-    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'MANUAL'];
+    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'CUSTOMER_RETURN', 'PRODUCTION_RETURN', 'MANUAL'];
+    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'SUPPLIER_RETURN', 'MANUAL'];
 
     private PDO $pdo;
 
@@ -219,10 +219,23 @@ class StockService {
                         "Procurement PO violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a finished good. Purchase orders from Procurement can only receive raw materials."
                     );
                 }
-                if ($sourceType === 'PRODUCTION_RETURN' && $itemInfo['item_type'] !== 'finished_good') {
+                if (($sourceType === 'PRODUCTION_RETURN' || $sourceType === 'PRODUCTION_RECEIPT') && $itemInfo['item_type'] !== 'finished_good') {
                     throw new InvalidArgumentException(
                         "Production Receipt violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Production receipts can only receive finished goods."
                     );
+                }
+                if ($sourceType === 'CUSTOMER_RETURN' && $itemInfo['item_type'] !== 'finished_good') {
+                    throw new InvalidArgumentException(
+                        "Customer Return violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Customer returns only apply to finished goods."
+                    );
+                }
+                if ($sourceType === 'MANUAL') {
+                    if (!in_array($itemInfo['item_type'], ['raw_material', 'finished_good'], true)) {
+                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' has an invalid classification for manual entry.");
+                    }
+                    if (isset($entry['item_type']) && $entry['item_type'] !== '' && $entry['item_type'] !== $itemInfo['item_type']) {
+                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' classification mismatch: expected '{$entry['item_type']}', found '{$itemInfo['item_type']}'.");
+                    }
                 }
 
                 // Construct remarks string containing tracking info
@@ -251,9 +264,16 @@ class StockService {
                     'balance_after' => $newQty
                 ];
 
+                $inboundTeam = match($sourceType) {
+                    'PURCHASE_ORDER'                      => 'Procurement',
+                    'CUSTOMER_RETURN'                     => 'Sales',
+                    'PRODUCTION_RETURN', 'PRODUCTION_RECEIPT' => 'Production',
+                    default                               => 'Inventory'
+                };
+
                 AccountabilityService::log([
                     'user_id'          => $userId,
-                    'team'             => ($sourceType === 'PURCHASE_ORDER' ? 'Procurement' : ($sourceType === 'PRODUCTION_RETURN' ? 'Production' : 'Inventory')),
+                    'team'             => $inboundTeam,
                     'action_type'      => 'STOCK_IN',
                     'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                     'item_id'          => $itemId,
@@ -388,6 +408,14 @@ class StockService {
                         "Sales Delivery violation: Item '{$itemInfo['item_code']}' is a raw material. Sales can only deliver finished goods."
                     );
                 }
+                if ($sourceType === 'MANUAL') {
+                    if (!in_array($itemInfo['item_type'], ['raw_material', 'finished_good'], true)) {
+                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' has an invalid classification for manual entry.");
+                    }
+                    if (isset($entry['item_type']) && $entry['item_type'] !== '' && $entry['item_type'] !== $itemInfo['item_type']) {
+                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' classification mismatch: expected '{$entry['item_type']}', found '{$itemInfo['item_type']}'.");
+                    }
+                }
 
                 // Check current stock balance
                 $stmtLock->execute([$itemId, $warehouseId]);
@@ -458,9 +486,16 @@ class StockService {
                     'balance_after' => $newQty
                 ];
 
+                $outboundTeam = match($sourceType) {
+                    'MATERIAL_REQUEST' => 'Production',
+                    'SALES_DELIVERY'   => 'Sales',
+                    'SUPPLIER_RETURN'  => 'Procurement',
+                    default            => 'Inventory'
+                };
+
                 AccountabilityService::log([
                     'user_id'          => $userId,
-                    'team'             => ($sourceType === 'MATERIAL_REQUEST' ? 'Production' : ($sourceType === 'SALES_DELIVERY' ? 'Sales' : 'Inventory')),
+                    'team'             => $outboundTeam,
                     'action_type'      => 'STOCK_OUT',
                     'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                     'item_id'          => $itemId,
@@ -484,6 +519,245 @@ class StockService {
                 'items'               => $processedItems
             ];
         } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Process document-driven receiving for an Inbound Order (PO, Production Receipt, or RMA)
+     *
+     * @param int $orderId Inbound order ID
+     * @param array $receivedQuantities Associative array: item_id => quantity received
+     * @param int $userId Operating user ID
+     * @param string|null $remarks Delivery notes or lot info
+     * @param array|null $currentUser Authenticated user session
+     * @param string $condition 'salable' (restock) or 'damaged' (route to bad products for customer returns)
+     */
+    public function receiveInboundOrder(int $orderId, array $receivedQuantities, int $userId, ?string $remarks = null, ?array $currentUser = null, string $condition = 'salable'): array {
+        $stmtOrder = $this->pdo->prepare("SELECT * FROM inbound_orders WHERE inbound_order_id = ? FOR UPDATE");
+        $stmtItems = $this->pdo->prepare("SELECT * FROM inbound_order_items WHERE inbound_order_id = ?");
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmtOrder->execute([$orderId]);
+            $order = $stmtOrder->fetch(PDO::FETCH_ASSOC);
+            if (!$order) {
+                throw new InvalidArgumentException("Inbound order #{$orderId} not found.");
+            }
+            if ($order['status'] === 'received') {
+                throw new DomainException("Order '{$order['order_number']}' has already been fully received.");
+            }
+            if ($order['status'] === 'cancelled') {
+                throw new DomainException("Order '{$order['order_number']}' is cancelled.");
+            }
+
+            $stmtItems->execute([$orderId]);
+            $orderItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($orderItems)) {
+                throw new DomainException("Order '{$order['order_number']}' has no line items.");
+            }
+
+            $itemsToStock = [];
+            $allCompleted = true;
+            $anyReceived = false;
+
+            $stmtUpdItem = $this->pdo->prepare("UPDATE inbound_order_items SET received_quantity = received_quantity + ? WHERE item_entry_id = ?");
+
+            foreach ($orderItems as $oi) {
+                $itemId = (int)$oi['item_id'];
+                $qtyToReceive = (float)($receivedQuantities[$itemId] ?? 0);
+                if ($qtyToReceive <= 0) {
+                    $remaining = (float)$oi['expected_quantity'] - (float)$oi['received_quantity'];
+                    if ($remaining > 0.0001) {
+                        $allCompleted = false;
+                    }
+                    continue;
+                }
+
+                $remaining = (float)$oi['expected_quantity'] - (float)$oi['received_quantity'];
+                if ($qtyToReceive > ($remaining + 0.0001)) {
+                    throw new InvalidArgumentException("Received quantity ({$qtyToReceive}) exceeds remaining expected quantity ({$remaining}) for item ID {$itemId}.");
+                }
+
+                $stmtUpdItem->execute([$qtyToReceive, $oi['item_entry_id']]);
+                $itemsToStock[] = ['item_id' => $itemId, 'quantity' => $qtyToReceive];
+                $anyReceived = true;
+
+                if (($remaining - $qtyToReceive) > 0.0001) {
+                    $allCompleted = false;
+                }
+            }
+
+            if (!$anyReceived) {
+                throw new InvalidArgumentException("No valid quantities were specified to receive.");
+            }
+
+            $newStatus = $allCompleted ? 'received' : 'partially_received';
+            $stmtUpdOrder = $this->pdo->prepare("UPDATE inbound_orders SET status = ?, updated_at = NOW() WHERE inbound_order_id = ?");
+            $stmtUpdOrder->execute([$newStatus, $orderId]);
+
+            $this->pdo->commit();
+
+            // Post to inventory ledger
+            if ($order['source_type'] === 'CUSTOMER_RETURN' && $condition === 'damaged') {
+                // First record inbound receipt to document the customer return into the ledger
+                $stockInRes = $this->recordStockIn(
+                    (int)$order['warehouse_id'],
+                    'CUSTOMER_RETURN',
+                    $order['order_number'],
+                    $itemsToStock,
+                    $userId,
+                    "Customer RMA Inbound ({$order['order_number']})" . ($remarks ? ": {$remarks}" : ""),
+                    $currentUser
+                );
+
+                // Then write off the defective items to Bad Products Discard
+                $results = [];
+                foreach ($itemsToStock as $its) {
+                    $results[] = $this->recordBadProduct(
+                        (int)$order['warehouse_id'],
+                        $its['item_id'],
+                        'damaged',
+                        (float)$its['quantity'],
+                        "Damaged Customer Return ({$order['order_number']})" . ($remarks ? ": {$remarks}" : ""),
+                        $userId,
+                        $currentUser
+                    );
+                }
+                return [
+                    'success'            => true,
+                    'order_number'       => $order['order_number'],
+                    'new_status'         => $newStatus,
+                    'condition'          => 'damaged',
+                    'routed_to'          => 'bad_products',
+                    'transaction_number' => $stockInRes['transaction_number'],
+                    'items_received'     => $itemsToStock,
+                    'bad_product_ids'    => array_column($results, 'bad_product_id')
+                ];
+            } else {
+                // Regular Stock In
+                $stockInRes = $this->recordStockIn(
+                    (int)$order['warehouse_id'],
+                    $order['source_type'],
+                    $order['order_number'],
+                    $itemsToStock,
+                    $userId,
+                    $remarks ?: "Received from {$order['entity_name']} ({$order['order_number']})",
+                    $currentUser
+                );
+                return [
+                    'success'            => true,
+                    'order_number'       => $order['order_number'],
+                    'new_status'         => $newStatus,
+                    'condition'          => 'salable',
+                    'transaction_number' => $stockInRes['transaction_number'],
+                    'items_received'     => $itemsToStock
+                ];
+            }
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Process document-driven dispatch for an Outbound Order (Sales Order, Material Request, RTV)
+     *
+     * @param int $orderId Outbound order ID
+     * @param array $dispatchedQuantities Associative array: item_id => quantity dispatched
+     * @param int $userId Operating user ID
+     * @param string|null $remarks Dispatch notes or bill of lading
+     * @param array|null $currentUser Authenticated user session
+     */
+    public function dispatchOutboundOrder(int $orderId, array $dispatchedQuantities, int $userId, ?string $remarks = null, ?array $currentUser = null): array {
+        $stmtOrder = $this->pdo->prepare("SELECT * FROM outbound_orders WHERE outbound_order_id = ? FOR UPDATE");
+        $stmtItems = $this->pdo->prepare("SELECT * FROM outbound_order_items WHERE outbound_order_id = ?");
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmtOrder->execute([$orderId]);
+            $order = $stmtOrder->fetch(PDO::FETCH_ASSOC);
+            if (!$order) {
+                throw new InvalidArgumentException("Outbound order #{$orderId} not found.");
+            }
+            if ($order['status'] === 'dispatched') {
+                throw new DomainException("Order '{$order['order_number']}' has already been fully dispatched.");
+            }
+            if ($order['status'] === 'cancelled') {
+                throw new DomainException("Order '{$order['order_number']}' is cancelled.");
+            }
+
+            $stmtItems->execute([$orderId]);
+            $orderItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($orderItems)) {
+                throw new DomainException("Order '{$order['order_number']}' has no line items.");
+            }
+
+            $itemsToDispatch = [];
+            $allCompleted = true;
+            $anyDispatched = false;
+
+            $stmtUpdItem = $this->pdo->prepare("UPDATE outbound_order_items SET dispatched_quantity = dispatched_quantity + ? WHERE item_entry_id = ?");
+
+            foreach ($orderItems as $oi) {
+                $itemId = (int)$oi['item_id'];
+                $qtyToDispatch = (float)($dispatchedQuantities[$itemId] ?? 0);
+                if ($qtyToDispatch <= 0) {
+                    $remaining = (float)$oi['requested_quantity'] - (float)$oi['dispatched_quantity'];
+                    if ($remaining > 0.0001) {
+                        $allCompleted = false;
+                    }
+                    continue;
+                }
+
+                $remaining = (float)$oi['requested_quantity'] - (float)$oi['dispatched_quantity'];
+                if ($qtyToDispatch > ($remaining + 0.0001)) {
+                    throw new InvalidArgumentException("Dispatched quantity ({$qtyToDispatch}) exceeds remaining requested quantity ({$remaining}) for item ID {$itemId}.");
+                }
+
+                $stmtUpdItem->execute([$qtyToDispatch, $oi['item_entry_id']]);
+                $itemsToDispatch[] = ['item_id' => $itemId, 'quantity' => $qtyToDispatch];
+                $anyDispatched = true;
+
+                if (($remaining - $qtyToDispatch) > 0.0001) {
+                    $allCompleted = false;
+                }
+            }
+
+            if (!$anyDispatched) {
+                throw new InvalidArgumentException("No valid quantities were specified to dispatch.");
+            }
+
+            $newStatus = $allCompleted ? 'dispatched' : 'partially_dispatched';
+            $stmtUpdOrder = $this->pdo->prepare("UPDATE outbound_orders SET status = ?, updated_at = NOW() WHERE outbound_order_id = ?");
+            $stmtUpdOrder->execute([$newStatus, $orderId]);
+
+            $this->pdo->commit();
+
+            // Post to inventory ledger
+            $stockOutRes = $this->recordStockOut(
+                (int)$order['warehouse_id'],
+                $order['source_type'],
+                $order['order_number'],
+                $itemsToDispatch,
+                $userId,
+                $remarks ?: "Dispatched to {$order['entity_name']} ({$order['order_number']})",
+                $currentUser
+            );
+
+            return [
+                'success'            => true,
+                'order_number'       => $order['order_number'],
+                'new_status'         => $newStatus,
+                'transaction_number' => $stockOutRes['transaction_number'],
+                'items_dispatched'   => $itemsToDispatch
+            ];
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -679,7 +953,7 @@ class StockService {
             // Check if already cancelled
             $stmtChkRev = $this->pdo->prepare("
                 SELECT movement_id FROM stock_movements 
-                WHERE reference_id = ? AND movement_type = 'STOCK_OUT' AND remarks LIKE 'Cancelled Stock IN %'
+                WHERE reference_id = ? AND (movement_type = 'CANCELLED_INBOUND' OR (movement_type = 'STOCK_OUT' AND remarks LIKE 'Cancelled Stock IN %'))
                 LIMIT 1
             ");
             $stmtChkRev->execute([$stockInId]);
@@ -718,7 +992,7 @@ class StockService {
             $revRemarks = "Cancelled Stock IN #{$stockInId}: {$cancellationReason}";
             $stmtRev = $this->pdo->prepare("
                 INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'STOCK_OUT', ?, ?, ?, ?, NOW())
+                VALUES (?, ?, 'CANCELLED_INBOUND', ?, ?, ?, ?, NOW())
             ");
             $stmtRev->execute([$itemId, $whId, $qty, $stockInId, $revRemarks, $cancelledBy]);
 
@@ -801,7 +1075,7 @@ class StockService {
             // Check if already cancelled
             $stmtChkRev = $this->pdo->prepare("
                 SELECT movement_id FROM stock_movements 
-                WHERE reference_id = ? AND movement_type = 'STOCK_IN' AND remarks LIKE 'Cancelled Stock OUT %'
+                WHERE reference_id = ? AND (movement_type = 'CANCELLED_OUTBOUND' OR (movement_type = 'STOCK_IN' AND remarks LIKE 'Cancelled Stock OUT %'))
                 LIMIT 1
             ");
             $stmtChkRev->execute([$stockOutId]);
@@ -835,7 +1109,7 @@ class StockService {
             $revRemarks = "Cancelled Stock OUT #{$stockOutId}: {$cancellationReason}";
             $stmtRev = $this->pdo->prepare("
                 INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'STOCK_IN', ?, ?, ?, ?, NOW())
+                VALUES (?, ?, 'CANCELLED_OUTBOUND', ?, ?, ?, ?, NOW())
             ");
             $stmtRev->execute([$itemId, $whId, $qty, $stockOutId, $revRemarks, $cancelledBy]);
 
@@ -1718,12 +1992,17 @@ class StockService {
                 throw new DomainException("Cannot approve adjustment #{$adjustmentId}: current status is '{$adj['status']}'.");
             }
 
-            // Authorization: regular admin cannot approve adjustments for other warehouses
-            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
-                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
-                if ($userWhId > 0 && $userWhId !== (int)$adj['warehouse_id']) {
-                    throw new DomainException("Access Denied: You cannot approve adjustments for other warehouses.");
+            // Authorization: Enforce super_admin role check
+            if (!$authUser && $userId > 0) {
+                $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
+                $stmtU->execute([$userId]);
+                $uRow = $stmtU->fetch(PDO::FETCH_ASSOC);
+                if ($uRow) {
+                    $authUser = $uRow;
                 }
+            }
+            if (($authUser['role'] ?? '') !== 'super_admin') {
+                throw new DomainException("Access Denied: Only super_admin can approve stock adjustments.");
             }
 
             // Update status to approved
@@ -2014,7 +2293,7 @@ class StockService {
             $movRemarks = "Defect write-off: [{$conditionType}] " . $reason;
             $stmtMov = $this->pdo->prepare("
                 INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'STOCK_OUT', ?, ?, ?, ?, NOW())
+                VALUES (?, ?, 'BAD_PRODUCT_DISCARD', ?, ?, ?, ?, NOW())
             ");
             $stmtMov->execute([$itemId, $warehouseId, $quantity, $badProductId, $movRemarks, $userId]);
 

@@ -89,11 +89,11 @@ $stmtRecent = $pdo->prepare("
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
             ELSE 0 
         END AS quantity_in,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
             ELSE 0 
         END AS quantity_out,
         0 AS balance_after,
@@ -261,7 +261,9 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                             $isIncoming = (float)$act['quantity_in'] > 0;
                             $isTransfer = strpos($act['movement_type'], 'TRANSFER') !== false;
                             $isAdj = strpos($act['movement_type'], 'ADJUSTMENT') !== false;
-                            $pillClass = $isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($isIncoming ? 'mov-in' : 'mov-out'));
+                            $isBad = strpos($act['movement_type'], 'BAD') !== false;
+                            $isCancel = strpos($act['movement_type'], 'CANCEL') !== false;
+                            $pillClass = $isCancel ? 'status-cancelled' : ($isBad ? 'mov-out' : ($isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($isIncoming ? 'mov-in' : 'mov-out'))));
                         ?>
                         <tr>
                             <td>

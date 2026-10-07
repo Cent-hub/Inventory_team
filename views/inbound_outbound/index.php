@@ -71,7 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $sourceReferenceNo,
                         [['item_id' => $itemId, 'quantity' => $quantity]],
                         $userId,
-                        $remarks ?: null
+                        $remarks ?: null,
+                        $currentUser
                     );
                     $successMessage = "Inbound stock received successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
                     break;
@@ -105,7 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $sourceReferenceNo,
                         [['item_id' => $itemId, 'quantity' => $quantity]],
                         $userId,
-                        $remarks ?: null
+                        $remarks ?: null,
+                        $currentUser
                     );
                     $successMessage = "Outbound stock dispatched successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
                     break;
@@ -130,6 +132,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $res = $stockService->cancelStockOut($stockOutId, $reason, $userId, $currentUser);
                     $successMessage = "Outbound dispatch " . htmlspecialchars($res['transaction_number']) . " has been cancelled and stock restored to inventory.";
+                    break;
+
+                // -------------------------------------------------------------
+                // 1. Document-Driven Inbound Order Receiving
+                // -------------------------------------------------------------
+                case 'receive_inbound_order':
+                    $activeTab = 'inbound';
+                    $orderId = (int)($_POST['inbound_order_id'] ?? 0);
+                    $receivedQtys = $_POST['received_quantity'] ?? [];
+                    $condition = trim($_POST['item_condition'] ?? 'salable');
+                    $remarks = trim($_POST['remarks'] ?? '');
+                    if ($orderId <= 0) {
+                        throw new InvalidArgumentException("Invalid inbound order ID.");
+                    }
+                    $res = $stockService->receiveInboundOrder($orderId, $receivedQtys, $userId, $remarks ?: null, $currentUser, $condition);
+                    $successMessage = "Inbound order " . htmlspecialchars($res['order_number']) . " received successfully! " . 
+                        ($res['condition'] === 'damaged' ? "Damaged items were routed to Bad Products Discard." : "Transaction ref: " . htmlspecialchars($res['transaction_number']));
+                    break;
+
+                // -------------------------------------------------------------
+                // 2. Register New Inbound Order (PO / Production Receipt / RMA)
+                // -------------------------------------------------------------
+                case 'create_inbound_order':
+                    $activeTab = 'inbound';
+                    $orderNumber  = trim($_POST['order_number'] ?? '');
+                    $sourceType   = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
+                    $entityName   = trim($_POST['entity_name'] ?? '');
+                    $expectedDate = trim($_POST['expected_date'] ?? date('Y-m-d'));
+                    $itemId       = (int)($_POST['item_id'] ?? 0);
+                    $rawQuantity  = $_POST['quantity'] ?? null;
+                    $notes        = trim($_POST['notes'] ?? '');
+                    $targetWhId   = (int)($currentWarehouseId ?: 1);
+
+                    if (empty($orderNumber)) throw new InvalidArgumentException("Order number is required.");
+                    if (empty($entityName)) throw new InvalidArgumentException("Supplier / Entity name is required.");
+                    if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'expected quantity');
+
+                    $pdo->prepare("INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
+                        ->execute([$orderNumber, $sourceType, $entityName, $targetWhId, $expectedDate ?: null, $notes ?: null, $userId]);
+                    $newOrderId = (int)$pdo->lastInsertId();
+
+                    $pdo->prepare("INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity) VALUES (?, ?, ?, 0)")
+                        ->execute([$newOrderId, $itemId, $quantity]);
+
+                    $successMessage = "Inbound order " . htmlspecialchars($orderNumber) . " registered in the receiving queue.";
+                    break;
+
+                // -------------------------------------------------------------
+                // 3. Document-Driven Outbound Order Dispatching
+                // -------------------------------------------------------------
+                case 'dispatch_outbound_order':
+                    $activeTab = 'outbound';
+                    $orderId = (int)($_POST['outbound_order_id'] ?? 0);
+                    $dispatchedQtys = $_POST['dispatched_quantity'] ?? [];
+                    $remarks = trim($_POST['remarks'] ?? '');
+                    if ($orderId <= 0) {
+                        throw new InvalidArgumentException("Invalid outbound order ID.");
+                    }
+                    $res = $stockService->dispatchOutboundOrder($orderId, $dispatchedQtys, $userId, $remarks ?: null, $currentUser);
+                    $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " dispatched successfully! Transaction ref: " . htmlspecialchars($res['transaction_number']);
+                    break;
+
+                // -------------------------------------------------------------
+                // 4. Register New Outbound Order (Sales Order / Material Request / RTV)
+                // -------------------------------------------------------------
+                case 'create_outbound_order':
+                    $activeTab = 'outbound';
+                    $orderNumber  = trim($_POST['order_number'] ?? '');
+                    $sourceType   = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
+                    $entityName   = trim($_POST['entity_name'] ?? '');
+                    $requiredDate = trim($_POST['required_date'] ?? date('Y-m-d'));
+                    $itemId       = (int)($_POST['item_id'] ?? 0);
+                    $rawQuantity  = $_POST['quantity'] ?? null;
+                    $notes        = trim($_POST['notes'] ?? '');
+                    $sourceWhId   = (int)($currentWarehouseId ?: 1);
+
+                    if (empty($orderNumber)) throw new InvalidArgumentException("Order number is required.");
+                    if (empty($entityName)) throw new InvalidArgumentException("Customer / Department name is required.");
+                    if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
+                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'requested quantity');
+
+                    $pdo->prepare("INSERT INTO outbound_orders (order_number, source_type, entity_name, warehouse_id, required_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
+                        ->execute([$orderNumber, $sourceType, $entityName, $sourceWhId, $requiredDate ?: null, $notes ?: null, $userId]);
+                    $newOrderId = (int)$pdo->lastInsertId();
+
+                    $pdo->prepare("INSERT INTO outbound_order_items (outbound_order_id, item_id, requested_quantity, dispatched_quantity) VALUES (?, ?, ?, 0)")
+                        ->execute([$newOrderId, $itemId, $quantity]);
+
+                    $successMessage = "Outbound order " . htmlspecialchars($orderNumber) . " registered in the dispatch queue.";
                     break;
 
                 default:
@@ -195,8 +287,7 @@ $stmtIn = $pdo->prepare("
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
-        AND rev.movement_type = 'STOCK_OUT' 
-        AND rev.remarks LIKE 'Cancelled Stock IN %'
+        AND (rev.movement_type = 'CANCELLED_INBOUND' OR (rev.movement_type = 'STOCK_OUT' AND rev.remarks LIKE 'Cancelled Stock IN %'))
     WHERE sm.warehouse_id = :wid 
       AND sm.movement_type = 'STOCK_IN'
       AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
@@ -269,8 +360,7 @@ $stmtOut = $pdo->prepare("
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     LEFT JOIN users u ON sm.created_by = u.user_id
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
-        AND rev.movement_type = 'STOCK_IN' 
-        AND rev.remarks LIKE 'Cancelled Stock OUT %'
+        AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR (rev.movement_type = 'STOCK_IN' AND rev.remarks LIKE 'Cancelled Stock OUT %'))
     WHERE sm.warehouse_id = :wid 
       AND sm.movement_type = 'STOCK_OUT'
       AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
@@ -296,6 +386,111 @@ foreach ($stockOuts as $row) {
 $totalStockOutTxns = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed'));
 $salesDispatches   = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SALES_DELIVERY'));
 $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'MATERIAL_REQUEST'));
+
+// =============================================================================
+// ERP DOCUMENT QUEUES: PENDING INBOUND & OUTBOUND ORDERS
+// =============================================================================
+
+// 1. Pending Inbound Shipments (Receiving Dock Queue)
+$stmtPendingIn = $pdo->prepare("
+    SELECT 
+        io.inbound_order_id,
+        io.order_number,
+        io.source_type,
+        io.entity_name,
+        io.expected_date,
+        io.status,
+        COALESCE(io.notes, '') AS notes,
+        COUNT(ioi.item_entry_id) AS total_items,
+        COALESCE(SUM(ioi.expected_quantity), 0) AS total_expected_qty,
+        COALESCE(SUM(ioi.received_quantity), 0) AS total_received_qty
+    FROM inbound_orders io
+    LEFT JOIN inbound_order_items ioi ON io.inbound_order_id = ioi.inbound_order_id
+    WHERE io.warehouse_id = :wid AND io.status IN ('pending', 'partially_received')
+    GROUP BY io.inbound_order_id
+    ORDER BY io.expected_date ASC, io.inbound_order_id ASC
+");
+$stmtPendingIn->execute([':wid' => $currentWarehouseId]);
+$pendingInboundOrders = $stmtPendingIn->fetchAll(PDO::FETCH_ASSOC);
+
+// Inbound line items
+$inboundOrderLines = [];
+$stmtInLines = $pdo->prepare("
+    SELECT 
+        ioi.item_entry_id,
+        ioi.inbound_order_id,
+        ioi.item_id,
+        ioi.expected_quantity,
+        ioi.received_quantity,
+        GREATEST(0, ioi.expected_quantity - ioi.received_quantity) AS remaining_quantity,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit
+    FROM inbound_order_items ioi
+    JOIN items i ON ioi.item_id = i.item_id
+    JOIN inbound_orders io ON ioi.inbound_order_id = io.inbound_order_id
+    WHERE io.warehouse_id = :wid AND io.status IN ('pending', 'partially_received')
+    ORDER BY ioi.item_entry_id ASC
+");
+$stmtInLines->execute([':wid' => $currentWarehouseId]);
+foreach ($stmtInLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
+    $inboundOrderLines[(int)$line['inbound_order_id']][] = $line;
+}
+
+// 2. Pending Outbound Orders (Fulfillment & Shipping Dock Queue)
+$stmtPendingOut = $pdo->prepare("
+    SELECT 
+        oo.outbound_order_id,
+        oo.order_number,
+        oo.source_type,
+        oo.entity_name,
+        oo.required_date,
+        oo.status,
+        COALESCE(oo.notes, '') AS notes,
+        COUNT(ooi.item_entry_id) AS total_items,
+        COALESCE(SUM(ooi.requested_quantity), 0) AS total_requested_qty,
+        COALESCE(SUM(ooi.dispatched_quantity), 0) AS total_dispatched_qty
+    FROM outbound_orders oo
+    LEFT JOIN outbound_order_items ooi ON oo.outbound_order_id = ooi.outbound_order_id
+    WHERE oo.warehouse_id = :wid AND oo.status IN ('pending', 'partially_dispatched')
+    GROUP BY oo.outbound_order_id
+    ORDER BY oo.required_date ASC, oo.outbound_order_id ASC
+");
+$stmtPendingOut->execute([':wid' => $currentWarehouseId]);
+$pendingOutboundOrders = $stmtPendingOut->fetchAll(PDO::FETCH_ASSOC);
+
+// Outbound line items with current available stock
+$outboundOrderLines = [];
+$stmtOutLines = $pdo->prepare("
+    SELECT 
+        ooi.item_entry_id,
+        ooi.outbound_order_id,
+        ooi.item_id,
+        ooi.requested_quantity,
+        ooi.dispatched_quantity,
+        GREATEST(0, ooi.requested_quantity - ooi.dispatched_quantity) AS remaining_quantity,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit,
+        COALESCE(s.qty_on_hand, 0.00) AS available_stock
+    FROM outbound_order_items ooi
+    JOIN items i ON ooi.item_id = i.item_id
+    JOIN outbound_orders oo ON ooi.outbound_order_id = oo.outbound_order_id
+    LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = oo.warehouse_id
+    WHERE oo.warehouse_id = :wid AND oo.status IN ('pending', 'partially_dispatched')
+    ORDER BY ooi.item_entry_id ASC
+");
+$stmtOutLines->execute([':wid' => $currentWarehouseId]);
+foreach ($stmtOutLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
+    $outboundOrderLines[(int)$line['outbound_order_id']][] = $line;
+}
+
+$pendingInboundCount  = count($pendingInboundOrders);
+$pendingOutboundCount = count($pendingOutboundOrders);
+$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['source_type'] ?? '') === 'CUSTOMER_RETURN'));
+$supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_type'] ?? '') === 'SUPPLIER_RETURN'));
 ?>
 
 <!-- Page Header -->
@@ -366,19 +561,19 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
 <!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
     <!-- Inbound KPI Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
+    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="stat-card" style="border-left: 4px solid #F59E0B;">
             <div class="stat-header">
-                <span class="stat-label">Total Inbound</span>
-                <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
+                <span class="stat-label">Pending Inbounds</span>
+                <div class="stat-icon-wrap" aria-hidden="true" style="color: #D97706; background: #FEF3C7;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="17" y1="7" x2="7" y2="17"/>
-                        <polyline points="17 17 7 17 7 7"/>
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
                     </svg>
                 </div>
             </div>
-            <div class="stat-value"><?= $totalStockInTxns ?></div>
-            <div class="stat-meta">Completed inbound receipts</div>
+            <div class="stat-value"><?= $pendingInboundCount ?></div>
+            <div class="stat-meta">Awaiting warehouse dock receiving</div>
         </div>
 
         <div class="stat-card stat-gold">
@@ -393,7 +588,7 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                 </div>
             </div>
             <div class="stat-value"><?= $procurementInbounds ?></div>
-            <div class="stat-meta">Inbound raw ingredients received via PO</div>
+            <div class="stat-meta">Inbound ingredients received via PO</div>
         </div>
 
         <div class="stat-card">
@@ -407,7 +602,128 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                 </div>
             </div>
             <div class="stat-value"><?= $productionInbounds ?></div>
-            <div class="stat-meta">Distilled / packaged bottles received</div>
+            <div class="stat-meta">Bottles received from distillery</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <span class="stat-label">Customer Returns (RMA)</span>
+                <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #F3E8FF;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 14 4 9 9 4"/>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="stat-value"><?= $customerReturnsCount ?></div>
+            <div class="stat-meta">RMA sales returns processed</div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- INBOUND QUEUE: EXPECTED SHIPMENTS (RECEIVING DOCK)                   -->
+    <!-- ===================================================================== -->
+    <div class="card" style="margin-bottom: 24px; border-top: 3px solid #15803D;">
+        <div class="card-header">
+            <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h2 class="card-title" style="margin: 0;">Expected Inbound Shipments (Receiving Dock)</h2>
+                    <span class="badge status-pending" style="font-size: 11px; padding: 2px 8px;"><?= $pendingInboundCount ?> Orders Awaiting Check-In</span>
+                </div>
+                <p class="card-desc" style="margin: 4px 0 0 0;">
+                    Document-driven receiving: Select an open PO, Production Batch, or Customer RMA return to verify and accept into stock
+                </p>
+            </div>
+            <div>
+                <button type="button" class="btn btn-primary" onclick="openNewInboundOrderModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <span>+ Register Inbound Order / RMA</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order / Tracking #</th>
+                        <th>Document Type</th>
+                        <th>Supplier / Customer / Origin</th>
+                        <th>Expected Items &amp; Quantity</th>
+                        <th>Expected Date</th>
+                        <th>Queue Status</th>
+                        <th style="text-align: right;">Receiving Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($pendingInboundOrders)): ?>
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: var(--gray); padding: 32px;">
+                                No pending inbound shipments in queue for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?>. All incoming orders are fully received!
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($pendingInboundOrders as $pIn): 
+                            $lines = $inboundOrderLines[(int)$pIn['inbound_order_id']] ?? [];
+                        ?>
+                            <tr>
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
+                                    <?= htmlspecialchars($pIn['order_number']) ?>
+                                </td>
+                                <td>
+                                    <?php if ($pIn['source_type'] === 'PURCHASE_ORDER'): ?>
+                                        <span class="badge-source-procurement">Purchase Order</span>
+                                    <?php elseif ($pIn['source_type'] === 'PRODUCTION_RECEIPT' || $pIn['source_type'] === 'PRODUCTION_RETURN'): ?>
+                                        <span class="badge-source-production">Production Batch</span>
+                                    <?php elseif ($pIn['source_type'] === 'CUSTOMER_RETURN'): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer RMA Return</span>
+                                    <?php else: ?>
+                                        <span class="badge-source-manual"><?= htmlspecialchars($pIn['source_type']) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <strong><?= htmlspecialchars($pIn['entity_name']) ?></strong>
+                                    <?php if (!empty($pIn['notes'])): ?>
+                                        <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($pIn['notes']) ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (!empty($lines)): ?>
+                                        <div style="font-size: 12.5px; font-weight: 600;">
+                                            <?php foreach ($lines as $l): ?>
+                                                <div style="margin-bottom: 2px;">
+                                                    <?= htmlspecialchars($l['item_name']) ?>:
+                                                    <span style="color: #15803D;"><?= formatQty($l['remaining_quantity']) ?> <?= htmlspecialchars($l['unit']) ?></span>
+                                                    <?php if ((float)$l['received_quantity'] > 0): ?>
+                                                        <small style="color: var(--gray); font-weight: normal;">(<?= formatQty($l['received_quantity']) ?> already received)</small>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="color: var(--gray);"><?= formatQty($pIn['total_expected_qty']) ?> items</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="font-size: 12.5px; color: var(--gray); white-space: nowrap;">
+                                    <?= $pIn['expected_date'] ? date('M d, Y', strtotime($pIn['expected_date'])) : '—' ?>
+                                </td>
+                                <td>
+                                    <?php if ($pIn['status'] === 'partially_received'): ?>
+                                        <span class="badge status-pending">Partially Received</span>
+                                    <?php else: ?>
+                                        <span class="badge status-pending" style="background: #E0F2FE; color: #0369A1; border-color: #BAE6FD;">Awaiting Arrival</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="openReceiveOrderModal(<?= (int)$pIn['inbound_order_id'] ?>)">
+                                        Receive Shipment &rarr;
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -415,7 +731,8 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
     <div class="card">
         <div class="card-header">
             <div>
-                <h2 class="card-title">Inbound / Stock In Transactions</h2>
+                <h2 class="card-title">Completed Inbound Receipts (Transaction Ledger)</h2>
+                <p class="card-desc">Audited chronological ledger of completed stock-in movements</p>
             </div>
             <div class="filter-group">
                 <!-- Search Filter -->
@@ -434,7 +751,8 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     <option value="">All Sources</option>
                     <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
                     <option value="PRODUCTION_RETURN">Production (Work Orders)</option>
-                    <option value="MANUAL">Internal / Adjustment</option>
+                    <option value="CUSTOMER_RETURN">Customer (RMA Returns)</option>
+                    <option value="MANUAL">Internal / Direct Exception</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -448,9 +766,11 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     Reset
                 </button>
 
-                <button type="button" class="btn btn-primary" onclick="openRecordStockInModal()">
-                    + Record Stock In
-                </button>
+                <?php if (in_array($currentUser['role'] ?? '', ['super_admin', 'admin'], true)): ?>
+                    <button type="button" class="btn btn-secondary" onclick="openRecordStockInModal()" title="Direct emergency receipt override">
+                        + Direct Stock In (Admin)
+                    </button>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -658,19 +978,19 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
 <!-- ######################################################################### -->
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
     <!-- Outbound KPI Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
+    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="stat-card" style="border-left: 4px solid #DC2626;">
             <div class="stat-header">
-                <span class="stat-label">Total Outbound</span>
-                <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
+                <span class="stat-label">Pending Dispatches</span>
+                <div class="stat-icon-wrap" aria-hidden="true" style="color: #DC2626; background: #FEE2E2;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="7" y1="17" x2="17" y2="7"/>
-                        <polyline points="7 7 17 7 17 17"/>
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
                     </svg>
                 </div>
             </div>
-            <div class="stat-value"><?= $totalStockOutTxns ?></div>
-            <div class="stat-meta">Completed outbound dispatches</div>
+            <div class="stat-value"><?= $pendingOutboundCount ?></div>
+            <div class="stat-meta">Awaiting warehouse picking &amp; shipping</div>
         </div>
 
         <div class="stat-card">
@@ -703,14 +1023,127 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
             <div class="stat-value"><?= $materialRequests ?></div>
             <div class="stat-meta">Raw materials issued to distilling line</div>
         </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <span class="stat-label">Supplier Returns (RTV)</span>
+                <div class="stat-icon-wrap" aria-hidden="true" style="color: #B45309; background: #FEF3C7;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 10 20 15 15 20"/>
+                        <path d="M4 4v7a4 4 0 0 0 4 4h12"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="stat-value"><?= $supplierReturnsCount ?></div>
+            <div class="stat-meta">Defective items returned to vendors</div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- OUTBOUND QUEUE: PENDING ORDERS (FULFILLMENT & SHIPPING DOCK)          -->
+    <!-- ===================================================================== -->
+    <div class="card" style="margin-bottom: 24px; border-top: 3px solid #DC2626;">
+        <div class="card-header">
+            <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h2 class="card-title" style="margin: 0;">Pending Outbound Orders (Fulfillment &amp; Shipping Dock)</h2>
+                    <span class="badge status-pending" style="font-size: 11px; padding: 2px 8px;"><?= $pendingOutboundCount ?> Orders Awaiting Dispatch</span>
+                </div>
+                <p class="card-desc" style="margin: 4px 0 0 0;">
+                    Document-driven fulfillment: Select an approved Sales Order, Material Requisition, or Return to Vendor (RTV) to pack and ship
+                </p>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order / Requisition #</th>
+                        <th>Document Type</th>
+                        <th>Customer / Recipient / Vendor</th>
+                        <th>Requested Items &amp; Quantity</th>
+                        <th>Required Date</th>
+                        <th>Queue Status</th>
+                        <th style="text-align: right;">Fulfillment Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($pendingOutboundOrders)): ?>
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: var(--gray); padding: 32px;">
+                                No pending outbound orders in queue for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?>. All orders are fully fulfilled and dispatched!
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($pendingOutboundOrders as $pOut): 
+                            $lines = $outboundOrderLines[(int)$pOut['outbound_order_id']] ?? [];
+                        ?>
+                            <tr>
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
+                                    <?= htmlspecialchars($pOut['order_number']) ?>
+                                </td>
+                                <td>
+                                    <?php if ($pOut['source_type'] === 'SALES_DELIVERY'): ?>
+                                        <span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>
+                                    <?php elseif ($pOut['source_type'] === 'MATERIAL_REQUEST'): ?>
+                                        <span class="badge-source-production">Material Requisition</span>
+                                    <?php elseif ($pOut['source_type'] === 'SUPPLIER_RETURN'): ?>
+                                        <span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D;">Return to Vendor (RTV)</span>
+                                    <?php else: ?>
+                                        <span class="badge-source-manual"><?= htmlspecialchars($pOut['source_type']) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <strong><?= htmlspecialchars($pOut['entity_name']) ?></strong>
+                                    <?php if (!empty($pOut['notes'])): ?>
+                                        <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($pOut['notes']) ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (!empty($lines)): ?>
+                                        <div style="font-size: 12.5px; font-weight: 600;">
+                                            <?php foreach ($lines as $l): ?>
+                                                <div style="margin-bottom: 2px;">
+                                                    <?= htmlspecialchars($l['item_name']) ?>:
+                                                    <span style="color: #DC2626;"><?= formatQty($l['remaining_quantity']) ?> <?= htmlspecialchars($l['unit']) ?></span>
+                                                    <small style="color: var(--gray); font-weight: normal;">(Avail: <?= formatQty($l['available_stock']) ?>)</small>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="color: var(--gray);"><?= formatQty($pOut['total_requested_qty']) ?> items</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="font-size: 12.5px; color: var(--gray); white-space: nowrap;">
+                                    <?= $pOut['required_date'] ? date('M d, Y', strtotime($pOut['required_date'])) : '—' ?>
+                                </td>
+                                <td>
+                                    <?php if ($pOut['status'] === 'partially_dispatched'): ?>
+                                        <span class="badge status-pending">Partially Dispatched</span>
+                                    <?php else: ?>
+                                        <span class="badge status-pending" style="background: #FEF3C7; color: #B45309; border-color: #FDE68A;">Ready for Dispatch</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="openDispatchOrderModal(<?= (int)$pOut['outbound_order_id'] ?>)">
+                                        Dispatch Order &rarr;
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Outbound Main Table Card -->
     <div class="card">
         <div class="card-header">
             <div>
-                <h2 class="card-title">Outbound / Stock Out Dispatches</h2>
-                <p class="card-desc">Real-time log of stock releases requested through Production and Sales API integrations</p>
+                <h2 class="card-title">Completed Outbound Dispatches (Transaction Ledger)</h2>
+                <p class="card-desc">Audited permanent ledger of completed stock-out dispatches</p>
             </div>
             <div class="filter-group">
                 <!-- Search Filter -->
@@ -729,7 +1162,8 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     <option value="">All Destinations</option>
                     <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
                     <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
-                    <option value="MANUAL">Internal / Manual</option>
+                    <option value="SUPPLIER_RETURN">Supplier Returns (RTV)</option>
+                    <option value="MANUAL">Internal / Direct Exception</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -743,9 +1177,11 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
                     Reset
                 </button>
 
-                <button type="button" class="btn btn-primary" onclick="openRecordStockOutModal()">
-                    + Record Stock Out
-                </button>
+                <?php if (in_array($currentUser['role'] ?? '', ['super_admin', 'admin'], true)): ?>
+                    <button type="button" class="btn btn-secondary" onclick="openRecordStockOutModal()" title="Emergency direct dispatch override">
+                        + Direct Stock Out (Admin)
+                    </button>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -1175,6 +1611,284 @@ $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeRecordStockOutModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary" <?= empty($availableItems) ? 'disabled' : '' ?>>Record Stock Out</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: RECEIVE INBOUND ORDER / SHIPMENT (DOCUMENT-DRIVEN RECEIVING & QA)  -->
+<!-- ========================================================================= -->
+<div id="receiveOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="receiveOrderModalTitle" onclick="if(event.target === this) closeReceiveOrderModal()">
+    <div class="modal-card" style="max-width: 680px;">
+        <form method="POST" action="index.php?tab=inbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="receive_inbound_order">
+            <input type="hidden" name="active_tab" value="inbound">
+            <input type="hidden" name="inbound_order_id" id="receiveInboundOrderId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="receiveOrderModalTitle" class="card-title" style="margin: 0; color: #15803D;">Receive Inbound Shipment</h3>
+                    <p class="card-desc" style="margin: 0;">Perform quality inspection, confirm quantities, and receive into warehouse</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeReceiveOrderModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Summary Card -->
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12.5px;">
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Order / Tracking #</div>
+                        <div id="recOrderNum" style="font-family: monospace; font-weight: 700; color: var(--panel-ink); font-size: 13.5px; margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Document Type</div>
+                        <div id="recOrderTypeBadge" style="margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Supplier / Origin</div>
+                        <div id="recOrderEntity" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Expected Date</div>
+                        <div id="recOrderDate" style="color: var(--panel-ink); margin-top: 2px;">—</div>
+                    </div>
+                </div>
+
+                <!-- Condition Selection (QA Disposition & Customer RMA routing) -->
+                <div id="recConditionGroup" style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 12px 14px;">
+                    <label for="receiveCondition" style="font-size: 12.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
+                        Quality Inspection &amp; Stock Disposition <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_condition" id="receiveCondition" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px; font-size: 13px;" onchange="handleReceiveConditionChange(this)">
+                        <option value="salable">Passed Inspection / Salable &mdash; Receive into Available Stock (Stock In)</option>
+                        <option value="damaged">Damaged / Defective / Expired &mdash; Route directly to Bad Products Discard</option>
+                    </select>
+                    <small id="recConditionHint" style="display: block; margin-top: 4px; font-size: 11.5px; color: #15803D;">
+                        Salable items will increase current inventory balance.
+                    </small>
+                </div>
+
+                <!-- Line Items Table -->
+                <div>
+                    <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Line Items to Receive
+                    </label>
+                    <div class="table-responsive" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+                        <table style="width: 100%; font-size: 12.5px; margin: 0;">
+                            <thead>
+                                <tr style="background: #F8FAFC;">
+                                    <th>Item Code &amp; Name</th>
+                                    <th style="text-align: right;">Expected</th>
+                                    <th style="text-align: right;">Received</th>
+                                    <th style="text-align: right;">Remaining</th>
+                                    <th style="width: 140px; text-align: right;">Receive Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="receiveOrderLinesTbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Receiving Remarks -->
+                <div>
+                    <label for="receiveRemarks" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">
+                        Receiving / QA Inspection Notes
+                    </label>
+                    <textarea name="remarks" id="receiveRemarks" class="search-box" style="width: 100%; border-radius: 6px; height: 50px; padding: 8px 12px; resize: vertical;" placeholder="Optional inspection remarks, batch numbers, or carrier notes..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeReceiveOrderModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btnConfirmReceive" style="background: #15803D; border-color: #15803D;">Confirm &amp; Receive Shipment</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: REGISTER INBOUND ORDER (PO / PRODUCTION RECEIPT / CUSTOMER RMA)    -->
+<!-- ========================================================================= -->
+<div id="newInboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newInboundOrderModalTitle" onclick="if(event.target === this) closeNewInboundOrderModal()">
+    <div class="modal-card" style="max-width: 540px;">
+        <form method="POST" action="index.php?tab=inbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_inbound_order">
+            <input type="hidden" name="active_tab" value="inbound">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="newInboundOrderModalTitle" class="card-title">Register Inbound Order / RMA</h3>
+                    <p class="card-desc">Add an expected shipment document to the receiving queue for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewInboundOrderModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Source Type -->
+                <div>
+                    <label for="newInSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Document Type <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="source_type" id="newInSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterNewInboundItems()">
+                        <option value="PURCHASE_ORDER">Purchase Order &mdash; Supplier Delivery (Raw Materials)</option>
+                        <option value="PRODUCTION_RECEIPT">Production Receipt &mdash; Distillery Output (Finished Goods)</option>
+                        <option value="CUSTOMER_RETURN">Customer Return &mdash; RMA Return (Finished Goods)</option>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <!-- Order / Tracking Number -->
+                    <div>
+                        <label for="newInOrderNumber" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Document / RMA # <span style="color: #DC2626;">*</span>
+                        </label>
+                        <input type="text" name="order_number" id="newInOrderNumber" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. PO-2026-088 or RMA-042" required>
+                    </div>
+
+                    <!-- Expected Date -->
+                    <div>
+                        <label for="newInExpectedDate" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Expected Date
+                        </label>
+                        <input type="date" name="expected_date" id="newInExpectedDate" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" value="<?= date('Y-m-d') ?>">
+                    </div>
+                </div>
+
+                <!-- Supplier / Customer / Origin -->
+                <div>
+                    <label for="newInEntityName" id="newInEntityLabel" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Supplier / Origin Name <span style="color: #DC2626;">*</span>
+                    </label>
+                    <input type="text" name="entity_name" id="newInEntityName" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="150" placeholder="e.g. Apex Glassware Ltd. or Customer Name" required>
+                </div>
+
+                <!-- Item Selection -->
+                <div>
+                    <label for="newInItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Expected Item <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select name="item_id" id="newInItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleNewInItemChange(this)">
+                        <option value="">-- Select Item --</option>
+                        <?php foreach ($allItems as $it): ?>
+                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
+                                [<?= $it['item_type'] === 'finished_good' ? 'Finished Good' : 'Raw Material' ?>] <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Expected Quantity -->
+                <div>
+                    <label for="newInQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Expected Quantity <span style="color: #DC2626;">*</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" step="any" min="0.001" name="quantity" id="newInQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
+                        <span id="newInUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label for="newInNotes" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Order Instructions / Notes
+                    </label>
+                    <textarea name="notes" id="newInNotes" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px; resize: vertical;" placeholder="Optional details, return reason, or tracking information..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeNewInboundOrderModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add to Receiving Queue</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: DISPATCH OUTBOUND ORDER (FULFILLMENT, ALLOCATION & DISPATCH)        -->
+<!-- ========================================================================= -->
+<div id="dispatchOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dispatchOrderModalTitle" onclick="if(event.target === this) closeDispatchOrderModal()">
+    <div class="modal-card" style="max-width: 680px;">
+        <form method="POST" action="index.php?tab=outbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="dispatch_outbound_order">
+            <input type="hidden" name="active_tab" value="outbound">
+            <input type="hidden" name="outbound_order_id" id="dispatchOutboundOrderId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="dispatchOrderModalTitle" class="card-title" style="margin: 0; color: #1D4ED8;">Fulfill &amp; Dispatch Outbound Order</h3>
+                    <p class="card-desc" style="margin: 0;">Verify available inventory, pack quantities, and dispatch to carrier or department</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeDispatchOrderModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Summary Card -->
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12.5px;">
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Order / Requisition #</div>
+                        <div id="dispOrderNum" style="font-family: monospace; font-weight: 700; color: var(--panel-ink); font-size: 13.5px; margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Document Type</div>
+                        <div id="dispOrderTypeBadge" style="margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Customer / Destination</div>
+                        <div id="dispOrderEntity" style="font-weight: 600; color: var(--panel-ink); margin-top: 2px;">—</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Required Date</div>
+                        <div id="dispOrderDate" style="color: var(--panel-ink); margin-top: 2px;">—</div>
+                    </div>
+                </div>
+
+                <!-- Line Items Table -->
+                <div>
+                    <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Requested Items &amp; Stock Availability
+                    </label>
+                    <div class="table-responsive" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+                        <table style="width: 100%; font-size: 12.5px; margin: 0;">
+                            <thead>
+                                <tr style="background: #F8FAFC;">
+                                    <th>Item Code &amp; Name</th>
+                                    <th style="text-align: right;">Available Stock</th>
+                                    <th style="text-align: right;">Requested</th>
+                                    <th style="text-align: right;">Remaining</th>
+                                    <th style="width: 140px; text-align: right;">Dispatch Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dispatchOrderLinesTbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Dispatch Remarks -->
+                <div>
+                    <label for="dispatchRemarks" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">
+                        Carrier / Dispatch Notes
+                    </label>
+                    <textarea name="remarks" id="dispatchRemarks" class="search-box" style="width: 100%; border-radius: 6px; height: 50px; padding: 8px 12px; resize: vertical;" placeholder="Optional carrier details, tracking #, or fulfillment notes..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeDispatchOrderModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btnConfirmDispatch" style="background: #1D4ED8; border-color: #1D4ED8;">Confirm &amp; Dispatch Order</button>
             </div>
         </form>
     </div>
@@ -1646,9 +2360,269 @@ function closeCancelStockOutModal() {
     }
 }
 
+// =============================================================================
+// ERP DOCUMENT QUEUES: RECEIVING & FULFILLMENT CONTROLLERS
+// =============================================================================
+const pendingInOrdersData   = <?= json_encode($pendingInboundOrders) ?>;
+const inLinesData           = <?= json_encode($inboundOrderLines) ?>;
+const pendingOutOrdersData  = <?= json_encode($pendingOutboundOrders) ?>;
+const outLinesOrderData     = <?= json_encode($outboundOrderLines) ?>;
+
+const pendingInMap = {};
+pendingInOrdersData.forEach(o => { pendingInMap[o.inbound_order_id] = o; });
+
+const pendingOutMap = {};
+pendingOutOrdersData.forEach(o => { pendingOutMap[o.outbound_order_id] = o; });
+
+// -----------------------------------------------------------------------------
+// Inbound Order Receiving
+// -----------------------------------------------------------------------------
+function openReceiveOrderModal(id) {
+    const order = pendingInMap[id];
+    if (!order) return;
+
+    document.getElementById('receiveInboundOrderId').value = id;
+    document.getElementById('recOrderNum').textContent = order.order_number || '—';
+
+    let badgeHtml = '';
+    if (order.source_type === 'PURCHASE_ORDER') {
+        badgeHtml = '<span class="badge-source-procurement">Purchase Order</span>';
+    } else if (order.source_type === 'PRODUCTION_RECEIPT' || order.source_type === 'PRODUCTION_RETURN') {
+        badgeHtml = '<span class="badge-source-production">Production Batch</span>';
+    } else if (order.source_type === 'CUSTOMER_RETURN') {
+        badgeHtml = '<span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer RMA Return</span>';
+    } else {
+        badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
+    }
+    document.getElementById('recOrderTypeBadge').innerHTML = badgeHtml;
+    document.getElementById('recOrderEntity').textContent = order.entity_name || '—';
+    document.getElementById('recOrderDate').textContent = order.expected_date ? order.expected_date : '—';
+    document.getElementById('receiveRemarks').value = '';
+
+    const condSelect = document.getElementById('receiveCondition');
+    const condHint   = document.getElementById('recConditionHint');
+    const submitBtn  = document.getElementById('btnConfirmReceive');
+
+    if (order.source_type === 'CUSTOMER_RETURN') {
+        condSelect.value = 'salable';
+        condHint.textContent = 'Customer returns: Select whether returned items passed QA for restock or should be discarded.';
+        submitBtn.textContent = 'Confirm & Receive RMA';
+        submitBtn.style.background = '#6D28D9';
+        submitBtn.style.borderColor = '#6D28D9';
+    } else {
+        condSelect.value = 'salable';
+        condHint.textContent = 'Salable items will increase current inventory balance.';
+        submitBtn.textContent = 'Confirm & Receive Shipment';
+        submitBtn.style.background = '#15803D';
+        submitBtn.style.borderColor = '#15803D';
+    }
+
+    const tbody = document.getElementById('receiveOrderLinesTbody');
+    tbody.innerHTML = '';
+    const lines = inLinesData[id] || [];
+    if (lines.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--gray); padding: 16px;">No line items pending receipt.</td></tr>';
+    } else {
+        lines.forEach(l => {
+            const tr = document.createElement('tr');
+            const rem = parseFloat(l.remaining_quantity);
+            tr.innerHTML = `
+                <td style="padding: 8px 10px;">
+                    <div style="font-weight: 700; color: var(--panel-ink);">${escapeHtml(l.item_name)}</div>
+                    <small style="font-family: monospace; color: var(--gray); font-size: 11px;">${escapeHtml(l.item_code)}</small>
+                </td>
+                <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.expected_quantity)} ${escapeHtml(l.unit)}</td>
+                <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.received_quantity)} ${escapeHtml(l.unit)}</td>
+                <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #15803D;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
+                <td style="text-align: right; padding: 8px 10px;">
+                    <input type="number" step="any" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="${rem}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    const modal = document.getElementById('receiveOrderModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeReceiveOrderModal() {
+    const modal = document.getElementById('receiveOrderModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
+function handleReceiveConditionChange(selectEl) {
+    const hint = document.getElementById('recConditionHint');
+    const submitBtn = document.getElementById('btnConfirmReceive');
+    if (selectEl.value === 'damaged') {
+        hint.textContent = 'Damaged returns will NOT enter active stock. They will be logged directly into Bad Products Discard.';
+        submitBtn.textContent = 'Confirm Damaged Discard (Bad Products)';
+        submitBtn.style.background = '#B91C1C';
+        submitBtn.style.borderColor = '#B91C1C';
+    } else {
+        hint.textContent = 'Salable items will increase current inventory balance.';
+        submitBtn.textContent = 'Confirm & Receive Shipment';
+        submitBtn.style.background = '#15803D';
+        submitBtn.style.borderColor = '#15803D';
+    }
+}
+
+function openNewInboundOrderModal() {
+    filterNewInboundItems();
+    const modal = document.getElementById('newInboundOrderModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeNewInboundOrderModal() {
+    const modal = document.getElementById('newInboundOrderModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
+function filterNewInboundItems() {
+    const sourceSelect = document.getElementById('newInSourceType');
+    const itemSelect = document.getElementById('newInItemSelect');
+    const entityLabel = document.getElementById('newInEntityLabel');
+    const entityInput = document.getElementById('newInEntityName');
+    if (!sourceSelect || !itemSelect) return;
+
+    const source = sourceSelect.value;
+    const targetType = (source === 'PURCHASE_ORDER') ? 'raw_material' : 'finished_good';
+
+    if (source === 'PURCHASE_ORDER') {
+        if (entityLabel) entityLabel.innerHTML = 'Supplier / Vendor Name <span style="color: #DC2626;">*</span>';
+        if (entityInput) entityInput.placeholder = 'e.g. Apex Glassware Ltd. or Grain Harvest Co.';
+    } else if (source === 'PRODUCTION_RECEIPT') {
+        if (entityLabel) entityLabel.innerHTML = 'Production Facility / Plant <span style="color: #DC2626;">*</span>';
+        if (entityInput) entityInput.placeholder = 'e.g. Distillery Plant 1 — Bottling Line A';
+    } else if (source === 'CUSTOMER_RETURN') {
+        if (entityLabel) entityLabel.innerHTML = 'Customer / Client Name <span style="color: #DC2626;">*</span>';
+        if (entityInput) entityInput.placeholder = 'e.g. The Grand Hotel & Bar (Client RMA)';
+    }
+
+    let validCount = 0;
+    Array.from(itemSelect.options).forEach((opt, idx) => {
+        if (idx === 0) return;
+        const itemType = opt.getAttribute('data-type');
+        const matches = (itemType === targetType);
+        opt.hidden = !matches;
+        opt.disabled = !matches;
+        opt.style.display = matches ? '' : 'none';
+        if (matches) validCount++;
+    });
+
+    const selectedOpt = itemSelect.selectedOptions[0];
+    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
+        itemSelect.value = '';
+        handleNewInItemChange(itemSelect);
+    }
+    const defaultOpt = itemSelect.options[0];
+    if (defaultOpt) {
+        defaultOpt.textContent = (targetType === 'finished_good')
+            ? (validCount > 0 ? '-- Select Finished Good --' : '-- No active finished goods --')
+            : (validCount > 0 ? '-- Select Raw Material --' : '-- No active raw materials --');
+    }
+}
+
+function handleNewInItemChange(selectEl) {
+    const opt = selectEl.selectedOptions[0];
+    const unitLabel = document.getElementById('newInUnitLabel');
+    if (opt && opt.value) {
+        unitLabel.textContent = opt.getAttribute('data-unit') || '—';
+    } else {
+        unitLabel.textContent = '—';
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Outbound Order Dispatching
+// -----------------------------------------------------------------------------
+function openDispatchOrderModal(id) {
+    const order = pendingOutMap[id];
+    if (!order) return;
+
+    document.getElementById('dispatchOutboundOrderId').value = id;
+    document.getElementById('dispOrderNum').textContent = order.order_number || '—';
+
+    let badgeHtml = '';
+    if (order.source_type === 'SALES_DELIVERY') {
+        badgeHtml = '<span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>';
+    } else if (order.source_type === 'MATERIAL_REQUEST') {
+        badgeHtml = '<span class="badge-source-production">Material Requisition</span>';
+    } else if (order.source_type === 'SUPPLIER_RETURN') {
+        badgeHtml = '<span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D;">Return to Vendor (RTV)</span>';
+    } else {
+        badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
+    }
+    document.getElementById('dispOrderTypeBadge').innerHTML = badgeHtml;
+    document.getElementById('dispOrderEntity').textContent = order.entity_name || '—';
+    document.getElementById('dispOrderDate').textContent = order.required_date ? order.required_date : '—';
+    document.getElementById('dispatchRemarks').value = '';
+
+    const tbody = document.getElementById('dispatchOrderLinesTbody');
+    tbody.innerHTML = '';
+    const lines = outLinesOrderData[id] || [];
+
+    if (lines.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--gray); padding: 16px;">No line items pending dispatch.</td></tr>';
+    } else {
+        lines.forEach(l => {
+            const tr = document.createElement('tr');
+            const rem = parseFloat(l.remaining_quantity);
+            const avail = parseFloat(l.available_stock || 0);
+            const maxDispatch = Math.min(rem, avail);
+            const isShort = avail < rem;
+
+            tr.innerHTML = `
+                <td style="padding: 8px 10px;">
+                    <div style="font-weight: 700; color: var(--panel-ink);">${escapeHtml(l.item_name)}</div>
+                    <small style="font-family: monospace; color: var(--gray); font-size: 11px;">${escapeHtml(l.item_code)}</small>
+                </td>
+                <td style="text-align: right; padding: 8px 10px;">
+                    <span class="badge" style="${isShort ? 'background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA;' : 'background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0;'}">
+                        ${formatQty(avail)} ${escapeHtml(l.unit)}
+                    </span>
+                </td>
+                <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.requested_quantity)} ${escapeHtml(l.unit)}</td>
+                <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #B91C1C;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
+                <td style="text-align: right; padding: 8px 10px;">
+                    <input type="number" step="any" min="0" max="${rem}" name="dispatched_quantity[${l.item_id}]" value="${maxDispatch}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    const modal = document.getElementById('dispatchOrderModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeDispatchOrderModal() {
+    const modal = document.getElementById('dispatchOrderModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     filterStockInModalItems();
     filterStockOutModalItems();
+    filterNewInboundItems();
 });
 </script>
 

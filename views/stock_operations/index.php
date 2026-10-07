@@ -85,7 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $destWhId,
                         [['item_id' => $itemId, 'quantity' => $quantity]],
                         $userId,
-                        $remarks ?: null
+                        $remarks ?: null,
+                        $currentUser
                     );
                     $successMessage = "Transfer initiated successfully! Transaction reference: " . htmlspecialchars($result['transaction_number']);
                     break;
@@ -142,18 +143,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser
                     );
 
-                    // Auto-approve adjustment immediately for instant inventory balance update
+                    // Auto-approve adjustment immediately if creator is super_admin
                     $adjId = (int)($result['stock_adjustment_id'] ?? 0);
-                    if ($adjId > 0) {
+                    if ($adjId > 0 && ($currentUser['role'] ?? '') === 'super_admin') {
                         $apprResult = $stockService->approveStockAdjustment($adjId, $userId, $currentUser);
                         $successMessage = "Stock adjustment " . htmlspecialchars($apprResult['transaction_number']) . " applied and approved immediately! Physical inventory updated.";
                     } else {
-                        $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " created successfully!";
+                        $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " created successfully and is pending Super Admin approval.";
                     }
                     break;
 
                 case 'approve_adjustment':
                     $activeTab = 'adjustment';
+                    if (($currentUser['role'] ?? '') !== 'super_admin') {
+                        throw new DomainException("Access Denied: Only super_admin can approve stock adjustments.");
+                    }
                     $adjId     = (int)($_POST['stock_adjustment_id'] ?? 0);
                     if ($adjId <= 0) {
                         throw new InvalidArgumentException("Invalid adjustment reference ID.");
@@ -482,8 +486,8 @@ if ($selectedItemId > 0) {
                 sm.created_at,
                 sa.difference AS adjustment_difference,
                 SUM(CASE 
-                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
-                    WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+                    WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                     WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                     ELSE 0 
                 END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
@@ -495,12 +499,12 @@ if ($selectedItemId > 0) {
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
             CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
                 ELSE 0 
             END AS quantity_in,
             CASE 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
                 ELSE 0 
             END AS quantity_out,
@@ -516,8 +520,12 @@ if ($selectedItemId > 0) {
     $params = [$selectedItemId, $currentWarehouseId];
 
     if (!empty($movementType)) {
-        $sql .= " AND sm.movement_type = ?";
-        $params[] = $movementType;
+        if ($movementType === 'BAD_PRODUCT' || $movementType === 'BAD_PRODUCT_DISCARD') {
+            $sql .= " AND (sm.movement_type = 'BAD_PRODUCT_DISCARD' OR sm.movement_type = 'BAD_PRODUCT')";
+        } else {
+            $sql .= " AND sm.movement_type = ?";
+            $params[] = $movementType;
+        }
     }
 
     if (!empty($startDate)) {
@@ -1279,7 +1287,9 @@ if ($selectedItemId > 0) {
                     <option value="STOCK_TRANSFER_IN" <?= $movementType === 'STOCK_TRANSFER_IN' ? 'selected' : '' ?>>Transfer In</option>
                     <option value="STOCK_TRANSFER_OUT" <?= $movementType === 'STOCK_TRANSFER_OUT' ? 'selected' : '' ?>>Transfer Out</option>
                     <option value="STOCK_ADJUSTMENT" <?= $movementType === 'STOCK_ADJUSTMENT' ? 'selected' : '' ?>>Stock Adjustment</option>
-                    <option value="BAD_PRODUCT" <?= $movementType === 'BAD_PRODUCT' ? 'selected' : '' ?>>Damaged / Defective</option>
+                    <option value="BAD_PRODUCT_DISCARD" <?= ($movementType === 'BAD_PRODUCT_DISCARD' || $movementType === 'BAD_PRODUCT') ? 'selected' : '' ?>>Damaged / Defective</option>
+                    <option value="CANCELLED_INBOUND" <?= $movementType === 'CANCELLED_INBOUND' ? 'selected' : '' ?>>Cancelled Inbound</option>
+                    <option value="CANCELLED_OUTBOUND" <?= $movementType === 'CANCELLED_OUTBOUND' ? 'selected' : '' ?>>Cancelled Outbound</option>
                 </select>
             </div>
 
@@ -1369,7 +1379,9 @@ if ($selectedItemId > 0) {
                                 $qtyOut = (float)$m['quantity_out'];
                                 $isTransfer = strpos($m['movement_type'], 'TRANSFER') !== false;
                                 $isAdj = strpos($m['movement_type'], 'ADJUSTMENT') !== false;
-                                $pillClass = $isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($qtyIn > 0 ? 'mov-in' : 'mov-out'));
+                                $isBad = strpos($m['movement_type'], 'BAD') !== false;
+                                $isCancel = strpos($m['movement_type'], 'CANCEL') !== false;
+                                $pillClass = $isCancel ? 'status-cancelled' : ($isBad ? 'mov-out' : ($isTransfer ? 'mov-transfer' : ($isAdj ? 'mov-adj' : ($qtyIn > 0 ? 'mov-in' : 'mov-out'))));
                             ?>
                             <tr>
                                 <td style="font-size: 12.5px; white-space: nowrap; color: var(--gray);">
@@ -2038,6 +2050,8 @@ if ($selectedItemId > 0) {
 <!-- JAVASCRIPT LOGIC                                                          -->
 <!-- ========================================================================= -->
 <script>
+const isSuperAdminUser = <?= json_encode($isSuperAdmin) ?>;
+
 // Protect creation modals from accidental backdrop-click dismissal when forms contain unsaved input
 function handleOpsBackdropClose(event, modalEl, closeFn) {
     if (event.target !== modalEl) return;
@@ -2450,14 +2464,20 @@ function openAdjDetailModal(row) {
     const footerEl = document.getElementById('modalAdjFooter');
     if (actionBtns) {
         if (row.status === 'pending') {
-            actionBtns.innerHTML = `
-                <button type="button" class="btn btn-primary" style="background: #15803D; border-color: #15803D;" onclick="closeAdjDetailModal(); openApproveModal(currentDetailAdjRow);">
-                    Approve
-                </button>
+            let btns = '';
+            if (isSuperAdminUser) {
+                btns += `
+                    <button type="button" class="btn btn-primary" style="background: #15803D; border-color: #15803D;" onclick="closeAdjDetailModal(); openApproveModal(currentDetailAdjRow);">
+                        Approve
+                    </button>
+                `;
+            }
+            btns += `
                 <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openRejectModal(currentDetailAdjRow);">
                     Reject
                 </button>
             `;
+            actionBtns.innerHTML = btns;
         } else if (row.status === 'approved') {
             actionBtns.innerHTML = `
                 <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openCancelAdjModal(currentDetailAdjRow);">

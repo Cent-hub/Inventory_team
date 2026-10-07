@@ -19,8 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-$authUser = requireApiAuth(['admin', 'inventory']);
+$authUser = requireApiAuth(['super_admin']);
 $userId = (int)$authUser['user_id'];
+
+if (($authUser['role'] ?? '') !== 'super_admin') {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => 'Access Denied: Only super_admin is authorized to approve stock adjustments.'
+    ], 403);
+}
 
 checkRateLimit('stock_adjustment_approve', 30, 60, $authUser['api_token']);
 

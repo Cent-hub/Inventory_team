@@ -44,8 +44,8 @@ $sql = "
             sm.created_at,
             sa.difference AS adjustment_difference,
             SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN -sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 ELSE 0 
             END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
@@ -57,12 +57,12 @@ $sql = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
             ELSE 0 
         END AS quantity_in,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
             ELSE 0 
         END AS quantity_out,
@@ -85,7 +85,7 @@ $sql = "
 $params = [$currentWarehouseId];
 
 if ($search !== '') {
-    $sql .= " AND (i.item_name LIKE ? OR i.item_code LIKE ? OR sm.reference_number LIKE ?)";
+    $sql .= " AND (i.name LIKE ? OR i.code LIKE ? OR sm.remarks LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
     $params[] = "%$search%";
@@ -243,10 +243,9 @@ $netFlow = $sumQtyIn - $sumQtyOut;
             <option value="STOCK_TRANSFER_IN" <?= $movementType === 'STOCK_TRANSFER_IN' ? 'selected' : '' ?>>Transfer In</option>
             <option value="STOCK_TRANSFER_OUT" <?= $movementType === 'STOCK_TRANSFER_OUT' ? 'selected' : '' ?>>Transfer Out</option>
             <option value="STOCK_ADJUSTMENT" <?= $movementType === 'STOCK_ADJUSTMENT' ? 'selected' : '' ?>>Stock Adjustment</option>
-            <option value="BAD_PRODUCT" <?= $movementType === 'BAD_PRODUCT' ? 'selected' : '' ?>>Bad / Damaged Goods</option>
-            <option value="STOCK_IN_CANCEL" <?= $movementType === 'STOCK_IN_CANCEL' ? 'selected' : '' ?>>Stock In Reversal (Cancel)</option>
-            <option value="STOCK_OUT_CANCEL" <?= $movementType === 'STOCK_OUT_CANCEL' ? 'selected' : '' ?>>Stock Out Reversal (Cancel)</option>
-            <option value="STOCK_TRANSFER_CANCEL" <?= $movementType === 'STOCK_TRANSFER_CANCEL' ? 'selected' : '' ?>>Transfer Reversal (Cancel)</option>
+            <option value="BAD_PRODUCT_DISCARD" <?= $movementType === 'BAD_PRODUCT_DISCARD' ? 'selected' : '' ?>>Bad / Damaged Goods Discard</option>
+            <option value="CANCELLED_INBOUND" <?= $movementType === 'CANCELLED_INBOUND' ? 'selected' : '' ?>>Cancelled Inbound Reversal</option>
+            <option value="CANCELLED_OUTBOUND" <?= $movementType === 'CANCELLED_OUTBOUND' ? 'selected' : '' ?>>Cancelled Outbound Reversal</option>
         </select>
 
         <!-- Assigned Warehouse Indicator -->
