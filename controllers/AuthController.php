@@ -10,6 +10,7 @@ require_once __DIR__ . '/../config/database.php';
 class AuthController {
     public const LOGIN_MAX_ATTEMPTS = 5;
     public const LOGIN_LOCKOUT_SECONDS = 300;
+    public const IDLE_TIMEOUT_SECONDS = 1800; // 30 minutes inactivity timeout
 
     private PDO $db;
     private static bool $rateLimitTableEnsured = false;
@@ -252,6 +253,7 @@ class AuthController {
         $_SESSION['warehouse_id']   = $assignedWhId;
         $_SESSION['logged_in']      = true;
         $_SESSION['login_time']     = time();
+        $_SESSION['last_activity']  = time();
 
         require_once __DIR__ . '/../helpers/csrf.php';
         if (function_exists('regenerateCsrfToken')) {
@@ -587,10 +589,24 @@ class AuthController {
     }
 
     /**
-     * Check if currently authenticated
+     * Check if currently authenticated and enforce idle inactivity timeout
      */
     public function isAuthenticated(): bool {
-        return !empty($_SESSION['logged_in']) && !empty($_SESSION['user_id']);
+        if (empty($_SESSION['logged_in']) || empty($_SESSION['user_id'])) {
+            return false;
+        }
+
+        // Enforce Idle Inactivity Session Timeout (> 1800 seconds / 30 minutes)
+        if (isset($_SESSION['last_activity']) && (time() - (int)$_SESSION['last_activity']) > self::IDLE_TIMEOUT_SECONDS) {
+            $_SESSION = [];
+            if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+                @session_destroy();
+            }
+            return false;
+        }
+
+        $_SESSION['last_activity'] = time();
+        return true;
     }
 
     /**

@@ -2378,11 +2378,11 @@ class StockService {
             ");
             $stmtRestore->execute([(int)$bp['item_id'], (int)$bp['warehouse_id'], (float)$bp['quantity']]);
 
-            // Insert movement IN
+            // Insert movement IN (segregated defect cancellation)
             $movRemarks = "Defect write-off cancelled: " . $reason;
             $stmtMov = $this->pdo->prepare("
                 INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'STOCK_IN', ?, ?, ?, ?, NOW())
+                VALUES (?, ?, 'CANCELLED_BAD_PRODUCT', ?, ?, ?, ?, NOW())
             ");
             $stmtMov->execute([(int)$bp['item_id'], (int)$bp['warehouse_id'], (float)$bp['quantity'], $badProductId, $movRemarks, $userId]);
 

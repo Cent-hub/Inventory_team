@@ -33,10 +33,12 @@ $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWare
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
 // Compute KPI metrics directly from $inventoryRows (eliminating redundant SQL queries)
-$totalRawMaterials  = 0;
-$totalFinishedGoods = 0;
-$totalStock         = 0.0;
-$lowStockCount      = 0;
+$totalRawMaterials   = 0;
+$totalFinishedGoods  = 0;
+$totalStockDiscrete  = 0.0;
+$totalStockLiquid    = 0.0;
+$totalStock          = 0.0;
+$lowStockCount       = 0;
 
 foreach ($inventoryRows as $row) {
     if (($row['item_type'] ?? '') === 'raw_material') {
@@ -46,8 +48,16 @@ foreach ($inventoryRows as $row) {
     }
     $qty = (float)($row['quantity'] ?? 0);
     $reorder = (float)($row['default_reorder_level'] ?? 0);
+    $unit = strtolower(trim($row['unit'] ?? ''));
+
+    if (in_array($unit, ['l', 'liter', 'liters', 'ml', 'gallon', 'gal'], true)) {
+        $totalStockLiquid += $qty;
+    } else {
+        $totalStockDiscrete += $qty;
+    }
     $totalStock += $qty;
-    if ($qty <= $reorder) {
+
+    if ($reorder > 0 && $qty <= $reorder) {
         $lowStockCount++;
     }
 }
@@ -89,7 +99,7 @@ $stmtRecent = $pdo->prepare("
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
             ELSE 0 
         END AS quantity_in,
         CASE 
@@ -173,7 +183,10 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= formatQty($totalStock) ?></div>
-        <div class="stat-meta">Net inventory in <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
+        <div class="stat-meta">
+            <span><strong><?= formatQty($totalStockDiscrete) ?></strong> discrete (pcs/box)</span> &bull; 
+            <span><strong><?= formatQty($totalStockLiquid) ?></strong> liquid (L/ml)</span>
+        </div>
     </div>
 
     <!-- 4. Low Stock Items -->

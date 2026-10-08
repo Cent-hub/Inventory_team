@@ -44,7 +44,7 @@ $sql = "
             sm.created_at,
             sa.difference AS adjustment_difference,
             SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
                 WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 ELSE 0 
@@ -57,7 +57,7 @@ $sql = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
             ELSE 0 
         END AS quantity_in,
@@ -97,7 +97,7 @@ if ($movementType !== '') {
 }
 
 if ($itemType !== '') {
-    $sql .= " AND i.item_type = ?";
+    $sql .= " AND i.type = ?";
     $params[] = $itemType;
 }
 

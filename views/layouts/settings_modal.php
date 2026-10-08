@@ -9,12 +9,27 @@
 
 $currentUser = $currentUser ?? ($auth ? $auth->getCurrentUser() : []);
 
+$dbPrefs = [];
+if (!empty($currentUser['id']) && isset($pdo)) {
+    try {
+        $stmtP = $pdo->prepare("SELECT preferences_json FROM user_preferences WHERE user_id = ?");
+        $stmtP->execute([(int)$currentUser['id']]);
+        $rawP = $stmtP->fetchColumn();
+        if ($rawP) {
+            $dbPrefs = json_decode($rawP, true) ?: [];
+        }
+    } catch (Throwable $e) {}
+}
+if (!isset($_SESSION['user_preferences']) && !empty($dbPrefs)) {
+    $_SESSION['user_preferences'] = $dbPrefs;
+}
+
 $userPrefs = array_merge([
     'inbound_receipts'    => true,
     'outbound_dispatches' => true,
     'daily_digest'        => false,
     'two_factor_auth'     => true,
-], is_array($_SESSION['user_preferences'] ?? null) ? $_SESSION['user_preferences'] : []);
+], $dbPrefs, is_array($_SESSION['user_preferences'] ?? null) ? $_SESSION['user_preferences'] : []);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
 $currentWarehouseName = $assignedWarehouse['warehouse_name'] ?? 'Main Warehouse';

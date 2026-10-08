@@ -60,10 +60,37 @@ switch ($action) {
             exit;
         }
 
-        if (!isset($_SESSION['user_preferences']) || !is_array($_SESSION['user_preferences'])) {
-            $_SESSION['user_preferences'] = [];
+        $pdo = Database::getConnection();
+        $dbPrefs = [];
+        try {
+            $stmtPref = $pdo->prepare("SELECT preferences_json FROM user_preferences WHERE user_id = ?");
+            $stmtPref->execute([$userId]);
+            $rawPrefs = $stmtPref->fetchColumn();
+            if ($rawPrefs) {
+                $dbPrefs = json_decode($rawPrefs, true) ?: [];
+            }
+        } catch (Throwable $e) {
+            $dbPrefs = [];
         }
+
+        if (!isset($_SESSION['user_preferences']) || !is_array($_SESSION['user_preferences'])) {
+            $_SESSION['user_preferences'] = $dbPrefs;
+        }
+
         $_SESSION['user_preferences'][$key] = $enabled;
+        $dbPrefs[$key] = $enabled;
+
+        // Persist to user_preferences table in database
+        try {
+            $stmtSavePref = $pdo->prepare("
+                INSERT INTO user_preferences (user_id, preferences_json, updated_at)
+                VALUES (?, ?, NOW())
+                ON DUPLICATE KEY UPDATE preferences_json = VALUES(preferences_json), updated_at = NOW()
+            ");
+            $stmtSavePref->execute([$userId, json_encode($dbPrefs, JSON_UNESCAPED_UNICODE)]);
+        } catch (Throwable $e) {
+            error_log("Failed to persist user preferences: " . $e->getMessage());
+        }
 
         $label = $allowedKeys[$key];
         $stateText = $enabled ? 'Enabled' : 'Disabled';
