@@ -57,6 +57,17 @@ CREATE TABLE `users` (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `user_preferences` (
+  `user_id` INT(11) NOT NULL,
+  `preferences_json` TEXT DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_user_preferences_user`
+    FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `employees` (
   `employee_id` INT(11) NOT NULL AUTO_INCREMENT,
   `user_id` INT(11) DEFAULT NULL,
@@ -99,8 +110,8 @@ CREATE TABLE `items` (
   PRIMARY KEY (`item_id`),
   UNIQUE KEY `uq_items_code` (`code`),
   KEY `idx_items_type` (`type`),
-  KEY `idx_items_unit` (`unit`),
   KEY `idx_items_status` (`status`),
+  KEY `fk_items_unit` (`unit`),
   CONSTRAINT `fk_items_unit`
     FOREIGN KEY (`unit`) REFERENCES `units_of_measure` (`uom_code`)
     ON UPDATE CASCADE ON DELETE RESTRICT
@@ -146,7 +157,6 @@ CREATE TABLE `stock` (
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`stock_id`),
   UNIQUE KEY `uq_stock_item_wh` (`item_id`,`warehouse_id`),
-  KEY `idx_stock_item` (`item_id`),
   KEY `idx_stock_warehouse` (`warehouse_id`),
   CONSTRAINT `fk_stock_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_stock_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT
@@ -156,7 +166,17 @@ CREATE TABLE `stock_movements` (
   `movement_id` INT(11) NOT NULL AUTO_INCREMENT,
   `item_id` INT(11) NOT NULL,
   `warehouse_id` INT(11) NOT NULL,
-  `movement_type` ENUM('STOCK_IN','STOCK_OUT','STOCK_TRANSFER_IN','STOCK_TRANSFER_OUT','STOCK_ADJUSTMENT','BAD_PRODUCT_DISCARD','CANCELLED_INBOUND','CANCELLED_OUTBOUND') NOT NULL,
+  `movement_type` ENUM(
+    'STOCK_IN',
+    'STOCK_OUT',
+    'STOCK_TRANSFER_IN',
+    'STOCK_TRANSFER_OUT',
+    'STOCK_ADJUSTMENT',
+    'BAD_PRODUCT_DISCARD',
+    'CANCELLED_INBOUND',
+    'CANCELLED_OUTBOUND',
+    'CANCELLED_BAD_PRODUCT'
+  ) NOT NULL,
   `quantity` DECIMAL(12,4) NOT NULL,
   `lot_no` VARCHAR(50) DEFAULT NULL,
   `reference_id` INT(11) DEFAULT NULL,
@@ -165,10 +185,10 @@ CREATE TABLE `stock_movements` (
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`movement_id`),
   KEY `idx_movements_item` (`item_id`),
-  KEY `idx_movements_warehouse` (`warehouse_id`),
   KEY `idx_movements_type` (`movement_type`),
   KEY `idx_movements_created_by` (`created_by`),
   KEY `idx_movements_lot` (`lot_no`),
+  KEY `idx_sm_wh_created` (`warehouse_id`,`created_at`,`movement_type`),
   CONSTRAINT `fk_movements_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_movements_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_movements_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
@@ -189,6 +209,8 @@ CREATE TABLE `stock_transfers` (
   KEY `idx_transfer_item` (`item_id`),
   KEY `idx_transfer_source` (`source_warehouse_id`),
   KEY `idx_transfer_destination` (`destination_warehouse_id`),
+  KEY `idx_transfer_requested_by` (`requested_by`),
+  KEY `idx_transfer_received_by` (`received_by`),
   CONSTRAINT `fk_transfer_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_transfer_source` FOREIGN KEY (`source_warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_transfer_destination` FOREIGN KEY (`destination_warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -211,6 +233,10 @@ CREATE TABLE `stock_adjustments` (
   `requested_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `approved_at` TIMESTAMP NULL DEFAULT NULL,
   PRIMARY KEY (`adjustment_id`),
+  KEY `idx_adjustment_item` (`item_id`),
+  KEY `idx_adjustment_warehouse` (`warehouse_id`),
+  KEY `idx_adjustment_requested_by` (`requested_by`),
+  KEY `idx_adjustment_approved_by` (`approved_by`),
   CONSTRAINT `fk_adjustment_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_adjustment_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_adjustment_requested_by` FOREIGN KEY (`requested_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -229,32 +255,22 @@ CREATE TABLE `bad_products` (
   `reported_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `confirmed_at` TIMESTAMP NULL DEFAULT NULL,
   PRIMARY KEY (`bad_product_id`),
+  KEY `idx_bad_products_item` (`item_id`),
+  KEY `idx_bad_products_warehouse` (`warehouse_id`),
+  KEY `idx_bad_products_reported_by` (`reported_by`),
+  KEY `idx_bad_products_confirmed_by` (`confirmed_by`),
   CONSTRAINT `fk_bad_product_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_bad_product_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_bad_product_reported_by` FOREIGN KEY (`reported_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT `fk_bad_product_confirmed_by` FOREIGN KEY (`confirmed_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- SYSTEM & SECURITY
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS `api_rate_limits` (
-  `rate_limit_id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-  `client_key` VARCHAR(100) NOT NULL COMMENT 'Client IP or API Token Hash',
-  `endpoint` VARCHAR(100) NOT NULL,
-  `request_count` INT(10) UNSIGNED NOT NULL DEFAULT 1,
-  `window_start` INT(10) UNSIGNED NOT NULL,
-  PRIMARY KEY (`rate_limit_id`),
-  UNIQUE KEY `uq_client_endpoint_window` (`client_key`,`endpoint`,`window_start`),
-  KEY `idx_window` (`window_start`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
 -- ERP DOCUMENT WORKFLOWS (INBOUND & OUTBOUND QUEUES)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS `inbound_orders` (
+CREATE TABLE `inbound_orders` (
   `inbound_order_id` INT(11) NOT NULL AUTO_INCREMENT,
   `order_number` VARCHAR(50) NOT NULL,
   `source_type` ENUM('PURCHASE_ORDER','PRODUCTION_RECEIPT','CUSTOMER_RETURN','PRODUCTION_RETURN') NOT NULL,
@@ -270,24 +286,25 @@ CREATE TABLE IF NOT EXISTS `inbound_orders` (
   UNIQUE KEY `uq_inbound_order_number` (`order_number`),
   KEY `idx_inbound_orders_warehouse` (`warehouse_id`),
   KEY `idx_inbound_orders_status` (`status`),
+  KEY `fk_inbound_orders_user` (`created_by`),
   CONSTRAINT `fk_inbound_orders_wh` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_inbound_orders_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `inbound_order_items` (
+CREATE TABLE `inbound_order_items` (
   `item_entry_id` INT(11) NOT NULL AUTO_INCREMENT,
   `inbound_order_id` INT(11) NOT NULL,
   `item_id` INT(11) NOT NULL,
   `expected_quantity` DECIMAL(12,4) NOT NULL,
   `received_quantity` DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
   PRIMARY KEY (`item_entry_id`),
-  KEY `idx_inbound_items_order` (`inbound_order_id`),
+  UNIQUE KEY `uq_inbound_order_item` (`inbound_order_id`,`item_id`),
   KEY `idx_inbound_items_item` (`item_id`),
   CONSTRAINT `fk_inbound_items_order` FOREIGN KEY (`inbound_order_id`) REFERENCES `inbound_orders` (`inbound_order_id`) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT `fk_inbound_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `outbound_orders` (
+CREATE TABLE `outbound_orders` (
   `outbound_order_id` INT(11) NOT NULL AUTO_INCREMENT,
   `order_number` VARCHAR(50) NOT NULL,
   `source_type` ENUM('SALES_DELIVERY','MATERIAL_REQUEST','SUPPLIER_RETURN') NOT NULL,
@@ -303,20 +320,20 @@ CREATE TABLE IF NOT EXISTS `outbound_orders` (
   UNIQUE KEY `uq_outbound_order_number` (`order_number`),
   KEY `idx_outbound_orders_warehouse` (`warehouse_id`),
   KEY `idx_outbound_orders_status` (`status`),
+  KEY `fk_outbound_orders_user` (`created_by`),
   CONSTRAINT `fk_outbound_orders_wh` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT `fk_outbound_orders_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `outbound_order_items` (
+CREATE TABLE `outbound_order_items` (
   `item_entry_id` INT(11) NOT NULL AUTO_INCREMENT,
   `outbound_order_id` INT(11) NOT NULL,
   `item_id` INT(11) NOT NULL,
   `requested_quantity` DECIMAL(12,4) NOT NULL,
   `dispatched_quantity` DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
   PRIMARY KEY (`item_entry_id`),
-  KEY `idx_outbound_items_order` (`outbound_order_id`),
+  UNIQUE KEY `uq_outbound_order_item` (`outbound_order_id`,`item_id`),
   KEY `idx_outbound_items_item` (`item_id`),
   CONSTRAINT `fk_outbound_items_order` FOREIGN KEY (`outbound_order_id`) REFERENCES `outbound_orders` (`outbound_order_id`) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT `fk_outbound_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
