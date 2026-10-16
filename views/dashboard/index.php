@@ -62,35 +62,83 @@ foreach ($inventoryRows as $row) {
     }
 }
 
-// 2. Recent Stock In (combined count & volume received for assigned warehouse in last 30 days)
-$stmtSI = $pdo->prepare("
+// 2. Transfer Done (completed inter-warehouse transfers for assigned warehouse)
+$stmtTransferDone = $pdo->prepare("
     SELECT 
-        COUNT(sm.movement_id) AS txn_count,
-        COALESCE(SUM(sm.quantity), 0) AS total_qty
-    FROM stock_movements sm
-    WHERE sm.movement_type = 'STOCK_IN'
-      AND sm.warehouse_id = :wid
-      AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        COUNT(st.transfer_id) AS txn_count,
+        COALESCE(SUM(st.quantity), 0) AS total_qty
+    FROM stock_transfers st
+    WHERE (st.source_warehouse_id = :wid1 OR st.destination_warehouse_id = :wid2)
+      AND st.status IN ('received', 'completed')
 ");
-$stmtSI->execute([':wid' => $currentWarehouseId]);
-$siRow = $stmtSI->fetch(PDO::FETCH_ASSOC);
-$recentStockInCount  = (int)($siRow['txn_count'] ?? 0);
-$recentStockInVolume = (float)($siRow['total_qty'] ?? 0);
+$stmtTransferDone->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
+$transferDoneRow = $stmtTransferDone->fetch(PDO::FETCH_ASSOC);
+$transfersDoneCount  = (int)($transferDoneRow['txn_count'] ?? 0);
+$transfersDoneVolume = (float)($transferDoneRow['total_qty'] ?? 0);
 
-// 3. Recent Stock Out (combined count & volume dispatched for assigned warehouse in last 30 days)
-$stmtSO = $pdo->prepare("
+if ($transfersDoneCount === 0) {
+    $stmtSmTr = $pdo->prepare("
+        SELECT 
+            COUNT(sm.movement_id) AS txn_count,
+            COALESCE(SUM(sm.quantity), 0) AS total_qty
+        FROM stock_movements sm
+        WHERE sm.warehouse_id = :wid
+          AND sm.movement_type IN ('STOCK_TRANSFER_IN')
+    ");
+    $stmtSmTr->execute([':wid' => $currentWarehouseId]);
+    $smTrRow = $stmtSmTr->fetch(PDO::FETCH_ASSOC);
+    if ((int)($smTrRow['txn_count'] ?? 0) > 0) {
+        $transfersDoneCount = (int)$smTrRow['txn_count'];
+        $transfersDoneVolume = (float)$smTrRow['total_qty'];
+    }
+}
+
+// 3. Return Products (Customer RMA returns & Supplier RTV returns for assigned warehouse)
+$stmtRP = $pdo->prepare("
     SELECT 
         COUNT(sm.movement_id) AS txn_count,
         COALESCE(SUM(sm.quantity), 0) AS total_qty
     FROM stock_movements sm
-    WHERE sm.movement_type = 'STOCK_OUT'
-      AND sm.warehouse_id = :wid
-      AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    WHERE sm.warehouse_id = :wid
+      AND (
+          sm.remarks LIKE '%CUSTOMER_RETURN%' 
+          OR sm.remarks LIKE '%SUPPLIER_RETURN%' 
+          OR sm.remarks LIKE '%[CUSTOMER_RETURN%' 
+          OR sm.remarks LIKE '%[SUPPLIER_RETURN%'
+          OR sm.remarks LIKE '%RMA%' 
+          OR sm.remarks LIKE '%RTV%'
+      )
+      AND sm.movement_type IN ('STOCK_IN', 'STOCK_OUT')
 ");
-$stmtSO->execute([':wid' => $currentWarehouseId]);
-$soRow = $stmtSO->fetch(PDO::FETCH_ASSOC);
-$recentStockOutCount  = (int)($soRow['txn_count'] ?? 0);
-$recentStockOutVolume = (float)($soRow['total_qty'] ?? 0);
+$stmtRP->execute([':wid' => $currentWarehouseId]);
+$rpRow = $stmtRP->fetch(PDO::FETCH_ASSOC);
+$returnProductsCount  = (int)($rpRow['txn_count'] ?? 0);
+$returnProductsVolume = (float)($rpRow['total_qty'] ?? 0);
+
+if ($returnProductsCount === 0) {
+    $stmtRO = $pdo->prepare("
+        SELECT 
+            (
+                (SELECT COUNT(*) FROM inbound_orders WHERE warehouse_id = :wid1 AND source_type = 'CUSTOMER_RETURN' AND status != 'cancelled') +
+                (SELECT COUNT(*) FROM outbound_orders WHERE warehouse_id = :wid2 AND source_type = 'SUPPLIER_RETURN' AND status != 'cancelled')
+            ) AS order_count,
+            (
+                COALESCE((SELECT SUM(ioi.received_quantity) FROM inbound_orders io JOIN inbound_order_items ioi ON io.inbound_order_id = ioi.inbound_order_id WHERE io.warehouse_id = :wid3 AND io.source_type = 'CUSTOMER_RETURN' AND io.status != 'cancelled'), 0) +
+                COALESCE((SELECT SUM(ooi.dispatched_quantity) FROM outbound_orders oo JOIN outbound_order_items ooi ON oo.outbound_order_id = ooi.outbound_order_id WHERE oo.warehouse_id = :wid4 AND oo.source_type = 'SUPPLIER_RETURN' AND oo.status != 'cancelled'), 0)
+            ) AS total_qty
+    ");
+    $stmtRO->execute([
+        ':wid1' => $currentWarehouseId,
+        ':wid2' => $currentWarehouseId,
+        ':wid3' => $currentWarehouseId,
+        ':wid4' => $currentWarehouseId
+    ]);
+    $roRow = $stmtRO->fetch(PDO::FETCH_ASSOC);
+    if ((int)($roRow['order_count'] ?? 0) > 0) {
+        $returnProductsCount = (int)$roRow['order_count'];
+        $returnProductsVolume = (float)$roRow['total_qty'];
+    }
+}
 
 // 4. Recent Inventory Activity in assigned warehouse
 $stmtRecent = $pdo->prepare("
@@ -212,36 +260,38 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- 5. Recent Stock In -->
+    <!-- 5. Transfer Done -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Recent Stock In (30d)</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
-                <!-- Lucide ArrowDownLeft Icon -->
+            <span class="stat-label" data-label="Tranfer done">Transfer Done</span><!-- Tranfer done -->
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #DBEAFE;">
+                <!-- Lucide ArrowLeftRight Icon -->
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="17" y1="7" x2="7" y2="17"/>
-                    <polyline points="17 17 7 17 7 7"/>
+                    <path d="M8 3 4 7l4 4"/>
+                    <path d="M4 7h16"/>
+                    <path d="m16 21 4-4-4-4"/>
+                    <path d="M20 17H4"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= formatQty($recentStockInVolume) ?></div>
-        <div class="stat-meta"><?= $recentStockInCount ?> completed inbound receipts</div>
+        <div class="stat-value"><?= formatQty($transfersDoneVolume) ?></div>
+        <div class="stat-meta"><?= $transfersDoneCount ?> completed transfer<?= $transfersDoneCount === 1 ? '' : 's' ?></div>
     </div>
 
-    <!-- 6. Recent Stock Out -->
+    <!-- 6. Return Products -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Recent Stock Out (30d)</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
-                <!-- Lucide ArrowUpRight Icon -->
+            <span class="stat-label">Return Products</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #EDE9FE;">
+                <!-- Lucide RotateCcw Icon -->
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="7" y1="17" x2="17" y2="7"/>
-                    <polyline points="7 7 17 7 17 17"/>
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= formatQty($recentStockOutVolume) ?></div>
-        <div class="stat-meta"><?= $recentStockOutCount ?> completed outbound dispatches</div>
+        <div class="stat-value"><?= formatQty($returnProductsVolume) ?></div>
+        <div class="stat-meta"><?= $returnProductsCount ?> processed return<?= $returnProductsCount === 1 ? '' : 's' ?></div>
     </div>
 </div>
 
