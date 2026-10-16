@@ -755,9 +755,9 @@ if ($selectedItemId > 0) {
                         <th>Transfer Reference</th>
                         <th>Item</th>
                         <th>Item Type</th>
-                        <th>Quantity</th>
+                        <th class="text-center">Quantity</th>
                         <th>From Warehouse</th>
-                        <th>Status</th>
+                        <th class="text-center">Status</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
@@ -807,7 +807,7 @@ if ($selectedItemId > 0) {
                                         <span class="badge-type type-raw">Mixed (<?= (int)$row['total_items'] ?>)</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="font-weight: 700; color: #15803D; white-space: nowrap;">
+                                <td class="text-center" style="font-weight: 700; color: #15803D; white-space: nowrap;">
                                     +<?= formatQty((float)$row['total_quantity']) ?>
                                     <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
@@ -817,7 +817,7 @@ if ($selectedItemId > 0) {
                                     <span class="badge-wh <?= getWarehouseBadgeClass($row['src_code']) ?>"><?= htmlspecialchars($row['src_code']) ?></span>
                                     <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['src_name']) ?></span>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($row['status'] === 'received' || $row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Received</span>
                                     <?php elseif ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
@@ -886,9 +886,9 @@ if ($selectedItemId > 0) {
                         <th>Transfer Reference</th>
                         <th>Item</th>
                         <th>Item Type</th>
-                        <th>Quantity</th>
+                        <th class="text-center">Quantity</th>
                         <th>To Warehouse</th>
-                        <th>Status</th>
+                        <th class="text-center">Status</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
@@ -938,7 +938,7 @@ if ($selectedItemId > 0) {
                                         <span class="badge-type type-raw">Mixed (<?= (int)$row['total_items'] ?>)</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="font-weight: 700; color: #1D4ED8; white-space: nowrap;">
+                                <td class="text-center" style="font-weight: 700; color: #1D4ED8; white-space: nowrap;">
                                     -<?= formatQty((float)$row['total_quantity']) ?>
                                     <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
@@ -948,7 +948,7 @@ if ($selectedItemId > 0) {
                                     <span class="badge-wh <?= getWarehouseBadgeClass($row['dest_code']) ?>"><?= htmlspecialchars($row['dest_code']) ?></span>
                                     <span style="font-size: 12px; color: var(--panel-ink); margin-left: 4px; font-weight: 500;"><?= htmlspecialchars($row['dest_name']) ?></span>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($row['status'] === 'received' || $row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Received</span>
                                     <?php elseif ($row['status'] === 'in_transit' || $row['status'] === 'pending'): ?>
@@ -1059,13 +1059,13 @@ if ($selectedItemId > 0) {
                     <tr>
                         <th>Adjustment Ref</th>
                         <th>Item</th>
-                        <th>Previous System Qty</th>
-                        <th>Adjusted Physical Qty</th>
-                        <th>Difference</th>
+                        <th class="text-center">Previous System Qty</th>
+                        <th class="text-center">Adjusted Physical Qty</th>
+                        <th class="text-center">Difference</th>
                         <th>Stated Reason</th>
                         <th>Date</th>
                         <th>Logged By</th>
-                        <th>Status</th>
+                        <th class="text-center">Status</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
@@ -1089,13 +1089,13 @@ if ($selectedItemId > 0) {
                                         <span style="color: var(--gray);">—</span>
                                     <?php endif; ?>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?= formatQty($row['previous_quantity'] ?? 0) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <strong style="color: var(--panel-ink);"><?= formatQty($row['adjusted_quantity'] ?? 0) ?></strong> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
                                 </td>
-                                <td style="font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
+                                <td class="text-center" style="font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
                                     <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?>
                                 </td>
                                 <td style="max-width: 200px; font-size: 12px; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['reason']) ?>">
@@ -1107,7 +1107,7 @@ if ($selectedItemId > 0) {
                                 <td style="font-size: 12px;">
                                     <?= htmlspecialchars($row['logged_by']) ?>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($row['status'] === 'approved'): ?>
                                         <span class="badge status-completed">Approved</span>
                                     <?php elseif ($row['status'] === 'pending'): ?>
@@ -1163,11 +1163,11 @@ if ($selectedItemId > 0) {
                         <th>Report Ref #</th>
                         <th>Item</th>
                         <th>Condition / Defect</th>
-                        <th>Quantity Written Off</th>
+                        <th class="text-center">Quantity Written Off</th>
                         <th>Reason / Details</th>
                         <th>Reported By</th>
                         <th>Date</th>
-                        <th>Status</th>
+                        <th class="text-center">Status</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
@@ -1191,7 +1191,7 @@ if ($selectedItemId > 0) {
                                         <?= htmlspecialchars($bp['condition_type']) ?>
                                     </span>
                                 </td>
-                                <td style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
+                                <td class="text-center" style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
                                     -<?= formatQty($bp['quantity']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($bp['reason'] . (!empty($bp['cancellation_reason']) ? ' | Cancelled: ' . $bp['cancellation_reason'] : '')) ?>">
@@ -1206,7 +1206,7 @@ if ($selectedItemId > 0) {
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
                                     <?= date('M d, Y', strtotime($bp['created_at'])) ?>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($bp['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Written Off</span>
                                     <?php else: ?>

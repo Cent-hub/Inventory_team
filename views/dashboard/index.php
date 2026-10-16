@@ -140,7 +140,7 @@ if ($returnProductsCount === 0) {
     }
 }
 
-// 4. Recent Inventory Activity in assigned warehouse
+// 4. Recent Inventory Activity in assigned warehouse (within 3 days only)
 $stmtRecent = $pdo->prepare("
     SELECT 
         sm.movement_id,
@@ -166,6 +166,7 @@ $stmtRecent = $pdo->prepare("
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     WHERE sm.warehouse_id = :wid
+      AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC
     LIMIT 100
 ");
@@ -308,15 +309,15 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                 <tr>
                     <th>Product / Item</th>
                     <th>Classification</th>
-                    <th>Movement</th>
-                    <th>Quantity</th>
+                    <th class="text-center">Movement</th>
+                    <th class="text-center">Quantity</th>
                     <th>Date &amp; Time</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($recentActivities)): ?>
                     <tr>
-                        <td colspan="5" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded yet.</td>
+                        <td colspan="5" style="text-align: center; color: var(--gray); padding: 32px;">No inventory movements recorded in the last 3 days.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($recentActivities as $act): ?>
@@ -338,12 +339,12 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                                     <?= htmlspecialchars(str_replace('_', ' ', $act['item_type'])) ?>
                                 </span>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <span class="badge <?= $pillClass ?>">
                                     <?= htmlspecialchars(str_replace('_', ' ', $act['movement_type'])) ?>
                                 </span>
                             </td>
-                            <td style="font-weight: 700; font-size: 13.5px;">
+                            <td class="text-center" style="font-weight: 700; font-size: 13.5px;">
                                 <?php if ($isIncoming): ?>
                                     <span style="color: #15803D;">+<?= formatQty($act['quantity_in']) ?></span>
                                 <?php else: ?>
@@ -384,10 +385,10 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                 <tr>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Type</th>
-                    <th>Quantity on Hand</th>
-                    <th>Reorder Level</th>
-                    <th>Stock Status</th>
+                    <th class="text-center">Type</th>
+                    <th class="text-center">Quantity on Hand</th>
+                    <th class="text-center">Reorder Level</th>
+                    <th class="text-center">Stock Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -410,19 +411,19 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                             <td>
                                 <strong><?= htmlspecialchars($row['item_name']) ?></strong>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <span class="badge-type <?= $row['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
                                     <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                 </span>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <span style="font-weight: 700; font-size: 14.5px;"><?= formatQty($row['quantity']) ?></span>
                                 <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <?= formatQty($row['default_reorder_level']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <?php if ($isOutOfStock): ?>
                                     <span class="badge status-alert">
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

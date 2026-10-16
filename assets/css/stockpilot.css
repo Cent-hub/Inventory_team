@@ -1533,7 +1533,7 @@
 .text-navy { color: var(--panel-ink); }
 .text-teal { color: var(--accent); }
 .text-right { text-align: right; }
-.text-center { text-align: center; }
+.text-center { text-align: center !important; }
 .font-medium { font-weight: 500; }
 .font-semibold { font-weight: 600; }
 .font-mono { font-family: monospace; }

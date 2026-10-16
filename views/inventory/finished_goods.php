@@ -149,11 +149,11 @@ foreach ($finishedGoods as $fg) {
                     <th>Product Code</th>
                     <th>Product Name</th>
                     <th>Category</th>
-                    <th>Available Stock</th>
-                    <th>Unit</th>
+                    <th class="text-center">Available Stock</th>
+                    <th class="text-center">Unit</th>
                     <th>Production Batch Ref</th>
                     <th>Production Date</th>
-                    <th>Status</th>
+                    <th class="text-center">Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -179,12 +179,12 @@ foreach ($finishedGoods as $fg) {
                                     <?= htmlspecialchars($item['category_name']) ?>
                                 </span>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <span style="font-weight: 700; font-size: 14.5px; color: <?= $isReorder ? '#B91C1C' : '#14213D' ?>;">
                                     <?= formatQty($item['current_stock']) ?>
                                 </span>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <span style="color: var(--gray); font-weight: 500;"><?= htmlspecialchars($item['unit']) ?></span>
                             </td>
                             <td style="font-family: monospace; font-size: 12px;">
@@ -202,7 +202,7 @@ foreach ($finishedGoods as $fg) {
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
                                 <?= !empty($item['production_date']) ? date('M d, Y', strtotime($item['production_date'])) : ($isAvailable ? 'Distillery Base' : '—') ?>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <?php if (!$isAvailable): ?>
                                     <span class="badge status-alert">Out of Stock</span>
                                 <?php elseif ($isReorder): ?>

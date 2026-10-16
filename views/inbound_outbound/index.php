@@ -781,7 +781,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                         <th>Source</th>
                         <th>Item</th>
                         <th>Type</th>
-                        <th>Quantity</th>
+                        <th class="text-center">Quantity</th>
                         <th>Reference / Tracking #</th>
                         <th>Date Received</th>
                         <th>Status</th>
@@ -857,7 +857,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                                 </td>
 
                                 <!-- Quantity -->
-                                <td style="font-weight: 700; color: #15803D; white-space: nowrap;">
+                                <td class="text-center" style="font-weight: 700; color: #15803D; white-space: nowrap;">
                                     +<?= formatQty((float)$row['total_quantity']) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
@@ -958,7 +958,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                             <th>Item Code</th>
                             <th>Item Name</th>
                             <th>Classification</th>
-                            <th>Quantity Received</th>
+                            <th class="text-center">Quantity Received</th>
                         </tr>
                     </thead>
                     <tbody id="modalLineTableBody">
@@ -1192,7 +1192,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                         <th>Destination</th>
                         <th>Item</th>
                         <th>Type</th>
-                        <th>Quantity</th>
+                        <th class="text-center">Quantity</th>
                         <th>Reference / Order #</th>
                         <th>Date Dispatched</th>
                         <th>Status</th>
@@ -1268,7 +1268,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                                 </td>
 
                                 <!-- Quantity -->
-                                <td style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
+                                <td class="text-center" style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
                                     -<?= formatQty((float)$row['total_quantity']) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
@@ -1369,7 +1369,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                             <th>Item Code</th>
                             <th>Item Name</th>
                             <th>Classification</th>
-                            <th>Quantity Dispatched</th>
+                            <th class="text-center">Quantity Dispatched</th>
                         </tr>
                     </thead>
                     <tbody id="modalOutTableBody">
@@ -2145,7 +2145,7 @@ function openDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #15803D;">+${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td class="text-center" style="font-weight: 700; color: #15803D;">+${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });
@@ -2262,7 +2262,7 @@ function openOutDetailModal(id, txnNo) {
                 <td style="font-family: monospace; font-weight: 700;">${escapeHtml(l.item_code)}</td>
                 <td><strong>${escapeHtml(l.item_name)}</strong></td>
                 <td><span class="badge-type ${l.item_type === 'finished_good' ? 'type-fg' : 'type-raw'}">${escapeHtml(l.item_type.replace('_', ' '))}</span></td>
-                <td style="font-weight: 700; color: #B91C1C;">-${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
+                <td class="text-center" style="font-weight: 700; color: #B91C1C;">-${formatQty(l.quantity)} <small style="color: var(--gray);">${escapeHtml(l.unit)}</small></td>
             `;
             tbody.appendChild(tr);
         });

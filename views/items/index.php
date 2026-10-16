@@ -386,11 +386,11 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Classification</th>
-                    <th>Unit</th>
-                    <th>Default Reorder Level</th>
-                    <th>Status</th>
+                    <th class="text-center">Unit</th>
+                    <th class="text-center">Default Reorder Level</th>
+                    <th class="text-center">Status</th>
                     <?php if ($canManageItems): ?>
-                        <th>Action</th>
+                        <th class="text-center">Action</th>
                     <?php endif; ?>
                 </tr>
             </thead>
@@ -425,13 +425,13 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                                     </span>
                                 <?php endif; ?>
                             </td>
-                            <td style="font-weight: 600; text-transform: uppercase; font-size: 12px; color: #475569;">
+                            <td class="text-center" style="font-weight: 600; text-transform: uppercase; font-size: 12px; color: #475569;">
                                 <?= htmlspecialchars($row['unit']) ?>
                             </td>
-                            <td style="font-family: monospace; font-weight: 600;">
+                            <td class="text-center" style="font-family: monospace; font-weight: 600;">
                                 <?= formatQty($row['default_reorder_level']) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
-                            <td>
+                            <td class="text-center">
                                 <?php if (($row['status'] ?? 'active') === 'active'): ?>
                                     <span class="badge status-completed">Active</span>
                                 <?php else: ?>
@@ -439,7 +439,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                                 <?php endif; ?>
                             </td>
                             <?php if ($canManageItems): ?>
-                                <td>
+                                <td class="text-center">
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="openEditItemModal(<?= htmlspecialchars(json_encode([
                                         'item_id'               => (int)$row['item_id'],
                                         'item_code'             => $row['item_code'],
@@ -489,7 +489,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 </div>
 
                 <!-- Item Code & Name -->
-                <div class="form-grid-2" style="grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <label for="modalItemCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Item Code <span style="color: #DC2626;">*</span>
@@ -505,7 +505,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 </div>
 
                 <!-- Unit & Reorder Level -->
-                <div class="form-grid-2" style="grid-template-columns: 1fr 1.3fr; gap: 12px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <label for="modalUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Unit <span style="color: #DC2626;">*</span>
@@ -559,7 +559,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <div class="form-grid-2" style="grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Item Code (SKU)
@@ -588,7 +588,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                     </small>
                 </div>
 
-                <div class="form-grid-3" style="grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; display: grid;">
+                <div class="form-grid-3" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px; display: grid;">
                     <div>
                         <label for="editUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Unit <span style="color: #DC2626;">*</span>

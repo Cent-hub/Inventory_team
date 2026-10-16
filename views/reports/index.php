@@ -233,9 +233,9 @@ $currentBalanceData = $allInventoryData;
                         <th>Item Description</th>
                         <th>Category</th>
                         <th>Classification</th>
-                        <th style="text-align: right;">Reorder Level</th>
-                        <th style="text-align: right;">Current Balance</th>
-                        <th>Health Status</th>
+                        <th class="text-center">Reorder Level</th>
+                        <th class="text-center">Current Balance</th>
+                        <th class="text-center">Health Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -254,11 +254,11 @@ $currentBalanceData = $allInventoryData;
                                 <td>
                                     <span class="badge-type type-raw">Raw Material</span>
                                 </td>
-                                <td style="text-align: right; color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
-                                <td style="text-align: right; font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
+                                <td class="text-center" style="color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
+                                <td class="text-center" style="font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
                                     <?= formatQty($qty) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($qty == 0): ?>
                                         <span class="badge status-alert">Out of Stock</span>
                                     <?php elseif ($isLow): ?>
@@ -295,9 +295,9 @@ $currentBalanceData = $allInventoryData;
                         <th>Item Description</th>
                         <th>Category</th>
                         <th>Classification</th>
-                        <th style="text-align: right;">Reorder Level</th>
-                        <th style="text-align: right;">Current Balance</th>
-                        <th>Health Status</th>
+                        <th class="text-center">Reorder Level</th>
+                        <th class="text-center">Current Balance</th>
+                        <th class="text-center">Health Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -316,11 +316,11 @@ $currentBalanceData = $allInventoryData;
                                 <td>
                                     <span class="badge-type type-fg">Finished Good</span>
                                 </td>
-                                <td style="text-align: right; color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
-                                <td style="text-align: right; font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
+                                <td class="text-center" style="color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
+                                <td class="text-center" style="font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
                                     <?= formatQty($qty) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($qty == 0): ?>
                                         <span class="badge status-alert">Out of Stock</span>
                                     <?php elseif ($isLow): ?>
@@ -357,9 +357,9 @@ $currentBalanceData = $allInventoryData;
                         <th>Item Description</th>
                         <th>Category</th>
                         <th>Classification</th>
-                        <th style="text-align: right;">Reorder Level</th>
-                        <th style="text-align: right;">Current Balance</th>
-                        <th>Health Status</th>
+                        <th class="text-center">Reorder Level</th>
+                        <th class="text-center">Current Balance</th>
+                        <th class="text-center">Health Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -380,11 +380,11 @@ $currentBalanceData = $allInventoryData;
                                         <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                     </span>
                                 </td>
-                                <td style="text-align: right; color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
-                                <td style="text-align: right; font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
+                                <td class="text-center" style="color: var(--gray);"><?= formatQty($reorder) ?> <small><?= htmlspecialchars($row['unit']) ?></small></td>
+                                <td class="text-center" style="font-weight: 700; font-size: 14px; color: <?= $isLow ? '#B91C1C' : 'var(--panel-ink)' ?>;">
                                     <?= formatQty($qty) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <?php if ($qty == 0): ?>
                                         <span class="badge status-alert">Out of Stock</span>
                                     <?php elseif ($isLow): ?>
