@@ -22,15 +22,28 @@ require_once __DIR__ . '/../layouts/navbar.php';
 // Fetch Warehouses
 $warehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name FROM warehouses WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Filters
+// Filters (FIX-020)
+$datePreset   = isset($_GET['preset']) ? trim($_GET['preset']) : '';
 $rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
 $rawEndDate   = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
-$dtStart      = DateTime::createFromFormat('Y-m-d', $rawStartDate);
-$dtEnd        = DateTime::createFromFormat('Y-m-d', $rawEndDate);
-$startDate    = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : date('Y-m-01');
-$endDate      = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : date('Y-m-d');
-if ($startDate > $endDate) {
-    [$startDate, $endDate] = [$endDate, $startDate];
+
+if ($datePreset === 'today') {
+    $startDate = date('Y-m-d');
+    $endDate   = date('Y-m-d');
+} elseif ($datePreset === 'this_month') {
+    $startDate = date('Y-m-01');
+    $endDate   = date('Y-m-d');
+} elseif ($datePreset === 'all_time') {
+    $startDate = '2000-01-01';
+    $endDate   = date('Y-m-d', strtotime('+1 day'));
+} else {
+    $dtStart   = DateTime::createFromFormat('Y-m-d', $rawStartDate);
+    $dtEnd     = DateTime::createFromFormat('Y-m-d', $rawEndDate);
+    $startDate = ($dtStart && $dtStart->format('Y-m-d') === $rawStartDate) ? $rawStartDate : date('Y-m-01');
+    $endDate   = ($dtEnd && $dtEnd->format('Y-m-d') === $rawEndDate) ? $rawEndDate : date('Y-m-d');
+    if ($startDate > $endDate) {
+        [$startDate, $endDate] = [$endDate, $startDate];
+    }
 }
 $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
 
@@ -68,7 +81,7 @@ $sqlM = "
             sm.created_at,
             sa.difference AS adjustment_difference,
             SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                 WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 ELSE 0 
@@ -81,7 +94,7 @@ $sqlM = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
             ELSE 0 
         END AS quantity_in,
@@ -372,6 +385,13 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </span>
             <input type="text" name="search" class="search-box" aria-label="Search transaction records" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveTransactionTable()" onkeydown="if(event.key==='Enter'){event.preventDefault();filterActiveTransactionTable();}">
+        </div>
+
+        <!-- Date Presets (FIX-020) -->
+        <div style="display: flex; gap: 4px; align-items: center;">
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=today<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'today' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">Today</a>
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=this_month<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= ($datePreset === 'this_month' || (empty($datePreset) && empty($rawStartDate) && empty($rawEndDate))) ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">This Month</a>
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=all_time<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'all_time' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">All Time</a>
         </div>
 
         <!-- Date Range -->

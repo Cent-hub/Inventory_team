@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -69,12 +70,24 @@ if ($warehouseId <= 0) {
     ], 400);
 }
 
-$validSourceTypes = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'MANUAL'];
+$validSourceTypes = StockService::VALID_STOCK_OUT_SOURCES;
 if (!in_array($sourceType, $validSourceTypes, true)) {
     jsonResponse([
         'success' => false,
-        'error'   => "Validation Error: source_type must be either 'MATERIAL_REQUEST' (for Production) or 'SALES_DELIVERY' (for Sales)."
+        'error'   => "Validation Error: source_type must be one of: " . implode(', ', $validSourceTypes)
     ], 400);
+}
+
+// Idempotency check: prevent duplicate requests across retries
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey($sourceReferenceNo);
+if ($idempotencyKey) {
+    $cached = IdempotencyService::check($pdo, $idempotencyKey, 'api/stock_out/create.php', (string)$userId, $payload);
+    if ($cached) {
+        http_response_code($cached['response_code']);
+        echo $cached['response_body'];
+        exit;
+    }
 }
 
 // Team domain and warehouse isolation enforcement
@@ -199,11 +212,17 @@ try {
         $authUser
     );
 
-    jsonResponse([
+    $response = [
         'success' => true,
         'message' => 'Stock OUT recorded successfully. Inventory deducted.',
         'data'    => $result
-    ], 201);
+    ];
+
+    if ($idempotencyKey) {
+        IdempotencyService::store($pdo, $idempotencyKey, 'api/stock_out/create.php', (string)$userId, $payload, 201, $response);
+    }
+
+    jsonResponse($response, 201);
 } catch (DomainException $e) {
     jsonResponse([
         'success' => false,

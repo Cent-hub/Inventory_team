@@ -35,8 +35,8 @@ if (!defined('BASE_URL')) {
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 $userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
 
-// super_admin and admin are permitted multi-warehouse switching across all facilities
-$isAuthorizedForMultiWarehouse = in_array($userRole, ['super_admin', 'admin'], true);
+// Only super_admin is permitted multi-warehouse switching across all facilities (FIX-015)
+$isAuthorizedForMultiWarehouse = ($userRole === 'super_admin');
 
 // Enforce assigned warehouse and team resolution directly from cached session data
 $userAssignedWhId = !empty($_SESSION['warehouse_id']) 

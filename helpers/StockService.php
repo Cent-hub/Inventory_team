@@ -107,6 +107,16 @@ class StockService {
     }
 
     /**
+     * Generate standard UUID v4 string.
+     */
+    public static function generateUuidV4(): string {
+        $data = random_bytes(16);
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // set version to 0100
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // set bits 6-7 to 10
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+    }
+
+    /**
      * Inbound Stock Receiving (e.g. Team 1 Procurement or Team 3 Production FG receipt)
      */
     public function recordStockIn(
@@ -154,9 +164,14 @@ class StockService {
             throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $txnNumber = 'IN-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            $batchUuid = self::generateUuidV4();
+            $effectiveRefNo = $sourceReferenceNo ?: $txnNumber;
 
             $stmtCheckItem = $this->pdo->prepare("
                 SELECT item_id, code AS item_code, name AS item_name, type AS item_type, unit, status
@@ -166,10 +181,10 @@ class StockService {
             $stmtMove = $this->pdo->prepare("
                 INSERT INTO stock_movements (
                     item_id, warehouse_id, movement_type, quantity,
-                    reference_id, remarks, created_by, created_at
+                    reference_id, reference_number, batch_uuid, remarks, created_by, created_at
                 ) VALUES (
                     ?, ?, 'STOCK_IN', ?,
-                    NULL, ?, ?, NOW()
+                    NULL, ?, ?, ?, ?, NOW()
                 )
             ");
 
@@ -242,7 +257,7 @@ class StockService {
                 $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "");
 
                 // Insert into stock_movements
-                $stmtMove->execute([$itemId, $warehouseId, $qty, $movRemarks, $userId]);
+                $stmtMove->execute([$itemId, $warehouseId, $qty, $effectiveRefNo, $batchUuid, $movRemarks, $userId]);
                 $movementId = (int)$this->pdo->lastInsertId();
                 if ($firstMovementId === 0) {
                     $firstMovementId = $movementId;
@@ -284,11 +299,15 @@ class StockService {
                 ]);
             }
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
+                'success'             => true,
                 'stock_in_id'         => $firstMovementId,
                 'transaction_number'  => $txnNumber,
+                'batch_uuid'          => $batchUuid,
                 'source_type'         => $sourceType,
                 'source_reference_no' => $sourceReferenceNo,
                 'warehouse_id'        => $warehouseId,
@@ -297,7 +316,7 @@ class StockService {
                 'items'               => $processedItems
             ];
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -352,9 +371,14 @@ class StockService {
             throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $txnNumber = 'OUT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            $batchUuid = self::generateUuidV4();
+            $effectiveRefNo = $sourceReferenceNo ?: $txnNumber;
 
             // 1. Lock and check balance in stock table
             $stmtLock = $this->pdo->prepare("
@@ -439,10 +463,10 @@ class StockService {
             $stmtMove = $this->pdo->prepare("
                 INSERT INTO stock_movements (
                     item_id, warehouse_id, movement_type, quantity,
-                    reference_id, remarks, created_by, created_at
+                    reference_id, reference_number, batch_uuid, remarks, created_by, created_at
                 ) VALUES (
                     ?, ?, 'STOCK_OUT', ?,
-                    NULL, ?, ?, NOW()
+                    NULL, ?, ?, ?, ?, NOW()
                 )
             ");
 
@@ -466,7 +490,7 @@ class StockService {
 
                 $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "");
 
-                $stmtMove->execute([$itemId, $warehouseId, $qty, $movRemarks, $userId]);
+                $stmtMove->execute([$itemId, $warehouseId, $qty, $effectiveRefNo, $batchUuid, $movRemarks, $userId]);
                 $movementId = (int)$this->pdo->lastInsertId();
                 if ($firstMovementId === 0) {
                     $firstMovementId = $movementId;
@@ -506,11 +530,15 @@ class StockService {
                 ]);
             }
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
+                'success'             => true,
                 'stock_out_id'        => $firstMovementId,
                 'transaction_number'  => $txnNumber,
+                'batch_uuid'          => $batchUuid,
                 'source_type'         => $sourceType,
                 'source_reference_no' => $sourceReferenceNo,
                 'warehouse_id'        => $warehouseId,
@@ -519,7 +547,7 @@ class StockService {
                 'items'               => $processedItems
             ];
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -599,9 +627,7 @@ class StockService {
             $stmtUpdOrder = $this->pdo->prepare("UPDATE inbound_orders SET status = ?, updated_at = NOW() WHERE inbound_order_id = ?");
             $stmtUpdOrder->execute([$newStatus, $orderId]);
 
-            $this->pdo->commit();
-
-            // Post to inventory ledger
+            // Post to inventory ledger within the same active transaction
             if ($order['source_type'] === 'CUSTOMER_RETURN' && $condition === 'damaged') {
                 // First record inbound receipt to document the customer return into the ledger
                 $stockInRes = $this->recordStockIn(
@@ -627,6 +653,9 @@ class StockService {
                         $currentUser
                     );
                 }
+
+                $this->pdo->commit();
+
                 return [
                     'success'            => true,
                     'order_number'       => $order['order_number'],
@@ -648,6 +677,9 @@ class StockService {
                     $remarks ?: "Received from {$order['entity_name']} ({$order['order_number']})",
                     $currentUser
                 );
+
+                $this->pdo->commit();
+
                 return [
                     'success'            => true,
                     'order_number'       => $order['order_number'],
@@ -737,9 +769,7 @@ class StockService {
             $stmtUpdOrder = $this->pdo->prepare("UPDATE outbound_orders SET status = ?, updated_at = NOW() WHERE outbound_order_id = ?");
             $stmtUpdOrder->execute([$newStatus, $orderId]);
 
-            $this->pdo->commit();
-
-            // Post to inventory ledger
+            // Post to inventory ledger within the same active transaction
             $stockOutRes = $this->recordStockOut(
                 (int)$order['warehouse_id'],
                 $order['source_type'],
@@ -749,6 +779,8 @@ class StockService {
                 $remarks ?: "Dispatched to {$order['entity_name']} ({$order['order_number']})",
                 $currentUser
             );
+
+            $this->pdo->commit();
 
             return [
                 'success'            => true,
@@ -782,6 +814,8 @@ class StockService {
                 w.code AS warehouse_code,
                 w.name AS warehouse_name,
                 COALESCE(s.qty_on_hand, 0.000) AS current_quantity,
+                COALESCE(s.qty_reserved, 0.000) AS reserved_quantity,
+                GREATEST(0.000, COALESCE(s.qty_on_hand, 0.000) - COALESCE(s.qty_reserved, 0.000)) AS available_quantity,
                 COALESCE(s.reorder_level, i.reorder_level, 0.00) AS effective_reorder_level,
                 s.updated_at
             FROM items i
@@ -833,7 +867,9 @@ class StockService {
                 i.name AS item_name,
                 'Finished Goods' AS category_name,
                 i.unit,
-                COALESCE(s.qty_on_hand, 0.000) AS available_quantity,
+                COALESCE(s.qty_on_hand, 0.000) AS total_quantity,
+                COALESCE(s.qty_reserved, 0.000) AS reserved_quantity,
+                GREATEST(0.000, COALESCE(s.qty_on_hand, 0.000) - COALESCE(s.qty_reserved, 0.000)) AS available_quantity,
                 w.warehouse_id,
                 w.code AS warehouse_code,
                 w.name AS warehouse_name,
@@ -860,7 +896,7 @@ class StockService {
             $params[] = $itemId;
         }
         if ($inStockOnly) {
-            $sql .= " AND COALESCE(s.qty_on_hand, 0) > 0";
+            $sql .= " AND GREATEST(0.000, COALESCE(s.qty_on_hand, 0) - COALESCE(s.qty_reserved, 0)) > 0";
         }
 
         $sql .= " ORDER BY i.name ASC, w.name ASC";
@@ -868,6 +904,102 @@ class StockService {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Reserve Stock for Pending Outbound Orders
+     */
+    public function reserveStock(int $itemId, int $warehouseId, float $quantity, ?string $reference = null, ?int $userId = null): array {
+        if ($itemId <= 0 || $warehouseId <= 0) {
+            throw new InvalidArgumentException("Valid itemId and warehouseId are required.");
+        }
+        $quantity = self::validatePositiveQuantity($quantity, null, 'quantity');
+
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $stmt = $this->pdo->prepare("SELECT qty_on_hand, qty_reserved FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE");
+            $stmt->execute([$itemId, $warehouseId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $onHand = $row ? (float)$row['qty_on_hand'] : 0.000;
+            $reserved = $row ? (float)$row['qty_reserved'] : 0.000;
+            $unreserved = max(0.000, $onHand - $reserved);
+
+            if ($quantity > $unreserved) {
+                throw new DomainException("Insufficient unreserved stock to place reservation. Available: {$unreserved}, Requested reservation: {$quantity}.");
+            }
+
+            $upd = $this->pdo->prepare("
+                INSERT INTO stock (item_id, warehouse_id, qty_on_hand, qty_reserved, reorder_level)
+                VALUES (?, ?, 0.00, ?, 0.00)
+                ON DUPLICATE KEY UPDATE qty_reserved = qty_reserved + VALUES(qty_reserved)
+            ");
+            $upd->execute([$itemId, $warehouseId, $quantity]);
+
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
+
+            return [
+                'success'           => true,
+                'item_id'           => $itemId,
+                'warehouse_id'      => $warehouseId,
+                'quantity_reserved' => $quantity,
+                'new_reserved_qty'  => $reserved + $quantity,
+                'reference'         => $reference
+            ];
+        } catch (Throwable $e) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Release Reserved Stock
+     */
+    public function releaseStockReservation(int $itemId, int $warehouseId, float $quantity, ?string $reference = null, ?int $userId = null): array {
+        if ($itemId <= 0 || $warehouseId <= 0) {
+            throw new InvalidArgumentException("Valid itemId and warehouseId are required.");
+        }
+        $quantity = self::validatePositiveQuantity($quantity, null, 'quantity');
+
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $stmt = $this->pdo->prepare("SELECT qty_reserved FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE");
+            $stmt->execute([$itemId, $warehouseId]);
+            $currentReserved = (float)($stmt->fetchColumn() ?: 0.000);
+
+            $newReserved = max(0.000, $currentReserved - $quantity);
+
+            $upd = $this->pdo->prepare("UPDATE stock SET qty_reserved = ? WHERE item_id = ? AND warehouse_id = ?");
+            $upd->execute([$newReserved, $itemId, $warehouseId]);
+
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
+
+            return [
+                'success'           => true,
+                'item_id'           => $itemId,
+                'warehouse_id'      => $warehouseId,
+                'quantity_released' => $quantity,
+                'new_reserved_qty'  => $newReserved,
+                'reference'         => $reference
+            ];
+        } catch (Throwable $e) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -917,6 +1049,9 @@ class StockService {
     /**
      * Cancel a Stock IN transaction
      */
+    /**
+     * Cancel a Stock IN transaction (Supports multi-item batch reversal)
+     */
     public function cancelStockIn(int $stockInId, string $cancellationReason, int $cancelledBy, ?array $authUser = null): array {
         if ($stockInId <= 0) {
             throw new InvalidArgumentException("Invalid stock_in_id.");
@@ -929,10 +1064,14 @@ class StockService {
             throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("
                 SELECT sm.movement_id, sm.item_id, sm.warehouse_id, sm.quantity, sm.remarks, sm.created_by,
+                       sm.batch_uuid, sm.reference_number,
                        i.code AS item_code, i.name AS item_name, i.unit, i.type AS item_type
                 FROM stock_movements sm
                 JOIN items i ON sm.item_id = i.item_id
@@ -950,86 +1089,134 @@ class StockService {
                 throw new DomainException("Cannot cancel a cancellation reversal transaction.");
             }
 
-            // Check if already cancelled
+            // If transaction belongs to a multi-item batch, load all movements in that batch
+            $batchMovements = [];
+            if (!empty($txn['batch_uuid'])) {
+                $stmtBatch = $this->pdo->prepare("
+                    SELECT sm.movement_id, sm.item_id, sm.warehouse_id, sm.quantity, sm.remarks, sm.created_by,
+                           sm.batch_uuid, sm.reference_number,
+                           i.code AS item_code, i.name AS item_name, i.unit, i.type AS item_type
+                    FROM stock_movements sm
+                    JOIN items i ON sm.item_id = i.item_id
+                    WHERE sm.batch_uuid = ? AND sm.movement_type = 'STOCK_IN'
+                    ORDER BY sm.movement_id ASC
+                    FOR UPDATE
+                ");
+                $stmtBatch->execute([$txn['batch_uuid']]);
+                $batchMovements = $stmtBatch->fetchAll(PDO::FETCH_ASSOC);
+            }
+            if (empty($batchMovements)) {
+                $batchMovements = [$txn];
+            }
+
+            // IDOR / Facility scope check
+            if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
+                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                $isCreator = ((int)$txn['created_by'] === $authUid);
+                $isSameWh = ($userWhId > 0 && $userWhId === (int)$txn['warehouse_id']);
+                if (!$isCreator && !$isSameWh) {
+                    throw new DomainException(
+                        "Access Denied: Administrator #{$authUid} is not authorized to cancel transactions created for warehouse #{$txn['warehouse_id']}."
+                    );
+                }
+            }
+
+            // Check if any movement in the batch has already been cancelled
             $stmtChkRev = $this->pdo->prepare("
                 SELECT movement_id FROM stock_movements 
                 WHERE reference_id = ? AND (movement_type = 'CANCELLED_INBOUND' OR (movement_type = 'STOCK_OUT' AND remarks LIKE 'Cancelled Stock IN %'))
                 LIMIT 1
             ");
-            $stmtChkRev->execute([$stockInId]);
-            if ($stmtChkRev->fetch()) {
-                throw new DomainException("Stock IN transaction #{$stockInId} has already been cancelled.");
+            foreach ($batchMovements as $bm) {
+                $stmtChkRev->execute([$bm['movement_id']]);
+                if ($stmtChkRev->fetch()) {
+                    throw new DomainException("Stock IN transaction #{$bm['movement_id']} in this batch has already been cancelled.");
+                }
             }
 
-            // IDOR Protection
-            if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
-                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
-                if ((int)$txn['created_by'] !== $authUid) {
+            // Pre-validate stock availability for ALL movements in the batch before deducting
+            $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE");
+            foreach ($batchMovements as $bm) {
+                $stmtBal->execute([$bm['item_id'], $bm['warehouse_id']]);
+                $currentBal = (float)($stmtBal->fetchColumn() ?: 0.00);
+                if ($currentBal < (float)$bm['quantity']) {
                     throw new DomainException(
-                        "Access Denied (IDOR Protection): Administrator #{$authUid} is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
+                        "Cannot cancel Stock IN: Remaining stock on hand ({$currentBal}) for item '{$bm['item_code']}' is less than quantity being reversed ({$bm['quantity']})."
                     );
                 }
             }
 
-            $itemId = (int)$txn['item_id'];
-            $whId   = (int)$txn['warehouse_id'];
-            $qty    = (float)$txn['quantity'];
+            // Execute batch reversal
+            $stmtUpd = $this->pdo->prepare("UPDATE stock SET qty_on_hand = qty_on_hand - ? WHERE item_id = ? AND warehouse_id = ?");
+            $stmtRev = $this->pdo->prepare("
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, quantity,
+                    reference_id, reference_number, batch_uuid, remarks, created_by, created_at
+                ) VALUES (
+                    ?, ?, 'CANCELLED_INBOUND', ?,
+                    ?, ?, ?, ?, ?, NOW()
+                )
+            ");
 
-            // Check stock available to reverse
-            $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE");
-            $stmtBal->execute([$itemId, $whId]);
-            $currentBal = (float)($stmtBal->fetchColumn() ?: 0.00);
+            $cancelledItems = [];
+            foreach ($batchMovements as $bm) {
+                $itemId = (int)$bm['item_id'];
+                $whId   = (int)$bm['warehouse_id'];
+                $qty    = (float)$bm['quantity'];
+                $bmId   = (int)$bm['movement_id'];
 
-            if ($currentBal < $qty) {
-                throw new DomainException("Cannot cancel Stock IN: Remaining stock on hand ({$currentBal}) is less than quantity being reversed ({$qty}).");
+                $stmtUpd->execute([$qty, $itemId, $whId]);
+
+                $revRemarks = "Cancelled Stock IN #{$bmId}: {$cancellationReason}";
+                $stmtRev->execute([
+                    $itemId, $whId, $qty,
+                    $bmId, ($bm['reference_number'] ?: "IN-{$bmId}"), $bm['batch_uuid'],
+                    $revRemarks, $cancelledBy
+                ]);
+
+                $stmtBal->execute([$itemId, $whId]);
+                $newBal = (float)($stmtBal->fetchColumn() ?: 0.00);
+
+                AccountabilityService::log([
+                    'user_id'          => $cancelledBy,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'STOCK_IN_CANCEL',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => $itemId,
+                    'quantity'         => $qty,
+                    'warehouse_id'     => $whId,
+                    'reference_number' => $bm['reference_number'] ?: "IN-{$bmId}",
+                    'notes'            => "Cancelled Stock IN: " . $cancellationReason
+                ]);
+
+                $cancelledItems[] = [
+                    'item_id'            => $itemId,
+                    'item_code'          => $bm['item_code'],
+                    'item_name'          => $bm['item_name'],
+                    'quantity_cancelled' => $qty,
+                    'unit'               => $bm['unit'],
+                    'balance_after'      => $newBal
+                ];
             }
 
-            // Decrement stock
-            $stmtUpd = $this->pdo->prepare("UPDATE stock SET qty_on_hand = qty_on_hand - ? WHERE item_id = ? AND warehouse_id = ?");
-            $stmtUpd->execute([$qty, $itemId, $whId]);
-
-            // Insert reversing movement
-            $revRemarks = "Cancelled Stock IN #{$stockInId}: {$cancellationReason}";
-            $stmtRev = $this->pdo->prepare("
-                INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'CANCELLED_INBOUND', ?, ?, ?, ?, NOW())
-            ");
-            $stmtRev->execute([$itemId, $whId, $qty, $stockInId, $revRemarks, $cancelledBy]);
-
-            $stmtBal->execute([$itemId, $whId]);
-            $newBal = (float)($stmtBal->fetchColumn() ?: 0.00);
-
-            AccountabilityService::log([
-                'user_id'          => $cancelledBy,
-                'team'             => 'Inventory',
-                'action_type'      => 'STOCK_IN_CANCEL',
-                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
-                'item_id'          => $itemId,
-                'quantity'         => $qty,
-                'warehouse_id'     => $whId,
-                'reference_number' => "IN-{$stockInId}",
-                'notes'            => "Cancelled Stock IN: " . $cancellationReason
-            ]);
-
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
+                'success'             => true,
                 'stock_in_id'         => $stockInId,
-                'transaction_number'  => "IN-{$stockInId}",
+                'transaction_number'  => $txn['reference_number'] ?: "IN-{$stockInId}",
+                'batch_uuid'          => $txn['batch_uuid'] ?? null,
+                'batch_count'         => count($cancelledItems),
                 'status'              => 'cancelled',
                 'cancellation_reason' => $cancellationReason,
                 'cancelled_by'        => $cancelledBy,
-                'items'               => [[
-                    'item_id'            => $itemId,
-                    'item_code'          => $txn['item_code'],
-                    'item_name'          => $txn['item_name'],
-                    'quantity_cancelled' => $qty,
-                    'unit'               => $txn['unit'],
-                    'balance_after'      => $newBal
-                ]]
+                'items'               => $cancelledItems
             ];
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -1037,7 +1224,7 @@ class StockService {
     }
 
     /**
-     * Cancel a Stock OUT transaction
+     * Cancel a Stock OUT transaction (Supports multi-item batch reversal)
      */
     public function cancelStockOut(int $stockOutId, string $cancellationReason, int $cancelledBy, ?array $authUser = null): array {
         if ($stockOutId <= 0) {
@@ -1051,10 +1238,14 @@ class StockService {
             throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("
                 SELECT sm.movement_id, sm.item_id, sm.warehouse_id, sm.quantity, sm.remarks, sm.created_by,
+                       sm.batch_uuid, sm.reference_number,
                        i.code AS item_code, i.name AS item_name, i.unit, i.type AS item_type
                 FROM stock_movements sm
                 JOIN items i ON sm.item_id = i.item_id
@@ -1072,82 +1263,127 @@ class StockService {
                 throw new DomainException("Cannot cancel a cancellation reversal transaction.");
             }
 
-            // Check if already cancelled
+            // If transaction belongs to a multi-item batch, load all movements in that batch
+            $batchMovements = [];
+            if (!empty($txn['batch_uuid'])) {
+                $stmtBatch = $this->pdo->prepare("
+                    SELECT sm.movement_id, sm.item_id, sm.warehouse_id, sm.quantity, sm.remarks, sm.created_by,
+                           sm.batch_uuid, sm.reference_number,
+                           i.code AS item_code, i.name AS item_name, i.unit, i.type AS item_type
+                    FROM stock_movements sm
+                    JOIN items i ON sm.item_id = i.item_id
+                    WHERE sm.batch_uuid = ? AND sm.movement_type = 'STOCK_OUT'
+                    ORDER BY sm.movement_id ASC
+                    FOR UPDATE
+                ");
+                $stmtBatch->execute([$txn['batch_uuid']]);
+                $batchMovements = $stmtBatch->fetchAll(PDO::FETCH_ASSOC);
+            }
+            if (empty($batchMovements)) {
+                $batchMovements = [$txn];
+            }
+
+            // IDOR / Facility scope check
+            if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
+                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                $isCreator = ((int)$txn['created_by'] === $authUid);
+                $isSameWh = ($userWhId > 0 && $userWhId === (int)$txn['warehouse_id']);
+                if (!$isCreator && !$isSameWh) {
+                    throw new DomainException(
+                        "Access Denied: Administrator #{$authUid} is not authorized to cancel transactions created for warehouse #{$txn['warehouse_id']}."
+                    );
+                }
+            }
+
+            // Check if any movement in the batch has already been cancelled
             $stmtChkRev = $this->pdo->prepare("
                 SELECT movement_id FROM stock_movements 
                 WHERE reference_id = ? AND (movement_type = 'CANCELLED_OUTBOUND' OR (movement_type = 'STOCK_IN' AND remarks LIKE 'Cancelled Stock OUT %'))
                 LIMIT 1
             ");
-            $stmtChkRev->execute([$stockOutId]);
-            if ($stmtChkRev->fetch()) {
-                throw new DomainException("Stock OUT transaction #{$stockOutId} has already been cancelled.");
-            }
-
-            // IDOR Protection
-            if ($authUser !== null && ($authUser['role'] ?? '') !== 'super_admin') {
-                $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
-                if ((int)$txn['created_by'] !== $authUid) {
-                    throw new DomainException(
-                        "Access Denied (IDOR Protection): Administrator #{$authUid} is not authorized to cancel transactions created by administrator #{$txn['created_by']}."
-                    );
+            foreach ($batchMovements as $bm) {
+                $stmtChkRev->execute([$bm['movement_id']]);
+                if ($stmtChkRev->fetch()) {
+                    throw new DomainException("Stock OUT transaction #{$bm['movement_id']} in this batch has already been cancelled.");
                 }
             }
 
-            $itemId = (int)$txn['item_id'];
-            $whId   = (int)$txn['warehouse_id'];
-            $qty    = (float)$txn['quantity'];
-
-            // Increment stock
+            // Increment stock for each movement and insert reversing movement
             $stmtUpd = $this->pdo->prepare("
                 INSERT INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
                 VALUES (?, ?, ?, 0.00)
                 ON DUPLICATE KEY UPDATE qty_on_hand = qty_on_hand + VALUES(qty_on_hand)
             ");
-            $stmtUpd->execute([$itemId, $whId, $qty]);
-
-            // Insert reversing movement
-            $revRemarks = "Cancelled Stock OUT #{$stockOutId}: {$cancellationReason}";
             $stmtRev = $this->pdo->prepare("
-                INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'CANCELLED_OUTBOUND', ?, ?, ?, ?, NOW())
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, quantity,
+                    reference_id, reference_number, batch_uuid, remarks, created_by, created_at
+                ) VALUES (
+                    ?, ?, 'CANCELLED_OUTBOUND', ?,
+                    ?, ?, ?, ?, ?, NOW()
+                )
             ");
-            $stmtRev->execute([$itemId, $whId, $qty, $stockOutId, $revRemarks, $cancelledBy]);
-
             $stmtBal = $this->pdo->prepare("SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ?");
-            $stmtBal->execute([$itemId, $whId]);
-            $newBal = (float)($stmtBal->fetchColumn() ?: 0.00);
 
-            AccountabilityService::log([
-                'user_id'          => $cancelledBy,
-                'team'             => 'Inventory',
-                'action_type'      => 'STOCK_OUT_CANCEL',
-                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
-                'item_id'          => $itemId,
-                'quantity'         => $qty,
-                'warehouse_id'     => $whId,
-                'reference_number' => "OUT-{$stockOutId}",
-                'notes'            => "Cancelled Stock OUT: " . $cancellationReason
-            ]);
+            $restoredItems = [];
+            foreach ($batchMovements as $bm) {
+                $itemId = (int)$bm['item_id'];
+                $whId   = (int)$bm['warehouse_id'];
+                $qty    = (float)$bm['quantity'];
+                $bmId   = (int)$bm['movement_id'];
 
-            $this->pdo->commit();
+                $stmtUpd->execute([$itemId, $whId, $qty]);
+
+                $revRemarks = "Cancelled Stock OUT #{$bmId}: {$cancellationReason}";
+                $stmtRev->execute([
+                    $itemId, $whId, $qty,
+                    $bmId, ($bm['reference_number'] ?: "OUT-{$bmId}"), $bm['batch_uuid'],
+                    $revRemarks, $cancelledBy
+                ]);
+
+                $stmtBal->execute([$itemId, $whId]);
+                $newBal = (float)($stmtBal->fetchColumn() ?: 0.00);
+
+                AccountabilityService::log([
+                    'user_id'          => $cancelledBy,
+                    'team'             => 'Inventory',
+                    'action_type'      => 'STOCK_OUT_CANCEL',
+                    'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                    'item_id'          => $itemId,
+                    'quantity'         => $qty,
+                    'warehouse_id'     => $whId,
+                    'reference_number' => $bm['reference_number'] ?: "OUT-{$bmId}",
+                    'notes'            => "Cancelled Stock OUT: " . $cancellationReason
+                ]);
+
+                $restoredItems[] = [
+                    'item_id'            => $itemId,
+                    'item_code'          => $bm['item_code'],
+                    'item_name'          => $bm['item_name'],
+                    'quantity_restored'  => $qty,
+                    'unit'               => $bm['unit'],
+                    'balance_after'      => $newBal
+                ];
+            }
+
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
+                'success'             => true,
                 'stock_out_id'        => $stockOutId,
-                'transaction_number'  => "OUT-{$stockOutId}",
+                'transaction_number'  => $txn['reference_number'] ?: "OUT-{$stockOutId}",
+                'batch_uuid'          => $txn['batch_uuid'] ?? null,
+                'batch_count'         => count($restoredItems),
                 'status'              => 'cancelled',
                 'cancellation_reason' => $cancellationReason,
                 'cancelled_by'        => $cancelledBy,
-                'items'               => [[
-                    'item_id'            => $itemId,
-                    'item_code'          => $txn['item_code'],
-                    'item_name'          => $txn['item_name'],
-                    'quantity_restored'  => $qty,
-                    'unit'               => $txn['unit'],
-                    'balance_after'      => $newBal
-                ]]
+                'items'               => $restoredItems
             ];
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -1549,10 +1785,15 @@ class StockService {
             // Insert reversing movement
             $revRemarks = "Cancelled Transfer TRF-{$stockTransferId}: {$cancellationReason}";
             $stmtRev = $this->pdo->prepare("
-                INSERT INTO stock_movements (item_id, warehouse_id, movement_type, quantity, reference_id, remarks, created_by, created_at)
-                VALUES (?, ?, 'STOCK_TRANSFER_IN', ?, ?, ?, ?, NOW())
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, quantity,
+                    reference_id, reference_number, remarks, created_by, created_at
+                ) VALUES (
+                    ?, ?, 'CANCELLED_TRANSFER', ?,
+                    ?, ?, ?, ?, NOW()
+                )
             ");
-            $stmtRev->execute([$itemId, $sourceWhId, $qty, $stockTransferId, $revRemarks, $cancelledBy]);
+            $stmtRev->execute([$itemId, $sourceWhId, $qty, $stockTransferId, "TRF-{$stockTransferId}", $revRemarks, $cancelledBy]);
 
             AccountabilityService::log([
                 'user_id'          => $cancelledBy,
@@ -1607,10 +1848,18 @@ class StockService {
             throw new InvalidArgumentException("Stock IN transaction #{$stockInId} not found.");
         }
 
-        if (($authUser['role'] ?? '') !== 'super_admin' && (int)$txn['created_by'] !== (int)$authUser['user_id']) {
-            throw new DomainException(
-                "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} is not authorized to view transactions created by administrator #{$txn['created_by']}."
-            );
+        if (($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            $authUid  = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+            $isSameWarehouse = ($userWhId > 0 && $userWhId === (int)$txn['warehouse_id']);
+            $isCreator = ($authUid > 0 && $authUid === (int)$txn['created_by']);
+            $isCrossTeam = in_array(strtolower(trim($authUser['team'] ?? '')), ['procurement', 'production', 'sales'], true);
+
+            if (!$isSameWarehouse && !$isCreator && !$isCrossTeam) {
+                throw new DomainException(
+                    "Access Denied (Facility Scoping): Administrator #{$authUid} is not authorized to view transactions for warehouse facility #{$txn['warehouse_id']}."
+                );
+            }
         }
 
         $txn['items'] = [[
@@ -1650,10 +1899,18 @@ class StockService {
             throw new InvalidArgumentException("Stock OUT transaction #{$stockOutId} not found.");
         }
 
-        if (($authUser['role'] ?? '') !== 'super_admin' && (int)$txn['created_by'] !== (int)$authUser['user_id']) {
-            throw new DomainException(
-                "Access Denied (IDOR Protection): Administrator #{$authUser['user_id']} is not authorized to view transactions created by administrator #{$txn['created_by']}."
-            );
+        if (($authUser['role'] ?? '') !== 'super_admin') {
+            $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+            $authUid  = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+            $isSameWarehouse = ($userWhId > 0 && $userWhId === (int)$txn['warehouse_id']);
+            $isCreator = ($authUid > 0 && $authUid === (int)$txn['created_by']);
+            $isCrossTeam = in_array(strtolower(trim($authUser['team'] ?? '')), ['procurement', 'production', 'sales'], true);
+
+            if (!$isSameWarehouse && !$isCreator && !$isCrossTeam) {
+                throw new DomainException(
+                    "Access Denied (Facility Scoping): Administrator #{$authUid} is not authorized to view transactions for warehouse facility #{$txn['warehouse_id']}."
+                );
+            }
         }
 
         $txn['items'] = [[
@@ -1718,14 +1975,14 @@ class StockService {
     }
 
     /**
-     * List Stock INs (Scoped by IDOR privacy)
+     * List Stock INs (Scoped by facility or creator)
      */
     public function listStockIns(array $authUser, int $limit = 50): array {
         $limit = max(1, min(200, $limit));
 
         $sql = "
             SELECT sm.movement_id AS stock_in_id,
-                   CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+                   COALESCE(sm.reference_number, CONCAT('IN-', LPAD(sm.movement_id, 6, '0'))) AS transaction_number,
                    sm.warehouse_id, w.name AS warehouse_name,
                    DATE(sm.created_at) AS transaction_date, 'completed' AS status,
                    sm.created_by, u.name AS creator_name, sm.created_at, sm.remarks,
@@ -1738,7 +1995,9 @@ class StockService {
         ";
 
         if (($authUser['role'] ?? '') !== 'super_admin') {
-            $sql .= " AND sm.created_by = " . (int)$authUser['user_id'];
+            $whId = (int)($authUser['warehouse_id'] ?? 0);
+            $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+            $sql .= " AND (sm.warehouse_id = {$whId} OR sm.created_by = {$authUid})";
         }
 
         $sql .= " ORDER BY sm.movement_id DESC LIMIT " . (int)$limit;
@@ -1748,14 +2007,14 @@ class StockService {
     }
 
     /**
-     * List Stock OUTs (Scoped by IDOR privacy)
+     * List Stock OUTs (Scoped by facility or creator)
      */
     public function listStockOuts(array $authUser, int $limit = 50): array {
         $limit = max(1, min(200, $limit));
 
         $sql = "
             SELECT sm.movement_id AS stock_out_id,
-                   CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
+                   COALESCE(sm.reference_number, CONCAT('OUT-', LPAD(sm.movement_id, 6, '0'))) AS transaction_number,
                    sm.warehouse_id, w.name AS warehouse_name,
                    DATE(sm.created_at) AS transaction_date, 'completed' AS status,
                    sm.created_by, u.name AS creator_name, sm.created_at, sm.remarks,
@@ -1768,7 +2027,9 @@ class StockService {
         ";
 
         if (($authUser['role'] ?? '') !== 'super_admin') {
-            $sql .= " AND sm.created_by = " . (int)$authUser['user_id'];
+            $whId = (int)($authUser['warehouse_id'] ?? 0);
+            $authUid = (int)($authUser['user_id'] ?? ($authUser['id'] ?? 0));
+            $sql .= " AND (sm.warehouse_id = {$whId} OR sm.created_by = {$authUid})";
         }
 
         $sql .= " ORDER BY sm.movement_id DESC LIMIT " . (int)$limit;
@@ -2254,7 +2515,10 @@ class StockService {
             throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmtItem = $this->pdo->prepare("SELECT code AS item_code, name AS item_name, unit, status FROM items WHERE item_id = ?");
             $stmtItem->execute([$itemId]);
@@ -2309,7 +2573,9 @@ class StockService {
                 'notes'            => "Defect write-off: [{$conditionType}] " . $reason
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'bad_product_id'     => $badProductId,
@@ -2324,7 +2590,7 @@ class StockService {
                 'status'             => 'reported'
             ];
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2447,6 +2713,149 @@ class StockService {
         }
 
         return $bp;
+    }
+
+    /**
+     * Confirm Bad Product / Damaged Goods Report (QC / Admin Verification)
+     */
+    public function confirmBadProduct(int $badProductId, int $userId, ?array $authUser = null): array {
+        if ($badProductId <= 0) {
+            throw new InvalidArgumentException("Invalid bad_product_id.");
+        }
+
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM bad_products WHERE bad_product_id = ? FOR UPDATE");
+            $stmt->execute([$badProductId]);
+            $bp = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$bp) {
+                throw new InvalidArgumentException("Bad product record #{$badProductId} not found.");
+            }
+            if ($bp['status'] !== 'reported') {
+                throw new DomainException("Cannot confirm bad product #{$badProductId}: status is already '{$bp['status']}'.");
+            }
+
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId > 0 && $userWhId !== (int)$bp['warehouse_id']) {
+                    throw new DomainException("Access Denied: You cannot confirm bad product records for another warehouse.");
+                }
+            }
+
+            $stmtUpd = $this->pdo->prepare("
+                UPDATE bad_products 
+                SET status = 'confirmed', confirmed_by = ?, confirmed_at = NOW() 
+                WHERE bad_product_id = ?
+            ");
+            $stmtUpd->execute([$userId, $badProductId]);
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'BAD_PRODUCT_CONFIRMED',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'item_id'          => (int)$bp['item_id'],
+                'quantity'         => (float)$bp['quantity'],
+                'warehouse_id'     => (int)$bp['warehouse_id'],
+                'reference_number' => "BP-{$badProductId}",
+                'notes'            => "Defect write-off confirmed by QC/Supervisor"
+            ]);
+
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
+
+            return [
+                'bad_product_id'     => $badProductId,
+                'bad_product_number' => "BP-{$badProductId}",
+                'status'             => 'confirmed',
+                'confirmed_by'       => $userId
+            ];
+        } catch (Throwable $e) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Dispose Bad Product / Defective Inventory
+     */
+    public function disposeBadProduct(int $badProductId, string $disposalMethod, int $userId, ?array $authUser = null): array {
+        if ($badProductId <= 0) {
+            throw new InvalidArgumentException("Invalid bad_product_id.");
+        }
+        $disposalMethod = trim($disposalMethod);
+        if (empty($disposalMethod)) {
+            throw new InvalidArgumentException("Disposal method is required.");
+        }
+
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM bad_products WHERE bad_product_id = ? FOR UPDATE");
+            $stmt->execute([$badProductId]);
+            $bp = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$bp) {
+                throw new InvalidArgumentException("Bad product record #{$badProductId} not found.");
+            }
+            if ($bp['status'] === 'disposed') {
+                throw new DomainException("Bad product record #{$badProductId} has already been disposed.");
+            }
+            if ($bp['status'] === 'cancelled') {
+                throw new DomainException("Cannot dispose cancelled bad product record #{$badProductId}.");
+            }
+
+            if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                $userWhId = (int)($authUser['warehouse_id'] ?? 0);
+                if ($userWhId > 0 && $userWhId !== (int)$bp['warehouse_id']) {
+                    throw new DomainException("Access Denied: You cannot dispose bad product records for another warehouse.");
+                }
+            }
+
+            $stmtUpd = $this->pdo->prepare("
+                UPDATE bad_products 
+                SET status = 'disposed', reason = CONCAT(reason, ' [Disposed: ', ?, ']')
+                WHERE bad_product_id = ?
+            ");
+            $stmtUpd->execute([$disposalMethod, $badProductId]);
+
+            AccountabilityService::log([
+                'user_id'          => $userId,
+                'team'             => 'Inventory',
+                'action_type'      => 'BAD_PRODUCT_DISPOSED',
+                'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                'item_id'          => (int)$bp['item_id'],
+                'quantity'         => (float)$bp['quantity'],
+                'warehouse_id'     => (int)$bp['warehouse_id'],
+                'reference_number' => "BP-{$badProductId}",
+                'notes'            => "Defective inventory physically disposed: " . $disposalMethod
+            ]);
+
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
+
+            return [
+                'bad_product_id'     => $badProductId,
+                'bad_product_number' => "BP-{$badProductId}",
+                'status'             => 'disposed',
+                'disposal_method'    => $disposalMethod
+            ];
+        } catch (Throwable $e) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 }
 

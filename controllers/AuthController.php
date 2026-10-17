@@ -267,6 +267,7 @@ class AuthController {
             'message'  => 'Welcome back, ' . htmlspecialchars($user['name']) . '!',
             'user'     => [
                 'id'           => (int)$user['user_id'],
+                'user_id'      => (int)$user['user_id'],
                 'name'         => $user['name'],
                 'email'        => $user['email'],
                 'role'         => $user['role'],
@@ -449,6 +450,11 @@ class AuthController {
             : $namePart . '*';
         $maskedEmail = $maskedName . '@' . $domainPart;
 
+        // Dispatch email notification with error_log fallback
+        $subject = "Casklog Inventory - Password Reset Verification Code";
+        $body = "Hello {$user['name']},\n\nYour 6-digit password reset verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please ignore this email.";
+        $headers = "From: no-reply@casklog.local\r\nReply-To: no-reply@casklog.local\r\nX-Mailer: PHP/" . phpversion();
+        @mail($email, $subject, $body, $headers);
         error_log("[OTP Reset] 6-digit code for {$email}: {$code}");
 
         return [
@@ -619,6 +625,7 @@ class AuthController {
 
         return [
             'id'           => (int)$_SESSION['user_id'],
+            'user_id'      => (int)$_SESSION['user_id'],
             'name'         => $_SESSION['user_name'] ?? 'Warehouse User',
             'email'        => $_SESSION['user_email'] ?? '',
             'role'         => $_SESSION['user_role'] ?? 'admin',

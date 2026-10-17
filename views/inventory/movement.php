@@ -8,6 +8,18 @@ $pageTitle   = 'Stock Movements — InventoryTeam';
 $activePage  = 'movement';
 $activeGroup = 'inventory';
 
+// Forward browser navigation to the unified Stock Transaction Reports hub (FIX-019)
+if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
+    if (!isset($_GET['stay_on_legacy'])) {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
+        $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
+        $qs = !empty($_SERVER['QUERY_STRING']) ? ('&' . $_SERVER['QUERY_STRING']) : '';
+        header("Location: {$projectRoot}/views/reports/stock_transactions.php?tab=movements{$qs}");
+        exit;
+    }
+}
+
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
@@ -44,7 +56,7 @@ $sql = "
             sm.created_at,
             sa.difference AS adjustment_difference,
             SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                 WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 ELSE 0 
@@ -57,7 +69,7 @@ $sql = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
             WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
             ELSE 0 
         END AS quantity_in,

@@ -23,11 +23,13 @@ require_once __DIR__ . '/adjustment/StockAdjustmentTest.php';
 require_once __DIR__ . '/warehouse/WarehouseAccessTest.php';
 require_once __DIR__ . '/accountability/AccountabilityLogTest.php';
 require_once __DIR__ . '/reports/ReportsTest.php';
+require_once __DIR__ . '/inventory/BatchCancellationTest.php';
+require_once __DIR__ . '/inventory/IdempotencyTest.php';
 
 $runner = new TestRunner();
 $pdo = $runner->getPdo();
 
-// Register the 12 core ERP test suites in workflow order
+// Register the core ERP test suites in workflow order
 $runner->registerTest(new AuthenticationTest($pdo));
 $runner->registerTest(new AuthorizationTest($pdo));
 $runner->registerTest(new ProcurementTest($pdo));
@@ -40,6 +42,8 @@ $runner->registerTest(new StockAdjustmentTest($pdo));
 $runner->registerTest(new WarehouseAccessTest($pdo));
 $runner->registerTest(new AccountabilityLogTest($pdo));
 $runner->registerTest(new ReportsTest($pdo));
+$runner->registerTest(new BatchCancellationTest($pdo));
+$runner->registerTest(new IdempotencyTest($pdo));
 
 $allPassed = $runner->runAll();
 

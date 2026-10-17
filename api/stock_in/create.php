@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -67,7 +68,7 @@ if ($warehouseId <= 0) {
     ], 400);
 }
 
-$validSourceTypes = ['PURCHASE_ORDER', 'PRODUCTION_RETURN', 'MANUAL'];
+$validSourceTypes = StockService::VALID_STOCK_IN_SOURCES;
 if (!in_array($sourceType, $validSourceTypes, true)) {
     jsonResponse([
         'success' => false,
@@ -82,6 +83,18 @@ if (empty($sourceReferenceNo)) {
     ], 400);
 }
 
+// Idempotency check: prevent duplicate requests across retries
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey($sourceReferenceNo);
+if ($idempotencyKey) {
+    $cached = IdempotencyService::check($pdo, $idempotencyKey, 'api/stock_in/create.php', (string)$userId, $payload);
+    if ($cached) {
+        http_response_code($cached['response_code']);
+        echo $cached['response_body'];
+        exit;
+    }
+}
+
 // Team domain and warehouse isolation enforcement
 $userRole = strtolower(trim((string)($authUser['role'] ?? '')));
 $userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
@@ -89,6 +102,7 @@ $isSuperAdmin = ($userRole === 'super_admin');
 $isInventoryAdmin = ($userRole === 'super_admin' || $userRole === 'admin' || $userTeam === 'inventory');
 $isProcurement = ($userTeam === 'procurement' || $userRole === 'procurement');
 $isProduction = ($userTeam === 'production' || $userRole === 'production');
+$isSales = ($userTeam === 'sales' || $userRole === 'sales');
 
 if (!$isSuperAdmin) {
     $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
@@ -109,11 +123,19 @@ if ($sourceType === 'PURCHASE_ORDER' && !$isProcurement && !$isInventoryAdmin) {
     ], 403);
 }
 
-if ($sourceType === 'PRODUCTION_RETURN' && !$isProduction && !$isInventoryAdmin) {
+if (($sourceType === 'PRODUCTION_RETURN' || $sourceType === 'PRODUCTION_RECEIPT') && !$isProduction && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
         'detail'  => "Only Production Service API (or Admin) can submit Production Receipts. Your account is '{$authUser['name']}'."
+    ], 403);
+}
+
+if ($sourceType === 'CUSTOMER_RETURN' && !$isSales && !$isInventoryAdmin) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Forbidden',
+        'detail'  => "Only Sales Service API (or Admin) can submit Customer Returns. Your account is '{$authUser['name']}'."
     ], 403);
 }
 
@@ -189,11 +211,17 @@ try {
         $authUser
     );
 
-    jsonResponse([
+    $response = [
         'success' => true,
         'message' => 'Stock IN recorded successfully. Inventory updated.',
         'data'    => $result
-    ], 201);
+    ];
+
+    if ($idempotencyKey) {
+        IdempotencyService::store($pdo, $idempotencyKey, 'api/stock_in/create.php', (string)$userId, $payload, 201, $response);
+    }
+
+    jsonResponse($response, 201);
 } catch (DomainException $e) {
     jsonResponse([
         'success' => false,

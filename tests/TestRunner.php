@@ -45,9 +45,23 @@ class TestRunner {
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
             ]);
 
-            // Check if tables are already loaded
+            // Check if tables are already loaded and up to date
             $tables = $testPdo->query("SHOW TABLES LIKE 'stock'")->fetchAll();
-            if (empty($tables)) {
+            $needsReload = empty($tables);
+            if (!empty($tables)) {
+                $cols = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'reference_number'")->fetchAll();
+                if (empty($cols)) {
+                    $needsReload = true;
+                }
+            }
+
+            if ($needsReload) {
+                $rootPdo->exec("DROP DATABASE IF EXISTS `team_inventory_test`");
+                $rootPdo->exec("CREATE DATABASE `team_inventory_test` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+                $testPdo = new PDO('mysql:host=127.0.0.1;port=3306;dbname=team_inventory_test', 'root', '', [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+                ]);
+
                 $schemaFile = __DIR__ . '/../database/Inventory_local.sql';
                 if (file_exists($schemaFile)) {
                     $sql = file_get_contents($schemaFile);
