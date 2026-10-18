@@ -117,17 +117,17 @@ function requireApiAuth(array $allowed = []): array {
     }
 
     // 2. Hash incoming token with SHA-256 for secure constant-time DB lookup (SEC-04)
-    // Supports both SHA-256 hashed tokens and legacy plain tokens for backward compatibility
+    // Only SHA-256 token hashes are stored in the database for security (no plaintext token storage)
     $tokenHash = hash('sha256', $token);
 
     $pdo = Database::getConnection();
     $stmt = $pdo->prepare("
         SELECT user_id, name, email, role, team, warehouse_id, api_token, status
         FROM users
-        WHERE (api_token = ? OR api_token = ?) AND status = 'active'
+        WHERE api_token = ? AND status = 'active'
         LIMIT 1
     ");
-    $stmt->execute([$tokenHash, $token]);
+    $stmt->execute([$tokenHash]);
     $user = $stmt->fetch();
 
     if (!$user) {

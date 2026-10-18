@@ -99,7 +99,7 @@ if ($idempotencyKey) {
 $userRole = strtolower(trim((string)($authUser['role'] ?? '')));
 $userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
 $isSuperAdmin = ($userRole === 'super_admin');
-$isInventoryAdmin = ($userRole === 'super_admin' || $userRole === 'admin' || $userTeam === 'inventory');
+$isInventoryAdmin = ($userRole === 'super_admin' || ($userRole === 'admin' && in_array($userTeam, ['inventory', 'administration'], true)) || $userTeam === 'inventory');
 $isProcurement = ($userTeam === 'procurement' || $userRole === 'procurement');
 $isProduction = ($userTeam === 'production' || $userRole === 'production');
 $isSales = ($userTeam === 'sales' || $userRole === 'sales');
