@@ -229,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Damaged product report " . htmlspecialchars($result['bad_product_number']) . " cancelled. Deducted stock has been refunded back into your warehouse inventory.";
                     break;
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $errorMessage = $e->getMessage();
         }
     }
@@ -486,7 +486,7 @@ if ($selectedItemId > 0) {
                 sm.created_at,
                 sa.difference AS adjustment_difference,
                 SUM(CASE 
-                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+                    WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                     WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                     WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                     ELSE 0 
@@ -499,7 +499,7 @@ if ($selectedItemId > 0) {
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
             CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
                 ELSE 0 
             END AS quantity_in,
@@ -601,22 +601,22 @@ if ($selectedItemId > 0) {
 
 <!-- Flash Alerts -->
 <?php if ($successMessage): ?>
-    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+    <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <span><?= htmlspecialchars($successMessage) ?></span>
         </div>
-        <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 16px;">&times;</button>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert') || this.parentElement)" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>
-    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+    <div class="flash-alert flash-alert-error" style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span><?= htmlspecialchars($errorMessage) ?></span>
         </div>
-        <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 16px;">&times;</button>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert') || this.parentElement)" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
@@ -1290,6 +1290,7 @@ if ($selectedItemId > 0) {
                     <option value="BAD_PRODUCT_DISCARD" <?= ($movementType === 'BAD_PRODUCT_DISCARD' || $movementType === 'BAD_PRODUCT') ? 'selected' : '' ?>>Damaged / Defective</option>
                     <option value="CANCELLED_INBOUND" <?= $movementType === 'CANCELLED_INBOUND' ? 'selected' : '' ?>>Cancelled Inbound</option>
                     <option value="CANCELLED_OUTBOUND" <?= $movementType === 'CANCELLED_OUTBOUND' ? 'selected' : '' ?>>Cancelled Outbound</option>
+                    <option value="CANCELLED_TRANSFER" <?= $movementType === 'CANCELLED_TRANSFER' ? 'selected' : '' ?>>Cancelled Transfer</option>
                 </select>
             </div>
 
@@ -1478,7 +1479,7 @@ if ($selectedItemId > 0) {
                 <table class="no-paginate">
                     <thead>
                         <tr>
-                            <th>SKU / Code</th>
+                            <th>Item Code</th>
                             <th>Item Name</th>
                             <th>Classification</th>
                             <th style="text-align: right;">Quantity</th>

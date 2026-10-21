@@ -338,8 +338,81 @@ function initTablePagination(table, pageSize = 10) {
     renderPagination();
 }
 
+// Universal Flash Alert Dismissal Engine with Smooth Fade & Collapse
+function dismissFlashAlert(alertEl) {
+    if (!alertEl || alertEl.dataset.dismissing === 'true') return;
+    alertEl.dataset.dismissing = 'true';
+
+    alertEl.style.transition = 'opacity 0.4s ease, max-height 0.4s ease, margin 0.4s ease, padding 0.4s ease';
+    alertEl.style.overflow = 'hidden';
+    alertEl.style.maxHeight = alertEl.scrollHeight + 'px';
+
+    // Force repaint before animating out
+    void alertEl.offsetHeight;
+
+    alertEl.style.opacity = '0';
+    alertEl.style.maxHeight = '0px';
+    alertEl.style.marginTop = '0px';
+    alertEl.style.marginBottom = '0px';
+    alertEl.style.paddingTop = '0px';
+    alertEl.style.paddingBottom = '0px';
+
+    setTimeout(() => {
+        if (alertEl.parentNode) {
+            alertEl.remove();
+        }
+    }, 450);
+}
+window.dismissFlashAlert = dismissFlashAlert;
+
 // Auto-initialize pagination & sorting on all data tables, plus global modal Escape & Focus Trap
 document.addEventListener('DOMContentLoaded', function() {
+    // Auto-dismiss all Throwable / Error & Flash Alert banners after 5 seconds
+    function attachAlertAutoDismiss(alert) {
+        if (!alert || alert.dataset.autoDismissAttached) return;
+        alert.dataset.autoDismissAttached = 'true';
+
+        let timer = setTimeout(() => {
+            dismissFlashAlert(alert);
+        }, 5000);
+
+        // Pause countdown if user hovers to read the message; resume when mouse leaves
+        alert.addEventListener('mouseenter', () => {
+            if (timer) clearTimeout(timer);
+        });
+        alert.addEventListener('mouseleave', () => {
+            if (alert.dataset.dismissing !== 'true') {
+                timer = setTimeout(() => {
+                    dismissFlashAlert(alert);
+                }, 2000);
+            }
+        });
+    }
+
+    const initialAlerts = document.querySelectorAll(
+        '.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]'
+    );
+    initialAlerts.forEach(attachAlertAutoDismiss);
+
+    // Also observe dynamically injected alerts (e.g. AJAX or dynamic error popups)
+    if (window.MutationObserver) {
+        const alertObserver = new MutationObserver(mutations => {
+            mutations.forEach(m => {
+                m.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) { // Node.ELEMENT_NODE
+                        if (node.matches && node.matches('.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]')) {
+                            attachAlertAutoDismiss(node);
+                        }
+                        if (node.querySelectorAll) {
+                            node.querySelectorAll('.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]').forEach(attachAlertAutoDismiss);
+                        }
+                    }
+                });
+            });
+        });
+        alertObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     const tables = document.querySelectorAll('table');
     tables.forEach(table => {
         if (table.classList.contains('no-paginate') || table.closest('.modal, .modal-backdrop, .modal-card, .settings-modal-backdrop')) return;

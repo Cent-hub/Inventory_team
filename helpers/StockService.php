@@ -315,7 +315,7 @@ class StockService {
                 'items_count'         => count($processedItems),
                 'items'               => $processedItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -546,7 +546,7 @@ class StockService {
                 'items_count'         => count($processedItems),
                 'items'               => $processedItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1215,7 +1215,7 @@ class StockService {
                 'cancelled_by'        => $cancelledBy,
                 'items'               => $cancelledItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1382,7 +1382,7 @@ class StockService {
                 'cancelled_by'        => $cancelledBy,
                 'items'               => $restoredItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1577,7 +1577,7 @@ class StockService {
                 'items_count'              => count($processedItems),
                 'items'                    => $processedItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1707,7 +1707,7 @@ class StockService {
                     'dest_balance_after' => $destBal
                 ]]
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1815,7 +1815,7 @@ class StockService {
                 'status'             => 'cancelled',
                 'cancellation_reason'=> $cancellationReason
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2216,7 +2216,7 @@ class StockService {
                 'items_count'         => count($processedItems),
                 'items'               => $processedItems
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2311,7 +2311,7 @@ class StockService {
                 'status'              => 'approved',
                 'difference'          => $diff
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2366,7 +2366,7 @@ class StockService {
                 'transaction_number'  => "ADJ-{$adjustmentId}",
                 'status'              => 'rejected'
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2417,7 +2417,7 @@ class StockService {
                 'transaction_number'  => "ADJ-{$adjustmentId}",
                 'status'              => 'cancelled'
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2589,7 +2589,7 @@ class StockService {
                 'unit'               => $item['unit'],
                 'status'             => 'reported'
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -2671,7 +2671,7 @@ class StockService {
                 'bad_product_number' => "BP-{$badProductId}",
                 'status'             => 'cancelled'
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }

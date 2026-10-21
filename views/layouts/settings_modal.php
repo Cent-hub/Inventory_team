@@ -48,7 +48,7 @@ if ($userTeamRaw === '' && isset($pdo) && !empty($currentUser['id'])) {
             $userTeamRaw = $dbTeam;
             $_SESSION['user_team'] = $dbTeam;
         }
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         // Fallback to session/default team
     }
 }

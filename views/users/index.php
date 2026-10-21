@@ -92,7 +92,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 
                         $successMessage = "User account '{$uName}' ({$uEmail}) created successfully! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $errorMessage = "Failed to create user account: " . $e->getMessage();
                 }
             }
@@ -127,7 +127,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 
                         $successMessage = "API Token for user '{$targetUser['name']}' has been regenerated! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>New API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $errorMessage = "Failed to regenerate API token: " . $e->getMessage();
                 }
             }
@@ -192,7 +192,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 
                         $successMessage = "User account '{$uName}' updated successfully!";
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $errorMessage = "Failed to update user account: " . $e->getMessage();
                 }
             }
@@ -327,16 +327,22 @@ function getFacilityAssignment($user) {
 </div>
 
 <?php if ($successMessage): ?>
-    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        <span><?= htmlspecialchars($successMessage) ?></span>
+    <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span><?= htmlspecialchars($successMessage) ?></span>
+        </div>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert'))" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>
-    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span><?= htmlspecialchars($errorMessage) ?></span>
+    <div class="flash-alert flash-alert-error" style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span><?= htmlspecialchars($errorMessage) ?></span>
+        </div>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert'))" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 

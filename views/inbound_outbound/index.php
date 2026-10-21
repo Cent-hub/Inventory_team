@@ -170,12 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
                     $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'expected quantity');
 
-                    $pdo->prepare("INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
-                        ->execute([$orderNumber, $sourceType, $entityName, $targetWhId, $expectedDate ?: null, $notes ?: null, $userId]);
-                    $newOrderId = (int)$pdo->lastInsertId();
+                    $pdo->beginTransaction();
+                    try {
+                        $pdo->prepare("INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
+                            ->execute([$orderNumber, $sourceType, $entityName, $targetWhId, $expectedDate ?: null, $notes ?: null, $userId]);
+                        $newOrderId = (int)$pdo->lastInsertId();
 
-                    $pdo->prepare("INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity) VALUES (?, ?, ?, 0)")
-                        ->execute([$newOrderId, $itemId, $quantity]);
+                        $pdo->prepare("INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity) VALUES (?, ?, ?, 0)")
+                            ->execute([$newOrderId, $itemId, $quantity]);
+
+                        $pdo->commit();
+                    } catch (Throwable $t) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        throw $t;
+                    }
 
                     $successMessage = "Inbound order " . htmlspecialchars($orderNumber) . " registered in the receiving queue.";
                     break;
@@ -214,12 +224,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
                     $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'requested quantity');
 
-                    $pdo->prepare("INSERT INTO outbound_orders (order_number, source_type, entity_name, warehouse_id, required_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
-                        ->execute([$orderNumber, $sourceType, $entityName, $sourceWhId, $requiredDate ?: null, $notes ?: null, $userId]);
-                    $newOrderId = (int)$pdo->lastInsertId();
+                    $pdo->beginTransaction();
+                    try {
+                        $pdo->prepare("INSERT INTO outbound_orders (order_number, source_type, entity_name, warehouse_id, required_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
+                            ->execute([$orderNumber, $sourceType, $entityName, $sourceWhId, $requiredDate ?: null, $notes ?: null, $userId]);
+                        $newOrderId = (int)$pdo->lastInsertId();
 
-                    $pdo->prepare("INSERT INTO outbound_order_items (outbound_order_id, item_id, requested_quantity, dispatched_quantity) VALUES (?, ?, ?, 0)")
-                        ->execute([$newOrderId, $itemId, $quantity]);
+                        $pdo->prepare("INSERT INTO outbound_order_items (outbound_order_id, item_id, requested_quantity, dispatched_quantity) VALUES (?, ?, ?, 0)")
+                            ->execute([$newOrderId, $itemId, $quantity]);
+
+                        $pdo->commit();
+                    } catch (Throwable $t) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        throw $t;
+                    }
 
                     $successMessage = "Outbound order " . htmlspecialchars($orderNumber) . " registered in the dispatch queue.";
                     break;
@@ -537,22 +557,22 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
 
 <!-- Flash Alerts -->
 <?php if ($successMessage): ?>
-    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+    <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <span><?= htmlspecialchars($successMessage) ?></span>
         </div>
-        <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 16px;">&times;</button>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert') || this.parentElement)" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>
-    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+    <div class="flash-alert flash-alert-error" style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span><?= htmlspecialchars($errorMessage) ?></span>
         </div>
-        <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 16px;">&times;</button>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert') || this.parentElement)" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
@@ -633,12 +653,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                 <p class="card-desc" style="margin: 4px 0 0 0;">
                     Document-driven receiving: Select an open PO, Production Batch, or Customer RMA return to verify and accept into stock
                 </p>
-            </div>
-            <div>
-                <button type="button" class="btn btn-primary" onclick="openNewInboundOrderModal()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    <span> Register Inbound Order / RMA</span>
-                </button>
             </div>
         </div>
 
@@ -766,11 +780,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                     Reset
                 </button>
 
-                <?php if (in_array($currentUser['role'] ?? '', ['super_admin', 'admin'], true)): ?>
-                    <button type="button" class="btn btn-secondary" onclick="openRecordStockInModal()" title="Direct emergency receipt override">
-                        + Direct Stock In (Admin)
-                    </button>
-                <?php endif; ?>
             </div>
         </div>
 
@@ -1177,11 +1186,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
                     Reset
                 </button>
 
-                <?php if (in_array($currentUser['role'] ?? '', ['super_admin', 'admin'], true)): ?>
-                    <button type="button" class="btn btn-secondary" onclick="openRecordStockOutModal()" title="Emergency direct dispatch override">
-                        + Direct Stock Out (Admin)
-                    </button>
-                <?php endif; ?>
             </div>
         </div>
 

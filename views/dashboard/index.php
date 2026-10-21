@@ -147,11 +147,13 @@ $stmtRecent = $pdo->prepare("
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
+            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND COALESCE(sa.difference, 0) > 0 THEN sa.difference
             ELSE 0 
         END AS quantity_in,
         CASE 
             WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
+            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND COALESCE(sa.difference, 0) < 0 THEN ABS(sa.difference)
             ELSE 0 
         END AS quantity_out,
         0 AS balance_after,
@@ -165,6 +167,7 @@ $stmtRecent = $pdo->prepare("
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
+    LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
     WHERE sm.warehouse_id = :wid
       AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC
@@ -347,8 +350,10 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                             <td class="text-center" style="font-weight: 700; font-size: 13.5px;">
                                 <?php if ($isIncoming): ?>
                                     <span style="color: #15803D;">+<?= formatQty($act['quantity_in']) ?></span>
-                                <?php else: ?>
+                                <?php elseif ((float)$act['quantity_out'] > 0): ?>
                                     <span style="color: #B91C1C;">-<?= formatQty($act['quantity_out']) ?></span>
+                                <?php else: ?>
+                                    <span style="color: var(--gray);">0.00</span>
                                 <?php endif; ?>
                                 <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($act['unit']) ?></small>
                             </td>

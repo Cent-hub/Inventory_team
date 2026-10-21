@@ -47,23 +47,23 @@ class AuthController {
      * Determine client IP address safely
      */
     public function getClientIp(): string {
-        $headers = [
-            'HTTP_CF_CONNECTING_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_REAL_IP',
-            'REMOTE_ADDR'
-        ];
-
-        foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                $parts = explode(',', $_SERVER[$header]);
-                $ip = trim($parts[0]);
-                if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    return $ip;
+        $trustedProxiesEnv = getenv('TRUSTED_PROXIES');
+        if (!empty($trustedProxiesEnv)) {
+            $trusted = array_map('trim', explode(',', $trustedProxiesEnv));
+            $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+            if (in_array($remoteAddr, $trusted, true)) {
+                $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'];
+                foreach ($headers as $header) {
+                    if (!empty($_SERVER[$header])) {
+                        $parts = explode(',', $_SERVER[$header]);
+                        $ip = trim($parts[0]);
+                        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                            return $ip;
+                        }
+                    }
                 }
             }
         }
-
         return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 
@@ -455,7 +455,6 @@ class AuthController {
         $body = "Hello {$user['name']},\n\nYour 6-digit password reset verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please ignore this email.";
         $headers = "From: no-reply@casklog.local\r\nReply-To: no-reply@casklog.local\r\nX-Mailer: PHP/" . phpversion();
         @mail($email, $subject, $body, $headers);
-        error_log("[OTP Reset] 6-digit code for {$email}: {$code}");
 
         return [
             'success'      => true,
@@ -641,9 +640,6 @@ class AuthController {
         $emailLower = strtolower(trim((string)$email));
         if (str_contains($emailLower, 'sales') || str_contains($emailLower, 'bond')) {
             return 2; // WH-BOND (Manila)
-        }
-        if (str_contains($emailLower, 'prod') || str_contains($emailLower, 'bott') || str_contains($emailLower, 'fg')) {
-            return 3; // WH-BOTT (Bulacan)
         }
         return 1; // WH-MAIN (Laguna)
     }

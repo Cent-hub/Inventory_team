@@ -70,15 +70,26 @@ $kpis = AccountabilityService::getKpis($scopeWarehouseId);
 $warehousesStmt = $pdo->query("SELECT warehouse_id, name AS warehouse_name, code AS warehouse_code, code, name FROM warehouses ORDER BY name ASC");
 $allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch logs with verified warehouse scope (all facilities for Super Admin so the Warehouse Filter works across branches)
-$logs = AccountabilityService::getLogs($scopeWarehouseId, [
+// Server-Side Limit & Pagination (UI-01)
+$limitParam = $_GET['limit'] ?? '';
+$isAll = ($limitParam === 'all');
+$limitVal = $isAll ? 0 : max(10, min(1000, (int)($limitParam ?: 100)));
+
+$filters = [
     'team'       => $_GET['team'] ?? '',
     'action'     => $_GET['action'] ?? '',
     'warehouse'  => $_GET['warehouse'] ?? '',
     'search'     => $_GET['search'] ?? '',
     'start_date' => $_GET['start_date'] ?? '',
     'end_date'   => $_GET['end_date'] ?? '',
-]);
+];
+if ($limitVal > 0) {
+    $filters['limit'] = $limitVal;
+    $filters['offset'] = 0;
+}
+
+// Fetch logs with verified warehouse scope (all facilities for Super Admin so the Warehouse Filter works across branches)
+$logs = AccountabilityService::getLogs($scopeWarehouseId, $filters);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
 $currentWarehouseName = $assignedWarehouse['warehouse_name'] ?? 'Main Warehouse';
@@ -238,6 +249,18 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 <?php endforeach; ?>
             </select>
             <?php endif; ?>
+
+            <!-- Server-Side Query Limit (UI-01) -->
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 12px; color: var(--gray); font-weight: 500;">Show</span>
+                <select id="fullLogLimitFilter" class="select-filter" style="width: 105px; padding: 0 8px;" onchange="window.location.href='?limit=' + this.value" title="Records limit per query">
+                    <option value="50" <?= $limitVal === 50 ? 'selected' : '' ?>>50 rows</option>
+                    <option value="100" <?= ($limitVal === 100 && !$isAll) ? 'selected' : '' ?>>100 rows</option>
+                    <option value="250" <?= $limitVal === 250 ? 'selected' : '' ?>>250 rows</option>
+                    <option value="500" <?= $limitVal === 500 ? 'selected' : '' ?>>500 rows</option>
+                    <option value="all" <?= $isAll ? 'selected' : '' ?>>All rows</option>
+                </select>
+            </div>
 
             <button type="button" class="btn btn-secondary" style="height: 38px; padding: 0 14px;" onclick="resetFullLogFilters()" title="Reset Filters">
                 Reset

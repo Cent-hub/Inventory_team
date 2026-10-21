@@ -35,6 +35,15 @@ switch ($action) {
             exit;
         }
 
+        // Enforce anti-CSRF verification on authenticated password change (SEC-05)
+        require_once __DIR__ . '/../../helpers/csrf.php';
+        $submittedCsrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($input['csrf_token'] ?? null);
+        if (!validateCsrfToken($submittedCsrf)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'CSRF token mismatch. Please refresh the page and try again.']);
+            exit;
+        }
+
         $currentUser     = $auth->getCurrentUser();
         $userId          = (int)($currentUser['id'] ?? 0);
         $currentPassword = (string)($input['current_password'] ?? '');

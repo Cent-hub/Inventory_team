@@ -4,7 +4,7 @@
  * InventoryTeam — Liquor Business Inventory Management System
  */
 
-$pageTitle   = 'Item Catalog & SKUs — InventoryTeam';
+$pageTitle   = 'Item Catalog — InventoryTeam';
 $activePage  = 'items';
 $activeGroup = 'inventory';
 
@@ -38,9 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         if (empty($itemCode)) {
-            $errorMessage = "Item Code (SKU) is required.";
+            $errorMessage = "Item Code is required.";
         } elseif (mb_strlen($itemCode) > 50 || !preg_match('/^[A-Z0-9\-_]+$/', $itemCode)) {
-            $errorMessage = "Item Code (SKU) must be 1–50 characters and contain only letters, numbers, hyphens (-), or underscores (_).";
+            $errorMessage = "Item Code must be 1–50 characters and contain only letters, numbers, hyphens (-), or underscores (_).";
         } elseif (empty($itemName)) {
             $errorMessage = "Item Name is required.";
         } elseif (mb_strlen($itemName) > 150) {
@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE code = ?");
                     $stmtChk->execute([$itemCode]);
                     if ((int)$stmtChk->fetchColumn() > 0) {
-                        $errorMessage = "An item with SKU code '{$itemCode}' already exists.";
+                        $errorMessage = "An item with Item Code '{$itemCode}' already exists.";
                     } else {
                         $userId = (int)($currentUser['id'] ?? 1);
                         $stmtIns = $pdo->prepare("
@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                         $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $errorMessage = "Failed to create item: " . $e->getMessage();
                 }
             }
@@ -172,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $stmtTxCheck->execute([$itemId, $itemId, $itemId, $itemId]);
                             $txCount = (float)$stmtTxCheck->fetchColumn();
                             if ($txCount > 0) {
-                                $errorMessage = "Classification is locked for SKU '{$existingItem['item_code']}': cannot modify item type because recorded stock or transactions exist in the ledger.";
+                                $errorMessage = "Classification is locked for Item Code '{$existingItem['item_code']}': cannot modify item type because recorded stock or transactions exist in the ledger.";
                             }
                         }
 
@@ -229,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $successMessage = "Master item '{$itemName}' ({$existingItem['item_code']}) updated successfully!";
                         }
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $errorMessage = "Failed to update item: " . $e->getMessage();
                 }
             }
@@ -296,16 +296,22 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
 
 <!-- Flash Alerts -->
 <?php if ($successMessage): ?>
-    <div style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        <span><?= htmlspecialchars($successMessage) ?></span>
+    <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span><?= htmlspecialchars($successMessage) ?></span>
+        </div>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert'))" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>
-    <div style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span><?= htmlspecialchars($errorMessage) ?></span>
+    <div class="flash-alert flash-alert-error" style="background: var(--error-light); border: 1px solid var(--error-border); color: var(--error); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span><?= htmlspecialchars($errorMessage) ?></span>
+        </div>
+        <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert'))" style="background: none; border: none; cursor: pointer; color: var(--error); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
 <?php endif; ?>
 
@@ -313,7 +319,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Registered SKUs</span>
+            <span class="stat-label">Total Registered Items</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
             </div>
@@ -397,7 +403,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
             <tbody>
                 <?php if (empty($itemsList)): ?>
                     <tr>
-                        <td colspan="<?= $canManageItems ? 8 : 7 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first SKU.</td>
+                        <td colspan="<?= $canManageItems ? 8 : 7 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first item.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
@@ -470,7 +476,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
             <div class="modal-header">
                 <div>
                     <h3 id="newItemModalTitle" class="card-title">Add New Catalog Item</h3>
-                    <p class="card-desc">Define a new raw material ingredient or finished bottle SKU</p>
+                    <p class="card-desc">Define a new raw material ingredient or finished product</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewItemModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -536,7 +542,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeNewItemModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Save SKU</button>
+                <button type="submit" class="btn btn-primary">Save Item</button>
             </div>
         </form>
     </div>
@@ -562,7 +568,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <label style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Item Code (SKU)
+                            Item Code
                         </label>
                         <input type="text" id="editItemCode" class="search-box" style="width: 100%; padding-left: 12px; background: #F1F5F9; color: var(--gray);" readonly>
                     </div>
@@ -584,7 +590,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                         <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
                     </select>
                     <small id="editTypeLockNote" style="display: none; color: #DC2626; font-size: 12px; margin-top: 4px;">
-                        Classification locked: historical inventory movements/adjustments exist for this SKU.
+                        Classification locked: historical inventory movements/adjustments exist for this item.
                     </small>
                 </div>
 

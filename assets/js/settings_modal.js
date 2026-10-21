@@ -464,14 +464,20 @@ function handleSettingsDirectPasswordChange() {
     if (submitBtn) submitBtn.disabled = true;
 
     const baseUrl = getSettingsBaseUrl();
+    const csrfToken = getSettingsCsrfToken();
     fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json', 
+            'Accept': 'application/json',
+            'X-CSRF-Token': csrfToken
+        },
         body: JSON.stringify({
             action: 'change_password',
             current_password: currentVal,
             new_password: newVal,
-            confirm_password: confirmVal
+            confirm_password: confirmVal,
+            csrf_token: csrfToken
         })
     })
     .then(res => res.json())

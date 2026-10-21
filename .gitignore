@@ -17,3 +17,10 @@ desktop.ini
 
 # Database Backups
 database/*backup*.sql
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+

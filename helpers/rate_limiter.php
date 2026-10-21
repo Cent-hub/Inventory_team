@@ -33,6 +33,11 @@ function checkRateLimit(
     }
     @file_put_contents($cacheFile, (string)$currentCount, LOCK_EX);
 
+    // Opportunistic garbage collection: 1 in 100 requests purges expired temp files (SEC-03)
+    if (mt_rand(1, 100) === 1) {
+        pruneExpiredRateLimits(null, 3600);
+    }
+
     $remaining = max(0, $maxRequests - $currentCount);
     $retryAfter = max(1, $windowEnd - $now);
 
@@ -64,7 +69,7 @@ function checkRateLimit(
 /**
  * Automated opportunistic pruning for expired rate limit files.
  */
-function pruneExpiredRateLimits(?PDO $pdo = null, int $maxAgeSeconds = 86400): int {
+function pruneExpiredRateLimits(?PDO $pdo = null, int $maxAgeSeconds = 3600): int {
     $count = 0;
     $files = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_api_rl_*.txt');
     if ($files) {

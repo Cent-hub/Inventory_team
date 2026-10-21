@@ -46,6 +46,9 @@ if ($datePreset === 'today') {
     }
 }
 $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
+$limitParam   = $_GET['limit'] ?? '';
+$isAll        = ($limitParam === 'all');
+$limitVal     = $isAll ? 0 : max(10, min(1000, (int)($limitParam ?: 100)));
 
 // Active Tab Mapping
 $tabMap = [
@@ -125,6 +128,7 @@ if ($search !== '') {
     $paramsM[] = "%$search%";
 }
 $sqlM .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
+if ($limitVal > 0) $sqlM .= " LIMIT " . (int)$limitVal;
 $stmtM = $pdo->prepare($sqlM);
 $stmtM->execute($paramsM);
 $movementData = $stmtM->fetchAll(PDO::FETCH_ASSOC);
@@ -168,6 +172,7 @@ if ($search !== '') {
     $paramsIn[] = "%$search%";
 }
 $sqlIn .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
+if ($limitVal > 0) $sqlIn .= " LIMIT " . (int)$limitVal;
 $stmtIn = $pdo->prepare($sqlIn);
 $stmtIn->execute($paramsIn);
 $inboundData = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
@@ -210,6 +215,7 @@ if ($search !== '') {
     $paramsOut[] = "%$search%";
 }
 $sqlOut .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
+if ($limitVal > 0) $sqlOut .= " LIMIT " . (int)$limitVal;
 $stmtOut = $pdo->prepare($sqlOut);
 $stmtOut->execute($paramsOut);
 $outboundData = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
@@ -246,6 +252,7 @@ if ($search !== '') {
     $paramsTr[] = "%$search%";
 }
 $sqlTr .= " ORDER BY st.requested_at DESC, st.transfer_id DESC";
+if ($limitVal > 0) $sqlTr .= " LIMIT " . (int)$limitVal;
 $stmtTr = $pdo->prepare($sqlTr);
 $stmtTr->execute($paramsTr);
 $transferData = $stmtTr->fetchAll(PDO::FETCH_ASSOC);
@@ -282,6 +289,7 @@ if ($search !== '') {
     $paramsAdj[] = "%$search%";
 }
 $sqlAdj .= " ORDER BY sa.requested_at DESC, sa.adjustment_id DESC";
+if ($limitVal > 0) $sqlAdj .= " LIMIT " . (int)$limitVal;
 $stmtAdj = $pdo->prepare($sqlAdj);
 $stmtAdj->execute($paramsAdj);
 $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
@@ -400,6 +408,18 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
             <input type="date" name="start_date" aria-label="Start date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($startDate) ?>" onchange="this.form.submit()">
             <span style="font-size: 12px; color: var(--gray); font-weight: 500;">To</span>
             <input type="date" name="end_date" aria-label="End date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($endDate) ?>" onchange="this.form.submit()">
+        </div>
+
+        <!-- Server-Side Page Size Limit (UI-01) -->
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 12px; color: var(--gray); font-weight: 500;">Show</span>
+            <select name="limit" class="select-filter" style="width: 105px; padding: 0 8px;" onchange="this.form.submit()" title="Records limit per query">
+                <option value="50" <?= $limitVal === 50 ? 'selected' : '' ?>>50 rows</option>
+                <option value="100" <?= ($limitVal === 100 && !$isAll) ? 'selected' : '' ?>>100 rows</option>
+                <option value="250" <?= $limitVal === 250 ? 'selected' : '' ?>>250 rows</option>
+                <option value="500" <?= $limitVal === 500 ? 'selected' : '' ?>>500 rows</option>
+                <option value="all" <?= $isAll ? 'selected' : '' ?>>All rows</option>
+            </select>
         </div>
 
         <!-- Buttons -->
