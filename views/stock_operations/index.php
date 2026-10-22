@@ -552,6 +552,9 @@ if ($selectedItemId > 0) {
         <h1 class="page-title">Stock Operations</h1>
         <p class="page-subtitle">Unified transaction hub for Transfers, Physical Count Adjustments, and Item Stock Cards</p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- ========================================================================= -->

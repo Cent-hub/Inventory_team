@@ -153,6 +153,7 @@ if ($selectedItemId > 0) {
         <p class="page-subtitle">Inspect the complete audit trail for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &middot; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
     </div>
     <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
         <button type="button" class="btn btn-secondary" onclick="window.location.reload()" aria-label="Refresh Data" title="Refresh live data">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>

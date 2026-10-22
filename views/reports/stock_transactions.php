@@ -303,6 +303,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
             Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments
         </p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- Print-Only Official Document Header -->

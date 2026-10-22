@@ -73,6 +73,9 @@ foreach ($rawMaterials as $rm) {
         <h1 class="page-title">Raw Materials Inventory</h1>
         <p class="page-subtitle">Track raw material stock balances, supplier inputs, and reorder thresholds</p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- KPI Summary Cards -->

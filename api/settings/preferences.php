@@ -48,7 +48,10 @@ switch ($action) {
             'inbound_receipts'    => 'Inbound Receipts Notifications',
             'outbound_dispatches' => 'Outbound Dispatches Notifications',
             'daily_digest'        => 'Daily Stock Ledger Digest',
-            'two_factor_auth'     => 'Two-Factor Authentication (2FA)'
+            'two_factor_auth'     => 'Two-Factor Authentication (2FA)',
+            'notif_sound'         => 'Notification Sound Alerts',
+            'toast_alerts'        => 'Floating Toast Notifications',
+            'sound_focus_only'    => 'Mute Sound in Background Tabs'
         ];
 
         $key = trim((string)($input['key'] ?? ''));
@@ -146,7 +149,9 @@ switch ($action) {
             'general'     => 'General Inquiry'
         ];
         $categoryLabel = $categoryMap[$category] ?? 'General Inquiry';
-        $refNo = 'SUP-' . date('Ymd-His');
+        $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+        $refNo = ($isSuperAdmin ? 'MSG-' : 'SUP-') . date('Ymd-His');
+        $notePrefix = $isSuperAdmin ? "Super Admin Message: {$categoryLabel}" : $categoryLabel;
 
         try {
             AccountabilityService::log([
@@ -156,7 +161,7 @@ switch ($action) {
                 'channel'          => 'UI',
                 'warehouse_id'     => $warehouseId,
                 'reference_number' => $refNo,
-                'notes'            => "[{$categoryLabel}] {$subject} — {$message}"
+                'notes'            => "[{$notePrefix}] {$subject} — {$message}"
             ]);
         } catch (Throwable $e) {
             http_response_code(500);
@@ -164,10 +169,14 @@ switch ($action) {
             exit;
         }
 
+        $successMsg = $isSuperAdmin 
+            ? "Broadcast message {$refNo} posted to all team notifications." 
+            : "Support ticket {$refNo} has been logged and sent to the Super Admin.";
+
         echo json_encode([
             'success'          => true,
             'reference_number' => $refNo,
-            'message'          => "Support ticket {$refNo} has been logged and sent to the Super Admin."
+            'message'          => $successMsg
         ]);
         exit;
 

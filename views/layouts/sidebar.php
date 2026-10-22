@@ -23,18 +23,27 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
 <aside id="appSidebar" class="sidebar" aria-label="Main Navigation">
     <!-- Brand Header -->
     <div class="sidebar-brand">
-        <div class="logo-mark" aria-hidden="true">
-            <!-- Lucide Package Icon -->
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m7.5 4.27 9 5.15"/>
-                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                <path d="m3.3 7 8.7 5 8.7-5"/>
-                <path d="M12 22V12"/>
+        <a href="<?= BASE_URL ?>views/dashboard/index.php" class="brand-link" title="InventoryTeam — Liquor Business Inventory Management System">
+            <div class="logo-mark" aria-hidden="true">
+                <!-- Lucide Package Icon -->
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m7.5 4.27 9 5.15"/>
+                    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                    <path d="m3.3 7 8.7 5 8.7-5"/>
+                    <path d="M12 22V12"/>
+                </svg>
+            </div>
+            <div class="brand-text-wrap">
+                <span class="brand-name">Inventory<span>Team</span></span>
+            </div>
+        </a>
+        <button type="button" class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleSidebarCollapse()" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)">
+            <!-- Sidebar Panel Toggle Icon (matching reference design) -->
+            <svg class="sidebar-toggle-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="3"/>
+                <path d="M9 3v18"/>
             </svg>
-        </div>
-        <div class="brand-text-wrap">
-            <span class="brand-name">Inventory<span>Team</span></span>
-        </div>
+        </button>
     </div>
 
     <!-- Navigation Scroll Area -->
@@ -43,8 +52,8 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
         <span class="nav-section-label">Overview</span>
 
         <!-- Dashboard -->
-        <div class="nav-item">
-            <a href="<?= BASE_URL ?>views/dashboard/index.php" class="nav-link <?= $activePage === 'dashboard' ? 'active' : '' ?>">
+        <div class="nav-item" data-tooltip="Dashboard">
+            <a href="<?= BASE_URL ?>views/dashboard/index.php" class="nav-link <?= $activePage === 'dashboard' ? 'active' : '' ?>" title="Dashboard">
                 <!-- Lucide LayoutDashboard Icon -->
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="7" height="9" x="3" y="3" rx="1"/>
@@ -59,8 +68,8 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
         <span class="nav-section-label">Operations</span>
 
         <!-- Inventory Dropdown Group -->
-        <div class="nav-group <?= $isInventoryActive ? 'open has-active' : '' ?>" id="group-inventory">
-            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-inventory')" aria-expanded="<?= $isInventoryActive ? 'true' : 'false' ?>">
+        <div class="nav-group <?= $isInventoryActive ? 'open has-active' : '' ?>" id="group-inventory" data-tooltip="Inventory">
+            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-inventory')" aria-expanded="<?= $isInventoryActive ? 'true' : 'false' ?>" title="Inventory">
                 <div class="nav-group-left">
                     <!-- Lucide Boxes Icon -->
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -78,6 +87,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
                 </svg>
             </button>
             <div class="nav-sub-list">
+                <div class="flyout-header">Inventory</div>
                 <!-- Items Catalog -->
                 <a href="<?= BASE_URL ?>views/items/index.php" class="nav-sub-link <?= $activePage === 'items' ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
@@ -107,8 +117,8 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
         </div>
 
         <!-- Reports Dropdown Group -->
-        <div class="nav-group <?= $isReportsActive ? 'open has-active' : '' ?>" id="group-reports">
-            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-reports')" aria-expanded="<?= $isReportsActive ? 'true' : 'false' ?>">
+        <div class="nav-group <?= $isReportsActive ? 'open has-active' : '' ?>" id="group-reports" data-tooltip="Reports">
+            <button type="button" class="nav-group-header" onclick="toggleNavGroup('group-reports')" aria-expanded="<?= $isReportsActive ? 'true' : 'false' ?>" title="Reports">
                 <div class="nav-group-left">
                     <!-- Lucide BarChart3 Icon -->
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -125,6 +135,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
                 </svg>
             </button>
             <div class="nav-sub-list">
+                <div class="flyout-header">Reports</div>
                 <!-- Group 1: Inventory Reports (Unified Hub) -->
                 <a href="<?= BASE_URL ?>views/reports/index.php" class="nav-sub-link <?= $isInventoryReportsActive ? 'active' : '' ?>">
                     <span class="sub-bullet"></span>
@@ -144,8 +155,8 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
 
         <?php if ($isSuperAdmin): ?>
         <!-- Users / Account (Super Admin only: User management & system-wide administration) -->
-        <div class="nav-item">
-            <a href="<?= BASE_URL ?>views/users/index.php" class="nav-link <?= ($activePage === 'users' && $activeGroup !== 'settings') ? 'active' : '' ?>">
+        <div class="nav-item" data-tooltip="Users / Account">
+            <a href="<?= BASE_URL ?>views/users/index.php" class="nav-link <?= ($activePage === 'users' && $activeGroup !== 'settings') ? 'active' : '' ?>" title="Users / Account">
                 <!-- Lucide Users Icon -->
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -159,7 +170,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
         <?php endif; ?>
 
         <!-- Settings (Opens Settings Modal Popup) -->
-        <div class="nav-item">
+        <div class="nav-item" data-tooltip="Settings">
             <a href="#" class="nav-link <?= $isSettingsActive ? 'active' : '' ?>" id="sidebarSettingsLink" onclick="event.preventDefault(); if(typeof openSettingsModal === 'function'){ openSettingsModal('main'); }" role="button" aria-haspopup="dialog" title="Settings">
                 <!-- Lucide Settings Icon -->
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -174,7 +185,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
 
     <!-- Sidebar User Footer -->
     <div class="sidebar-footer">
-        <div class="sidebar-user" role="button" tabindex="0" aria-label="Manage Account Settings" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); }" onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); } }" style="cursor: pointer;" title="Manage Account Settings">
+        <div class="sidebar-user" role="button" tabindex="0" aria-label="Manage Account Settings" onclick="if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); }" onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); if(typeof openSettingsModal === 'function'){ openSettingsModal('account'); } }" style="cursor: pointer;" title="Manage Account Settings (<?= htmlspecialchars($currentUser['name'] ?? 'Administrator') ?>)" data-tooltip="<?= htmlspecialchars($currentUser['name'] ?? 'Administrator') ?>">
             <div class="user-avatar" aria-hidden="true">
                 <?= strtoupper(substr($currentUser['name'] ?? 'A', 0, 1)) ?>
             </div>
@@ -187,7 +198,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
         </div>
         <form action="<?= BASE_URL ?>api/auth/logout.php" method="POST" style="margin: 0; padding: 0; display: inline;">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
-            <button type="submit" class="btn-sidebar-logout" title="Sign out" aria-label="Sign out">
+            <button type="submit" class="btn-sidebar-logout" title="Sign out" aria-label="Sign out" data-tooltip="Sign out">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
                     <polyline points="16 17 21 12 16 7"/>

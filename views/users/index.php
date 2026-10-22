@@ -312,6 +312,7 @@ function getFacilityAssignment($user) {
         <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery administrators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
     </div>
     <div class="header-actions" style="display: flex; gap: 10px;">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
         <?php if ($isSuperAdmin): ?>
         <button type="button" class="btn btn-secondary" onclick="window.print()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">

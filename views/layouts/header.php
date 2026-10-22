@@ -154,6 +154,7 @@ if (!function_exists('formatQty')) {
 $pageTitle   = $pageTitle ?? 'Admin Portal — InventoryTeam';
 $activePage  = $activePage ?? 'dashboard';
 $activeGroup = $activeGroup ?? '';
+$isSidebarCollapsed = (isset($_COOKIE['inventory_sidebar_collapsed']) && $_COOKIE['inventory_sidebar_collapsed'] === 'true');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -171,6 +172,16 @@ $activeGroup = $activeGroup ?? '';
     <script>window.BASE_URL = <?= json_encode(BASE_URL) ?>;</script>
     <script src="<?= BASE_URL ?>assets/js/stockpilot_utils.js?v=<?= file_exists(__DIR__ . '/../../assets/js/stockpilot_utils.js') ? filemtime(__DIR__ . '/../../assets/js/stockpilot_utils.js') : time() ?>"></script>
 </head>
-<body>
+<body class="<?= $isSidebarCollapsed ? 'sidebar-collapsed' : '' ?>">
+<script>
+    // Synchronously apply saved sidebar state before rendering to prevent FOUC / flicker
+    try {
+        if (localStorage.getItem('inventory_sidebar_collapsed') === 'true' && window.innerWidth > 992) {
+            document.body.classList.add('sidebar-collapsed');
+        } else if (localStorage.getItem('inventory_sidebar_collapsed') === 'false') {
+            document.body.classList.remove('sidebar-collapsed');
+        }
+    } catch(e) {}
+</script>
 <div class="app-shell">
     <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar()"></div>

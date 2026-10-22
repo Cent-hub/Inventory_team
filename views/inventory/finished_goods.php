@@ -73,6 +73,9 @@ foreach ($finishedGoods as $fg) {
         <h1 class="page-title">Finished Goods Inventory</h1>
         <p class="page-subtitle">Monitor finished product stock levels, batch readiness, and distribution availability</p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- KPI Summary Cards -->

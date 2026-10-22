@@ -111,6 +111,9 @@ $currentBalanceData = $allInventoryData;
             Formal operational ledgers, stock reconciliations, and compliance reporting
         </p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- Print-Only Official Document Header -->

@@ -519,6 +519,9 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
         <h1 class="page-title">Inventory Inbound &amp; Outbound</h1>
         <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- ========================================================================= -->

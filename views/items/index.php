@@ -287,6 +287,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
         <p class="page-subtitle">Centralized catalog and reorder threshold configuration</p>
     </div>
     <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
         <?php if ($canManageItems): ?>
             <button type="button" class="btn btn-primary" onclick="openNewItemModal()">+ Add New Item</button>
         <?php endif; ?>

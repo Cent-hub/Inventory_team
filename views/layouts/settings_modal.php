@@ -29,6 +29,9 @@ $userPrefs = array_merge([
     'outbound_dispatches' => true,
     'daily_digest'        => false,
     'two_factor_auth'     => true,
+    'notif_sound'         => true,
+    'toast_alerts'        => true,
+    'sound_focus_only'    => true,
 ], $dbPrefs, is_array($_SESSION['user_preferences'] ?? null) ? $_SESSION['user_preferences'] : []);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
@@ -654,6 +657,87 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                 </div>
 
+                <span class="settings-group-label">Real-Time Alerts &amp; Audio Preferences</span>
+                <div class="settings-group">
+                    
+                    <!-- Alert Sound Chimes -->
+                    <div class="settings-row static">
+                        <div class="settings-row-left">
+                            <div class="settings-squircle amber">
+                                <!-- Volume2 Icon -->
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="settings-row-title">Alert Sound Chimes</div>
+                                <div class="settings-row-subtitle">Play audio chime on incoming alerts</div>
+                            </div>
+                        </div>
+                        <div class="settings-row-right" style="gap: 10px;">
+                            <button type="button" class="btn-preview-chime" onclick="playNotificationChime(true)" title="Test audio chime" style="background: #F1F5F9; border: 1px solid #CBD5E1; color: #475569; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">Test</button>
+                            <label class="ios-switch">
+                                <input type="checkbox" data-pref-key="notif_sound" <?= !empty($userPrefs['notif_sound']) ? 'checked' : '' ?> aria-label="Toggle alert sound chimes" onchange="toggleNotificationFeedback(this, 'notif_sound', 'Alert Sound Chimes')">
+                                <span class="ios-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-divider"></div>
+
+                    <!-- Floating Toast Popups -->
+                    <div class="settings-row static">
+                        <div class="settings-row-left">
+                            <div class="settings-squircle teal">
+                                <!-- MessageSquare Icon -->
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="settings-row-title">Floating Toast Popups</div>
+                                <div class="settings-row-subtitle">Show bottom-right alert popups</div>
+                            </div>
+                        </div>
+                        <div class="settings-row-right">
+                            <label class="ios-switch">
+                                <input type="checkbox" data-pref-key="toast_alerts" <?= !empty($userPrefs['toast_alerts']) ? 'checked' : '' ?> aria-label="Toggle floating toast popups" onchange="toggleNotificationFeedback(this, 'toast_alerts', 'Floating Toast Popups')">
+                                <span class="ios-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-divider"></div>
+
+                    <!-- Silence When Inactive -->
+                    <div class="settings-row static">
+                        <div class="settings-row-left">
+                            <div class="settings-squircle navy">
+                                <!-- BellOff Icon -->
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="2" y1="2" x2="22" y2="22"/>
+                                    <path d="M18.85 18.85A1.94 1.94 0 0 1 10.3 21a1.94 1.94 0 0 1-3.4 0"/>
+                                    <path d="M10.88 5.12A6 6 0 0 1 18 8c0 .87.16 1.7.46 2.47"/>
+                                    <path d="M4.93 4.93A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="settings-row-title">Silence When Inactive</div>
+                                <div class="settings-row-subtitle">Only chime when window is focused</div>
+                            </div>
+                        </div>
+                        <div class="settings-row-right">
+                            <label class="ios-switch">
+                                <input type="checkbox" data-pref-key="sound_focus_only" <?= !empty($userPrefs['sound_focus_only']) ? 'checked' : '' ?> aria-label="Toggle silence when inactive" onchange="toggleNotificationFeedback(this, 'sound_focus_only', 'Silence When Inactive')">
+                                <span class="ios-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+
                 <div class="settings-group">
                     <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/dashboard/index.php#notifications'" role="button" tabindex="0">
                         <div class="settings-row-left">
@@ -959,18 +1043,26 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                         <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
                                         <circle cx="12" cy="7" r="4"/>
                                     </svg>
-                                    <span style="font-weight: 600; color: var(--panel-ink);">Super Admin</span>
-                                    <span style="font-size: 12px; color: var(--gray);">&lt;superadmin@centhub.local&gt;</span>
+                                    <span style="font-weight: 600; color: var(--panel-ink);">
+                                        <?= !empty($isSuperAdmin) ? 'All Warehouse Staff &amp; Admins (Global Notice)' : 'Super Admin' ?>
+                                    </span>
+                                    <span style="font-size: 12px; color: var(--gray);">
+                                        <?= !empty($isSuperAdmin) ? '&lt;broadcast@inventory.local&gt;' : '&lt;superadmin@centhub.local&gt;' ?>
+                                    </span>
                                 </div>
                                 <span class="support-recipient-badge">
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                         <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
                                         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                                     </svg>
-                                    Super Admin
+                                    <?= !empty($isSuperAdmin) ? 'Broadcast' : 'Super Admin' ?>
                                 </span>
                             </div>
-                            <small style="font-size: 11.5px; color: var(--gray); margin-top: 4px; display: block;">Recipient is automatically routed to the system-wide Super Administrator.</small>
+                            <small style="font-size: 11.5px; color: var(--gray); margin-top: 4px; display: block;">
+                                <?= !empty($isSuperAdmin) 
+                                    ? 'Messages sent by Super Admin are broadcast to all team members via notifications.' 
+                                    : 'Recipient is automatically routed to the system-wide Super Administrator.' ?>
+                            </small>
                         </div>
 
                         <!-- Subject Field -->

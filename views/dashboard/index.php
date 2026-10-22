@@ -183,6 +183,9 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
         <p class="page-subtitle">Overview, stock levels, and recent warehouse activity in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')') ?></strong></p>
     </div>
+    <div class="header-actions">
+        <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
+    </div>
 </div>
 
 <!-- 6 Core Summary KPI Cards -->
@@ -242,7 +245,7 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <!-- 4. Low Stock Items -->
-    <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>">
+    <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>" id="dashboardCardLowStock">
         <div class="stat-header">
             <span class="stat-label">Low Stock Items</span>
             <div class="stat-icon-wrap" aria-hidden="true">
@@ -254,8 +257,8 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= $lowStockCount ?></div>
-        <div class="stat-meta">
+        <div class="stat-value" id="dashboardValLowStock"><?= $lowStockCount ?></div>
+        <div class="stat-meta" id="dashboardMetaLowStock">
             <?php if ($lowStockCount > 0): ?>
                 <a href="<?= BASE_URL ?>views/inbound_outbound/index.php" style="color: var(--error); font-weight: 600; text-decoration: underline;">Replenish via Stock In &rarr;</a>
             <?php else: ?>
