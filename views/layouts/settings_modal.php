@@ -904,7 +904,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                 <div class="settings-group">
                     
                     <!-- 1. Current Stock -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=current_stock&export=csv'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=current_stock&preset=all_time&limit=all&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle teal">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -928,7 +928,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     <div class="settings-divider"></div>
 
                     <!-- 2. Raw Materials -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=raw_materials&export=csv'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=raw_materials&preset=all_time&limit=all&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle bronze">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -951,7 +951,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     <div class="settings-divider"></div>
 
                     <!-- 3. Finished Goods -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=finished_goods&export=csv'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=finished_goods&preset=all_time&limit=all&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle green">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -975,7 +975,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     <div class="settings-divider"></div>
 
                     <!-- 4. Stock Movements -->
-                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=stock_movements&export=csv'" role="button" tabindex="0">
+                    <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/reports/index.php?type=stock_movements&preset=all_time&limit=all&export=csv'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle blue">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1047,7 +1047,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                         <?= !empty($isSuperAdmin) ? 'All Warehouse Staff &amp; Admins (Global Notice)' : 'Super Admin' ?>
                                     </span>
                                     <span style="font-size: 12px; color: var(--gray);">
-                                        <?= !empty($isSuperAdmin) ? '&lt;broadcast@inventory.local&gt;' : '&lt;superadmin@centhub.local&gt;' ?>
+                                        <?= !empty($isSuperAdmin) ? '&lt;broadcast@inventory.local&gt;' : '&lt;superadmin@inventory.local&gt;' ?>
                                     </span>
                                 </div>
                                 <span class="support-recipient-badge">

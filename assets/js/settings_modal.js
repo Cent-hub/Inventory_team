@@ -545,6 +545,15 @@ function handleSimulateSupportSend() {
         if (submitBtn) submitBtn.disabled = false;
         if (banner) {
             banner.style.display = 'flex';
+            if (data.success) {
+                banner.style.background = '#F0FDF4';
+                banner.style.borderColor = '#BBF7D0';
+                banner.style.color = '#166534';
+            } else {
+                banner.style.background = '#FEF2F2';
+                banner.style.borderColor = '#FECACA';
+                banner.style.color = '#991B1B';
+            }
             const textDiv = banner.querySelector('div');
             if (textDiv && data.message) {
                 textDiv.textContent = data.message;
@@ -562,6 +571,13 @@ function handleSimulateSupportSend() {
         if (submitBtn) submitBtn.disabled = false;
         if (banner) {
             banner.style.display = 'flex';
+            banner.style.background = '#FEF2F2';
+            banner.style.borderColor = '#FECACA';
+            banner.style.color = '#991B1B';
+            const textDiv = banner.querySelector('div');
+            if (textDiv) {
+                textDiv.textContent = 'Failed to submit support inquiry. Please check your network and try again.';
+            }
             setTimeout(() => {
                 if (banner) banner.style.display = 'none';
             }, 6000);

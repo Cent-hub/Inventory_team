@@ -20,15 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-// Authenticate caller (Any authenticated ERP service account)
-$authUser = requireApiAuth();
+// Authenticate caller (Any authenticated ERP service or warehouse account)
+$authUser = requireApiAuth(['inventory', 'procurement', 'production', 'sales']);
 
 // Rate Limit: 60 req / min
 checkRateLimit('inventory_get', 60, 60, $authUser['api_token']);
 
 $itemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : null;
 $itemCode = isset($_GET['item_code']) ? trim($_GET['item_code']) : null;
-$warehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$rawWarehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$warehouseId = resolveWarehouseScope($authUser, $rawWarehouseId);
 $itemType = isset($_GET['item_type']) ? trim($_GET['item_type']) : null;
 
 try {

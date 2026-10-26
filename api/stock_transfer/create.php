@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -20,14 +21,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Inventory, Production, or Procurement)
-$authUser = requireApiAuth(['admin', 'inventory', 'production', 'procurement']);
+// Authenticate caller (Internal Warehouse Inventory Admin or Super Admin)
+$authUser = requireApiAuth(['inventory']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce rate limiting per API token (30 req / 60s)
 checkRateLimit('stock_transfer_create', 30, 60, $authUser['api_token']);
 
 $payload = getRequestJson();
+
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey();
+if ($idempotencyKey) {
+    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/stock_transfer/create.php', (string)$userId, $payload);
+    if (!$claim['claimed']) {
+        http_response_code($claim['response_code']);
+        echo $claim['response_body'];
+        exit;
+    }
+}
 $sourceWhId = (int)($payload['source_warehouse_id'] ?? 0);
 $destWhId = (int)($payload['destination_warehouse_id'] ?? 0);
 $items = $payload['items'] ?? [];
@@ -79,11 +91,26 @@ try {
         $authUser
     );
 
+        if (!empty($idempotencyKey)) {
+        IdempotencyService::store($pdo, $idempotencyKey, 'api/stock_transfer/create.php', (string)$userId, $payload, 201, [
+            'success' => true,
+            'message' => $result['message'] ?? 'Action completed successfully.',
+            'data'    => $result
+        ]);
+    }
     jsonResponse([
         'success' => true,
         'message' => 'Stock transfer initiated successfully. Stock has been deducted from source warehouse and transfer is pending receipt at destination warehouse.',
         'data'    => $result
     ], 201);
+} catch (DomainException $e) {
+    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/stock_transfer/create.php'); }
+    $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
+    jsonResponse([
+        'success' => false,
+        'error'   => $status === 403 ? 'Forbidden' : 'Conflict',
+        'detail'  => $e->getMessage()
+    ], $status);
 } catch (InvalidArgumentException $e) {
     jsonResponse([
         'success' => false,

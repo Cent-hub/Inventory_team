@@ -6,6 +6,12 @@
  * Configured for modern team_inventory_local schema.
  */
 
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Forbidden: CLI execution only.');
+}
+
 if (!defined('IN_UNIT_TEST')) {
     define('IN_UNIT_TEST', true);
 }
@@ -24,6 +30,20 @@ class TestRunner {
     private array $tests = [];
     /** @var TestResult[] */
     private array $results = [];
+    private static string $testAdminPassword = '';
+    /** @var array<string,string> */
+    private static array $testTokens = [];
+
+    public static function getTestAdminPassword(): string {
+        return self::$testAdminPassword;
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    public static function getTestTokens(): array {
+        return self::$testTokens;
+    }
 
     public function __construct() {
         $this->ensureTestDatabase();
@@ -49,8 +69,12 @@ class TestRunner {
             $tables = $testPdo->query("SHOW TABLES LIKE 'stock'")->fetchAll();
             $needsReload = empty($tables);
             if (!empty($tables)) {
-                $cols = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'reference_number'")->fetchAll();
-                if (empty($cols)) {
+                $colsRef = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'reference_number'")->fetchAll();
+                $colsDelta = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'quantity_delta'")->fetchAll();
+                $colsSource = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'source_type'")->fetchAll();
+                $colsItemStatus = $testPdo->query("SHOW COLUMNS FROM items LIKE 'status'")->fetch();
+                $itemStatusType = $colsItemStatus['Type'] ?? '';
+                if (empty($colsRef) || empty($colsDelta) || empty($colsSource) || !str_contains($itemStatusType, 'pending')) {
                     $needsReload = true;
                 }
             }
@@ -100,15 +124,26 @@ class TestRunner {
             ON DUPLICATE KEY UPDATE status = 'active'
         ");
 
-        // 2. Base Users
-        $passHash = password_hash('admin123', PASSWORD_BCRYPT);
-        $userOp1Hash = password_hash('password123', PASSWORD_BCRYPT);
-        $tokenHashAdmin = hash('sha256', 'adm_live_sec_991823');
-        $tokenHashProc  = hash('sha256', 'proc_live_sec_884121');
-        $tokenHashProd  = hash('sha256', 'prod_live_sec_773910');
-        $tokenHashSales = hash('sha256', 'sales_live_sec_662845');
-        $tokenHashOp1   = hash('sha256', 'test_op1_token_live');
-        $tokenHashOp2   = hash('sha256', 'test_op2_token_live');
+        // 2. Base Users (ephemeral per-run credentials — zero static secrets)
+        self::$testAdminPassword = 'Test!' . bin2hex(random_bytes(12));
+        $operatorPassword = 'TestOp!' . bin2hex(random_bytes(12));
+        self::$testTokens = [
+            'super_admin' => 'tst_adm_' . bin2hex(random_bytes(24)),
+            'procurement' => 'tst_prc_' . bin2hex(random_bytes(24)),
+            'production'  => 'tst_prd_' . bin2hex(random_bytes(24)),
+            'sales'       => 'tst_sls_' . bin2hex(random_bytes(24)),
+            'op1'         => 'tst_op1_' . bin2hex(random_bytes(24)),
+            'op2'         => 'tst_op2_' . bin2hex(random_bytes(24)),
+        ];
+
+        $passHash       = password_hash(self::$testAdminPassword, PASSWORD_BCRYPT);
+        $userOp1Hash    = password_hash($operatorPassword, PASSWORD_BCRYPT);
+        $tokenHashAdmin = hash('sha256', self::$testTokens['super_admin']);
+        $tokenHashProc  = hash('sha256', self::$testTokens['procurement']);
+        $tokenHashProd  = hash('sha256', self::$testTokens['production']);
+        $tokenHashSales = hash('sha256', self::$testTokens['sales']);
+        $tokenHashOp1   = hash('sha256', self::$testTokens['op1']);
+        $tokenHashOp2   = hash('sha256', self::$testTokens['op2']);
 
         $this->pdo->exec("
             INSERT INTO users (user_id, name, email, password, role, team, warehouse_id, api_token, status)
@@ -119,7 +154,13 @@ class TestRunner {
                 (4, 'Sales Service API', 'sales@inventory.local', '{$passHash}', 'admin', 'Sales', 1, '{$tokenHashSales}', 'active'),
                 (101, 'Test Operator Laguna', 'test_op1@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 1, '{$tokenHashOp1}', 'active'),
                 (102, 'Test Operator Manila', 'test_op2@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 2, '{$tokenHashOp2}', 'active')
-            ON DUPLICATE KEY UPDATE role = VALUES(role), team = VALUES(team), warehouse_id = VALUES(warehouse_id), status = 'active'
+            ON DUPLICATE KEY UPDATE
+                password = VALUES(password),
+                role = VALUES(role),
+                team = VALUES(team),
+                warehouse_id = VALUES(warehouse_id),
+                api_token = VALUES(api_token),
+                status = 'active'
         ");
 
         // 3. Raw Material Test SKU

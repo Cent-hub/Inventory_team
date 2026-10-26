@@ -34,10 +34,13 @@
      */
     function formatQty(val, decimals = 2) {
         if (val === null || val === undefined || val === '') return '0';
-        const num = parseFloat(val);
+        const cleaned = typeof val === 'string' ? val.replace(/,/g, '').trim() : val;
+        const num = parseFloat(cleaned);
         if (isNaN(num)) return '0';
-        const fixed = num.toFixed(decimals);
-        return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed;
+        return num.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: decimals
+        });
     }
 
     /**

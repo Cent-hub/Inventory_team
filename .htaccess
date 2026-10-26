@@ -1,0 +1,31 @@
+# Disable directory browsing globally
+Options -Indexes
+
+# Block access to hidden dotfiles and dot-directories (.env, .env.local, .git, .gitignore, etc.)
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Block direct HTTP download of SQL dumps, logs, backups, scripts, and markdown docs
+<FilesMatch "\.(sql|log|bak|sh|ps1|md|lock|ini)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Block direct HTTP routing to hidden dot-paths (.git, .env*) and internal backend/test directories
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (?:^|/)\. - [F,L]
+    RewriteRule ^(?:config|controllers|database|helpers|tests|views/layouts)(?:/|$) - [F,L,NC]
+</IfModule>

@@ -99,14 +99,17 @@ $stmtRP = $pdo->prepare("
         COUNT(sm.movement_id) AS txn_count,
         COALESCE(SUM(sm.quantity), 0) AS total_qty
     FROM stock_movements sm
+    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
+        AND rev.movement_type IN ('CANCELLED_INBOUND', 'CANCELLED_OUTBOUND')
     WHERE sm.warehouse_id = :wid
+      AND rev.movement_id IS NULL
       AND (
-          sm.remarks LIKE '%CUSTOMER_RETURN%' 
-          OR sm.remarks LIKE '%SUPPLIER_RETURN%' 
-          OR sm.remarks LIKE '%[CUSTOMER_RETURN%' 
-          OR sm.remarks LIKE '%[SUPPLIER_RETURN%'
-          OR sm.remarks LIKE '%RMA%' 
-          OR sm.remarks LIKE '%RTV%'
+          sm.source_type IN ('CUSTOMER_RETURN', 'SUPPLIER_RETURN')
+          OR sm.remarks LIKE '[CUSTOMER_RETURN:%'
+          OR sm.remarks LIKE '[SUPPLIER_RETURN:%'
+          OR sm.remarks REGEXP '^(RMA|RTV)-'
+          OR sm.remarks LIKE '%[RMA%'
+          OR sm.remarks LIKE '%[RTV%'
       )
       AND sm.movement_type IN ('STOCK_IN', 'STOCK_OUT')
 ");
@@ -147,16 +150,26 @@ $stmtRecent = $pdo->prepare("
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
-            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND COALESCE(sa.difference, 0) > 0 THEN sa.difference
+            WHEN COALESCE(sm.quantity_delta, CASE
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity)
+                WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity)
+                ELSE 0
+            END) > 0 THEN ABS(COALESCE(sm.quantity_delta, sa.difference, sm.quantity))
             ELSE 0 
         END AS quantity_in,
         CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
-            WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND COALESCE(sa.difference, 0) < 0 THEN ABS(sa.difference)
+            WHEN COALESCE(sm.quantity_delta, CASE
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity
+                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity)
+                WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity)
+                ELSE 0
+            END) < 0 THEN ABS(COALESCE(sm.quantity_delta, sa.difference, sm.quantity))
             ELSE 0 
         END AS quantity_out,
-        0 AS balance_after,
+        COALESCE(sm.balance_after, 0) AS balance_after,
         sm.created_at,
         i.code AS item_code,
         i.name AS item_name,
@@ -167,7 +180,7 @@ $stmtRecent = $pdo->prepare("
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
-    LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+    LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
     WHERE sm.warehouse_id = :wid
       AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC

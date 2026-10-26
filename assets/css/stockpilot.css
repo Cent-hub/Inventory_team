@@ -3,7 +3,6 @@
  * Extracted from views/layouts/header.php
  */
 
-@import url('settings_modal.css');
 
         :root {
             --panel-ink: #14213D;
@@ -23,7 +22,7 @@
             --sidebar-active: #1F7A6C;
             --sidebar-text: #E2E8F0;
             --sidebar-muted: #94A3B8;
-            --text-muted: #8B949E;
+            --text-muted: #64748B;
             --border: #E3E7EF;
             --gray: #6B7280;
             --gray-light: #F4F6F9;
@@ -1405,7 +1404,7 @@
 
         @media (max-width: 640px) {
             .page-header {
-                top: 10px;
+                top: 68px; /* F-38: Prevents header clipping under 60px navbar */
                 padding: 16px 18px;
                 align-items: flex-start;
             }
@@ -2480,6 +2479,23 @@ th.sortable-th.sort-desc::after {
     z-index: 1050;
     overflow: hidden;
     animation: notifSlideDown 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* F-38: Elevate .page-header above content when notification dropdown is open */
+.page-header:has(.notification-bell-wrapper.open),
+.page-header.dropdown-open {
+    z-index: 1050 !important;
+}
+
+@media (max-width: 640px) {
+    .notification-dropdown {
+        position: fixed !important;
+        top: 138px !important;
+        left: 12px !important;
+        right: 12px !important;
+        width: auto !important;
+        max-width: calc(100vw - 24px) !important;
+    }
 }
 
 .notification-bell-wrapper.open .notification-dropdown {

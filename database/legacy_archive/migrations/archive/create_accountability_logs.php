@@ -1,8 +1,13 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Forbidden: CLI execution only.');
+}
 /**
  * Migration: Create accountability_logs table and schema enhancements
  */
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../../../config/database.php';
 
 try {
     $pdo = Database::getConnection();

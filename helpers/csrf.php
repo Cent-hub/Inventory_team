@@ -5,9 +5,10 @@
  * InventoryTeam — Liquor Business Inventory Management System
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    @session_start();
-}
+// F-10: never start the session with php.ini defaults (cookie_httponly = 0).
+// startSecureSession() applies HttpOnly + SameSite=Lax + strict mode before session_start().
+require_once __DIR__ . '/../config/bootstrap.php';
+startSecureSession();
 
 /**
  * Get or generate the current session CSRF token.

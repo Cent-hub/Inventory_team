@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-$authUser = requireApiAuth(['admin', 'inventory']);
+$authUser = requireApiAuth(['inventory']);
 checkRateLimit('stock_adj_get', 60, 60, $authUser['api_token']);
 $adjustmentId = (int)($_GET['id'] ?? $_GET['stock_adjustment_id'] ?? 0);
 

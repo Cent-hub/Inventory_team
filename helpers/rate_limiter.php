@@ -28,10 +28,26 @@ function checkRateLimit(
 
     $cacheFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_api_rl_' . substr(hash('sha256', $clientKey . '_' . $endpoint . '_' . $windowStart), 0, 16) . '.txt';
     $currentCount = 1;
-    if (file_exists($cacheFile)) {
-        $currentCount = (int)@file_get_contents($cacheFile) + 1;
+    $fp = @fopen($cacheFile, 'c+');
+    if ($fp) {
+        if (@flock($fp, LOCK_EX)) {
+            $content = trim((string)stream_get_contents($fp));
+            $currentCount = ($content !== '') ? ((int)$content + 1) : 1;
+            rewind($fp);
+            ftruncate($fp, 0);
+            fwrite($fp, (string)$currentCount);
+            fflush($fp);
+            flock($fp, LOCK_UN);
+        } else {
+            $currentCount = 1;
+        }
+        fclose($fp);
+    } else {
+        if (file_exists($cacheFile)) {
+            $currentCount = (int)@file_get_contents($cacheFile) + 1;
+        }
+        @file_put_contents($cacheFile, (string)$currentCount, LOCK_EX);
     }
-    @file_put_contents($cacheFile, (string)$currentCount, LOCK_EX);
 
     // Opportunistic garbage collection: 1 in 100 requests purges expired temp files (SEC-03)
     if (mt_rand(1, 100) === 1) {

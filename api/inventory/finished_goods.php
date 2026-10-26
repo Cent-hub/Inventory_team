@@ -20,14 +20,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-// Authenticate caller (Sales, Admin, or Inventory)
-$authUser = requireApiAuth(['sales', 'admin', 'inventory']);
+// Authenticate caller (Sales, Warehouse Inventory Admin, or Super Admin)
+$authUser = requireApiAuth(['sales', 'inventory']);
 
 // Rate Limit: 60 req / min
 checkRateLimit('finished_goods_get', 60, 60, $authUser['api_token']);
 
 // Parse query parameters
-$warehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$rawWarehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$warehouseId = resolveWarehouseScope($authUser, $rawWarehouseId);
 $itemCode = isset($_GET['item_code']) && trim($_GET['item_code']) !== '' ? trim($_GET['item_code']) : null;
 $itemId = isset($_GET['item_id']) && is_numeric($_GET['item_id']) ? (int)$_GET['item_id'] : null;
 $inStockOnly = filter_var($_GET['in_stock_only'] ?? false, FILTER_VALIDATE_BOOLEAN);

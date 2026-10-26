@@ -630,6 +630,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <p id="error-password" class="error-text" style="display: none;"></p>
                         </div>
 
+                                                <!-- 2FA Code Field (Appears dynamically if user has 2FA enabled - F-26) -->
+                        <div id="wrap-2fa" class="field" style="display: none; margin-bottom: 14px;">
+                            <label class="label" for="two_factor_code" style="color: var(--accent); font-weight: 600;">Security Code (2FA)</label>
+                            <div class="input-wrap">
+                                <input 
+                                    id="two_factor_code" 
+                                    name="two_factor_code" 
+                                    type="text" 
+                                    class="input" 
+                                    placeholder="Enter 6-digit code from email"
+                                    maxlength="6"
+                                    inputmode="numeric"
+                                    pattern="[0-9]*"
+                                    autocomplete="one-time-code"
+                                    style="letter-spacing: 3px; font-weight: 700; font-size: 15px;"
+                                />
+                            </div>
+                            <p id="info-2fa" style="font-size: 12px; color: var(--accent); margin-top: 4px; display: block;">A verification code was dispatched to your email.</p>
+                        </div>
+
                         <!-- Login Submit Button -->
                         <button type="submit" id="btn-submit" class="login-btn">
                             <!-- Lucide LogIn Icon -->
@@ -848,7 +868,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
                             <span style="font-weight:600; color:var(--panel-ink);">Super Admin</span>
-                            <span style="font-size:11.5px; color:var(--gray);">&lt;superadmin@centhub.local&gt;</span>
+                            <span style="font-size:11.5px; color:var(--gray);">&lt;superadmin@inventory.local&gt;</span>
                         </div>
                         <span style="background:var(--panel-ink); color:#ffffff; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; letter-spacing:0.3px;">
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -864,7 +884,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="field" style="margin-bottom:12px;">
                     <label class="label" for="login-support-email" style="font-size:12px;">Your Email Address <span style="color:var(--error);">*</span></label>
                     <div class="input-wrap">
-                        <input id="login-support-email" type="email" class="input" placeholder="e.g. employee@centhub.com" required autocomplete="email" style="font-size:13px;" />
+                        <input id="login-support-email" type="email" class="input" placeholder="e.g. employee@inventory.local" required autocomplete="email" style="font-size:13px;" />
                     </div>
                 </div>
 
@@ -916,13 +936,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-    function fillDefaultAdmin() {
-        const emailInput = document.getElementById('login_input');
-        const pwdInput = document.getElementById('password');
-        if (emailInput) emailInput.value = 'admin@inventory.local';
-        if (pwdInput) pwdInput.value = 'admin123';
-    }
-
     function openLoginSupportModal() {
         const modal = document.getElementById('login-support-modal-backdrop');
         if (!modal) return;

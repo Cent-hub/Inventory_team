@@ -20,13 +20,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-// Authenticate caller (All authenticated teams can view alerts, especially Procurement)
-$authUser = requireApiAuth();
+// Authenticate caller (All authenticated teams, scoped to assigned warehouse)
+$authUser = requireApiAuth(['inventory', 'procurement', 'production', 'sales']);
 
 // Rate Limit: 60 req / min
 checkRateLimit('inventory_alerts', 60, 60, $authUser['api_token']);
 
-$warehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$rawWarehouseId = isset($_GET['warehouse_id']) && is_numeric($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : null;
+$warehouseId = resolveWarehouseScope($authUser, $rawWarehouseId);
 $itemType = isset($_GET['item_type']) ? trim($_GET['item_type']) : null;
 
 try {

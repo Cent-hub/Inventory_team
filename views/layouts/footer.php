@@ -23,7 +23,7 @@
 <script src="<?= BASE_URL ?>assets/js/settings_modal.js?v=<?= file_exists(__DIR__ . '/../../assets/js/settings_modal.js') ? filemtime(__DIR__ . '/../../assets/js/settings_modal.js') : time() ?>"></script>
 
 <script>
-const APP_BASE_URL = <?= json_encode(BASE_URL) ?>;
+const APP_BASE_URL = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
 // Toggle Desktop Sidebar Collapse / Expand
 function toggleSidebarCollapse() {
@@ -467,9 +467,17 @@ function playNotificationChime(force) {
             }
         }
 
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        // F-43: Reuse singleton AudioContext to prevent browser 6-instance limit exhaustion
+        if (!window._appAudioContext || window._appAudioContext.state === 'closed') {
+            window._appAudioContext = new AudioContextClass();
+        }
+        const ctx = window._appAudioContext;
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
 
         const now = ctx.currentTime;
 
@@ -590,9 +598,10 @@ function showNotificationToast(alert) {
     })();
 
     const toast = document.createElement('div');
-    const sev = alert.severity || 'info';
+    const allowedSevs = ['critical', 'warning', 'shield', 'message', 'info'];
+    const sev = allowedSevs.indexOf(alert.severity) !== -1 ? alert.severity : 'info';
     toast.className = 'notif-toast';
-    toast.setAttribute('data-toast-id', alert.id || '');
+    toast.setAttribute('data-toast-id', String(alert.id || ''));
 
     // Icon SVG based on severity
     let iconSvg = '';
@@ -608,9 +617,20 @@ function showNotificationToast(alert) {
         iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
     }
 
-    const safeTitle = (window.escapeHtml ? window.escapeHtml(alert.title) : alert.title);
-    const safeMsg = (window.escapeHtml ? window.escapeHtml(alert.message) : alert.message);
-    const link = alert.link || '#';
+    const escFn = window.escapeHtml || function(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    };
+    const safeTitle = escFn(alert.title);
+    const safeMsg = escFn(alert.message);
+    const rawLink = String(alert.link || '#').trim();
+    const safeHref = (rawLink.indexOf('/') === 0 || rawLink.indexOf('http://') === 0 || rawLink.indexOf('https://') === 0 || rawLink.indexOf('#') === 0 || rawLink.indexOf('views/') === 0)
+        ? rawLink
+        : '#';
 
     toast.innerHTML = `
         <div class="notif-toast-icon ${sev}">
@@ -621,11 +641,19 @@ function showNotificationToast(alert) {
             <div class="notif-toast-desc">${safeMsg}</div>
         </div>
         <div class="notif-toast-actions">
-            <a href="${link}" class="notif-toast-btn" onclick="addNotificationToReadList('${alert.id || ''}')">View</a>
+            <a href="#" class="notif-toast-btn">View</a>
             <button type="button" class="notif-toast-close" title="Dismiss" aria-label="Dismiss">&times;</button>
         </div>
         <div class="notif-toast-progress"></div>
     `;
+
+    const viewBtn = toast.querySelector('.notif-toast-btn');
+    if (viewBtn) {
+        viewBtn.setAttribute('href', safeHref);
+        viewBtn.addEventListener('click', function() {
+            addNotificationToReadList(String(alert.id || ''));
+        });
+    }
 
     const closeBtn = toast.querySelector('.notif-toast-close');
     if (closeBtn) {
@@ -779,6 +807,10 @@ function exportTableToCsv(tableId, filenamePrefix) {
         const row = [];
         for (let j = 0; j < cols.length; j++) {
             let text = (cols[j].textContent || '').replace(/(\r\n|\n|\r)/gm, ' ').replace(/\s+/g, ' ').trim();
+            // F-29: Prepend ' to prevent CSV formula injection if cell begins with =, +, -, @, tab, or CR
+            if (/^[=+\-@\t\r]/.test(text)) {
+                text = "'" + text;
+            }
             text = text.replace(/"/g, '""');
             row.push('"' + text + '"');
         }
@@ -790,11 +822,17 @@ function exportTableToCsv(tableId, filenamePrefix) {
     const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
     const downloadLink = document.createElement('a');
     downloadLink.download = (filenamePrefix || 'export') + '_report_' + new Date().toISOString().slice(0, 10) + '.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
+    const blobUrl = window.URL.createObjectURL(csvFile);
+    downloadLink.href = blobUrl;
     downloadLink.style.display = 'none';
     document.body.appendChild(downloadLink);
     downloadLink.click();
     document.body.removeChild(downloadLink);
+    setTimeout(() => {
+        if (window.URL && typeof window.URL.revokeObjectURL === 'function') {
+            window.URL.revokeObjectURL(blobUrl);
+        }
+    }, 1500);
 }
 
 // Universal Client-side Column Sorting Engine
@@ -1068,8 +1106,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // F-28: Restrict auto-dismiss strictly to explicit .flash-alert banners not marked data-persistent.
+    // Never auto-remove modal feedback banners (e.g. #notifFeedbackBanner, #securityFeedbackBanner, #supportFeedbackBanner).
     const initialAlerts = document.querySelectorAll(
-        '.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]'
+        '.flash-alert:not([data-persistent]):not([role="status"])'
     );
     initialAlerts.forEach(attachAlertAutoDismiss);
 
@@ -1079,11 +1119,15 @@ document.addEventListener('DOMContentLoaded', function() {
             mutations.forEach(m => {
                 m.addedNodes.forEach(node => {
                     if (node.nodeType === 1) { // Node.ELEMENT_NODE
-                        if (node.matches && node.matches('.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]')) {
+                        if (node.matches && node.matches('.flash-alert:not([data-persistent]):not([role="status"])') && !node.closest('.modal, .modal-backdrop, .settings-modal-backdrop')) {
                             attachAlertAutoDismiss(node);
                         }
                         if (node.querySelectorAll) {
-                            node.querySelectorAll('.flash-alert, div[style*="var(--error-light)"], div[style*="var(--success-light)"]').forEach(attachAlertAutoDismiss);
+                            node.querySelectorAll('.flash-alert:not([data-persistent]):not([role="status"])').forEach(el => {
+                                if (!el.closest('.modal, .modal-backdrop, .settings-modal-backdrop')) {
+                                    attachAlertAutoDismiss(el);
+                                }
+                            });
                         }
                     }
                 });
@@ -1137,5 +1181,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+<!-- F-38: Real-Time Toast Alert Container at root body level (escapes page-header stacking trap) -->
+<div class="notif-toast-container" id="notifToastContainer" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

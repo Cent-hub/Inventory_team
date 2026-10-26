@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller: Admin, Inventory, Procurement (User 2, 5), or Production (User 3)
-$authUser = requireApiAuth(['admin', 'inventory', 'procurement', 'production']);
+// Authenticate caller: Super Admin, Warehouse Inventory Admin, Procurement, Production, or Sales (RMA)
+$authUser = requireApiAuth(['inventory', 'procurement', 'production', 'sales']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce rate limiting per API token (30 req / 60s)
@@ -87,10 +87,10 @@ if (empty($sourceReferenceNo)) {
 $pdo = Database::getConnection();
 $idempotencyKey = IdempotencyService::extractKey($sourceReferenceNo);
 if ($idempotencyKey) {
-    $cached = IdempotencyService::check($pdo, $idempotencyKey, 'api/stock_in/create.php', (string)$userId, $payload);
-    if ($cached) {
-        http_response_code($cached['response_code']);
-        echo $cached['response_body'];
+    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/stock_in/create.php', (string)$userId, $payload);
+    if (!$claim['claimed']) {
+        http_response_code($claim['response_code']);
+        echo $claim['response_body'];
         exit;
     }
 }
@@ -99,18 +99,42 @@ if ($idempotencyKey) {
 $userRole = strtolower(trim((string)($authUser['role'] ?? '')));
 $userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
 $isSuperAdmin = ($userRole === 'super_admin');
-$isInventoryAdmin = ($userRole === 'super_admin' || ($userRole === 'admin' && in_array($userTeam, ['inventory', 'administration'], true)) || $userTeam === 'inventory');
-$isProcurement = ($userTeam === 'procurement' || $userRole === 'procurement');
-$isProduction = ($userTeam === 'production' || $userRole === 'production');
-$isSales = ($userTeam === 'sales' || $userRole === 'sales');
+$isInventoryAdmin = isWarehouseAdmin($authUser);
+$isProcurement = ($userTeam === 'procurement');
+$isProduction = ($userTeam === 'production');
+$isSales = ($userTeam === 'sales');
 
 if (!$isSuperAdmin) {
     $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
-    if ($assignedWhId > 0 && $assignedWhId !== $warehouseId) {
+    if ($assignedWhId <= 0 || $assignedWhId !== $warehouseId) {
         jsonResponse([
             'success' => false,
             'error'   => 'Forbidden',
             'detail'  => "Access Denied: You cannot record stock in for warehouse {$warehouseId}. Your assigned warehouse is {$assignedWhId}."
+        ], 403);
+    }
+}
+
+if (!$isInventoryAdmin) {
+    if ($isProcurement && $sourceType !== 'PURCHASE_ORDER') {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Procurement service accounts are restricted strictly to 'PURCHASE_ORDER' stock-in operations. Submitted: '{$sourceType}'."
+        ], 403);
+    }
+    if ($isProduction && !in_array($sourceType, ['PRODUCTION_RETURN', 'PRODUCTION_RECEIPT'], true)) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Production service accounts are restricted strictly to 'PRODUCTION_RECEIPT' or 'PRODUCTION_RETURN' stock-in operations. Submitted: '{$sourceType}'."
+        ], 403);
+    }
+    if ($isSales && $sourceType !== 'CUSTOMER_RETURN') {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Sales service accounts are restricted strictly to 'CUSTOMER_RETURN' stock-in operations. Submitted: '{$sourceType}'."
         ], 403);
     }
 }
@@ -139,7 +163,7 @@ if ($sourceType === 'CUSTOMER_RETURN' && !$isSales && !$isInventoryAdmin) {
     ], 403);
 }
 
-if ($sourceType === 'MANUAL' && !$isSuperAdmin && !$isInventoryAdmin) {
+if ($sourceType === 'MANUAL' && !$isInventoryAdmin) {
     jsonResponse([
         'success' => false,
         'error'   => 'Forbidden',
@@ -223,6 +247,7 @@ try {
 
     jsonResponse($response, 201);
 } catch (DomainException $e) {
+    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/stock_in/create.php'); }
     jsonResponse([
         'success' => false,
         'error'   => 'Conflict / Duplicate Transaction',

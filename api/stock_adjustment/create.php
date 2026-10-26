@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -19,12 +20,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-$authUser = requireApiAuth(['admin', 'inventory']);
+$authUser = requireApiAuth(['inventory']);
 $userId = (int)$authUser['user_id'];
 
 checkRateLimit('stock_adjustment_create', 30, 60, $authUser['api_token']);
 
 $payload = getRequestJson();
+
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey();
+if ($idempotencyKey) {
+    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/stock_adjustment/create.php', (string)$userId, $payload);
+    if (!$claim['claimed']) {
+        http_response_code($claim['response_code']);
+        echo $claim['response_body'];
+        exit;
+    }
+}
 
 $warehouseId = (int)($payload['warehouse_id'] ?? 0);
 $adjustmentDate = trim($payload['adjustment_date'] ?? date('Y-m-d'));
@@ -78,21 +90,30 @@ try {
         $authUser
     );
 
+        if (!empty($idempotencyKey)) {
+        IdempotencyService::store($pdo, $idempotencyKey, 'api/stock_adjustment/create.php', (string)$userId, $payload, 201, [
+            'success' => true,
+            'message' => $result['message'] ?? 'Action completed successfully.',
+            'data'    => $result
+        ]);
+    }
     jsonResponse([
         'success' => true,
         'message' => 'Stock adjustment created successfully with status pending.',
         'data'    => $result
     ], 201);
 } catch (InvalidArgumentException $e) {
+    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/stock_adjustment/create.php'); }
     jsonResponse([
         'success' => false,
         'error'   => $e->getMessage()
     ], 400);
 } catch (DomainException $e) {
+    $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 422;
     jsonResponse([
         'success' => false,
         'error'   => $e->getMessage()
-    ], 422);
+    ], $status);
 } catch (PDOException $e) {
     handleDbException($e);
 } catch (Exception $e) {

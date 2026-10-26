@@ -2,7 +2,7 @@
 /**
  * AuthController.php
  * Handles user authentication, session security, operator registration,
- * and password recovery for Casklog Inventory.
+ * and password recovery for InventoryTeam ERP.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -11,6 +11,7 @@ class AuthController {
     public const LOGIN_MAX_ATTEMPTS = 5;
     public const LOGIN_LOCKOUT_SECONDS = 300;
     public const IDLE_TIMEOUT_SECONDS = 1800; // 30 minutes inactivity timeout
+    public const ACCOUNT_REVALIDATE_SECONDS = 0; // F-23: re-check users.status/role/team/warehouse on every request
 
     private PDO $db;
     private static bool $rateLimitTableEnsured = false;
@@ -24,23 +25,8 @@ class AuthController {
      * Start session safely if not already active
      */
     private function initSession(): void {
-        if (session_status() === PHP_SESSION_NONE) {
-            if (!headers_sent()) {
-                // Configure secure session cookie parameters
-                $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                    || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
-
-                session_set_cookie_params([
-                    'lifetime' => 86400, // 24 hours
-                    'path'     => '/',
-                    'domain'   => '',
-                    'secure'   => $isHttps,
-                    'httponly' => true,
-                    'samesite' => 'Lax'
-                ]);
-            }
-            @session_start();
-        }
+        // Single hardened session entry point shared with helpers/csrf.php (F-10, F-23)
+        startSecureSession();
     }
 
     /**
@@ -146,7 +132,7 @@ class AuthController {
     /**
      * Authenticate user with email and password
      */
-    public function login(string $email, string $password, bool $remember = false): array {
+    public function login(string $email, string $password, bool $remember = false, ?string $twoFactorCode = null): array {
         // 1. Guard against brute force DoS attacks before database lookups and bcrypt hashing
         $rateCheck = $this->checkLoginRateLimit();
         if (!$rateCheck['allowed']) {
@@ -230,6 +216,69 @@ class AuthController {
                 'rate_limited' => false,
                 'remaining'    => $rem
             ];
+        }
+
+                // Check if 2FA is enabled for this user in user_preferences (F-26)
+        $is2faEnabled = false;
+        try {
+            $stmtPref = $this->db->prepare("SELECT preferences_json FROM user_preferences WHERE user_id = :uid LIMIT 1");
+            $stmtPref->execute([':uid' => (int)$user['user_id']]);
+            $rawPrefs = $stmtPref->fetchColumn();
+            if ($rawPrefs) {
+                $prefsArr = json_decode($rawPrefs, true);
+                $is2faEnabled = !empty($prefsArr['two_factor_auth']);
+            }
+        } catch (Throwable $e) {
+            $is2faEnabled = false;
+        }
+
+        if ($is2faEnabled) {
+            $trimmed2fa = trim((string)($twoFactorCode ?? ''));
+            if ($trimmed2fa === '') {
+                // Step 1: Issue 6-digit OTP and request verification
+                $otp2fa = (string)random_int(100000, 999999);
+                $_SESSION['login_2fa'] = [
+                    'user_id'    => (int)$user['user_id'],
+                    'code'       => $otp2fa,
+                    'expires_at' => time() + 300, // 5 minutes
+                    'attempts'   => 0
+                ];
+                $this->deliverOtpEmail($user['email'], $user['name'], $otp2fa, '2fa');
+                return [
+                    'success'      => false,
+                    'requires_2fa' => true,
+                    'message'      => 'A 6-digit verification code has been sent to your email. Please enter it to complete sign-in.',
+                    'masked_email' => $this->maskEmail($user['email'])
+                ];
+            }
+
+            // Step 2: Validate submitted 2FA code
+            $session2fa = $_SESSION['login_2fa'] ?? null;
+            if (!$session2fa || (int)($session2fa['user_id'] ?? 0) !== (int)$user['user_id'] || time() > (int)($session2fa['expires_at'] ?? 0)) {
+                unset($_SESSION['login_2fa']);
+                return [
+                    'success' => false,
+                    'error'   => 'Two-factor authentication code has expired. Please log in again.'
+                ];
+            }
+
+            $_SESSION['login_2fa']['attempts'] = (int)($session2fa['attempts'] ?? 0) + 1;
+            if ($_SESSION['login_2fa']['attempts'] > 5) {
+                unset($_SESSION['login_2fa']);
+                return [
+                    'success' => false,
+                    'error'   => 'Too many incorrect 2FA attempts. Please log in again.'
+                ];
+            }
+
+            if (!hash_equals((string)$session2fa['code'], $trimmed2fa)) {
+                return [
+                    'success' => false,
+                    'error'   => 'Invalid two-factor authentication code. Please try again.'
+                ];
+            }
+
+            unset($_SESSION['login_2fa']);
         }
 
         // Authentication successful: clear failed attempt tracker
@@ -424,10 +473,11 @@ class AuthController {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$user) {
+            // Anti-enumeration: Uniform generic response prevents leaking account existence (F-27)
             return [
-                'success' => false,
-                'error'   => 'No active account found with that email address.',
-                'message' => 'No active account found with that email address.'
+                'success'      => true,
+                'message'      => 'If an active account exists for that email, a verification code has been dispatched.',
+                'masked_email' => $this->maskEmail($email)
             ];
         }
 
@@ -442,23 +492,12 @@ class AuthController {
             'expires_at' => time() + 900 // 15 minutes
         ];
 
-        $parts = explode('@', $email);
-        $namePart = $parts[0];
-        $domainPart = $parts[1] ?? '';
-        $maskedName = (strlen($namePart) > 2)
-            ? $namePart[0] . str_repeat('*', strlen($namePart) - 2) . substr($namePart, -1)
-            : $namePart . '*';
-        $maskedEmail = $maskedName . '@' . $domainPart;
-
-        // Dispatch email notification with error_log fallback
-        $subject = "Casklog Inventory - Password Reset Verification Code";
-        $body = "Hello {$user['name']},\n\nYour 6-digit password reset verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please ignore this email.";
-        $headers = "From: no-reply@casklog.local\r\nReply-To: no-reply@casklog.local\r\nX-Mailer: PHP/" . phpversion();
-        @mail($email, $subject, $body, $headers);
+        $maskedEmail = $this->maskEmail($email);
+        $this->deliverOtpEmail($email, $user['name'], $code, 'password_reset');
 
         return [
             'success'      => true,
-            'message'      => 'Verification code dispatched to your inbox.',
+            'message'      => 'If an active account exists for that email, a verification code has been dispatched.',
             'masked_email' => $maskedEmail
         ];
     }
@@ -596,29 +635,92 @@ class AuthController {
     /**
      * Check if currently authenticated and enforce idle inactivity timeout
      */
-    public function isAuthenticated(): bool {
+    public function isAuthenticated(bool $touchActivity = true): bool {
         if (empty($_SESSION['logged_in']) || empty($_SESSION['user_id'])) {
             return false;
         }
 
         // Enforce Idle Inactivity Session Timeout (> 1800 seconds / 30 minutes)
         if (isset($_SESSION['last_activity']) && (time() - (int)$_SESSION['last_activity']) > self::IDLE_TIMEOUT_SECONDS) {
-            $_SESSION = [];
-            if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-                @session_destroy();
-            }
+            $this->terminateSession();
             return false;
         }
 
-        $_SESSION['last_activity'] = time();
+        // F-23: Revoke sessions of deactivated / deleted accounts and refresh role, team and
+        // warehouse assignment so privilege changes take effect on the very next request.
+        if (!$this->revalidateSessionAccount()) {
+            $this->terminateSession();
+            return false;
+        }
+
+        // Background polling (e.g. notifications_poll.php) passes $touchActivity = false so an
+        // unattended open tab still expires after the idle timeout (F-23).
+        if ($touchActivity) {
+            $_SESSION['last_activity'] = time();
+        }
         return true;
+    }
+
+    /**
+     * Re-read the session's user row and sync privilege-bearing fields (F-23).
+     * Returns false when the account no longer exists or is not active.
+     */
+    private function revalidateSessionAccount(): bool {
+        static $validatedThisRequest = [];
+        $uid = (int)($_SESSION['user_id'] ?? 0);
+        if ($uid <= 0) {
+            return false;
+        }
+        if (isset($validatedThisRequest[$uid])) {
+            return $validatedThisRequest[$uid];
+        }
+        $lastCheck = (int)($_SESSION['account_checked_at'] ?? 0);
+        if (self::ACCOUNT_REVALIDATE_SECONDS > 0 && (time() - $lastCheck) < self::ACCOUNT_REVALIDATE_SECONDS) {
+            return $validatedThisRequest[$uid] = true;
+        }
+
+        try {
+            $stmt = $this->db->prepare("SELECT user_id, name, email, role, team, warehouse_id, status FROM users WHERE user_id = ? LIMIT 1");
+            $stmt->execute([$uid]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            error_log('Session revalidation failed: ' . $e->getMessage());
+            // Fail closed: never keep a session alive when the account state cannot be verified
+            return $validatedThisRequest[$uid] = false;
+        }
+
+        if (!$row || ($row['status'] ?? '') !== 'active') {
+            return $validatedThisRequest[$uid] = false;
+        }
+
+        $_SESSION['user_name']    = $row['name'];
+        $_SESSION['user_email']   = $row['email'];
+        $_SESSION['user_role']    = $row['role'];
+        $_SESSION['user_team']    = ($row['team'] ?? '') !== '' ? $row['team'] : 'Inventory';
+        $_SESSION['warehouse_id'] = !empty($row['warehouse_id'])
+            ? (int)$row['warehouse_id']
+            : self::resolveDefaultWarehouseId($row['email'] ?? '');
+        $_SESSION['account_checked_at'] = time();
+
+        return $validatedThisRequest[$uid] = true;
+    }
+
+    /**
+     * Destroy the current session (idle timeout or revoked account).
+     */
+    private function terminateSession(): void {
+        $_SESSION = [];
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_destroy();
+        }
     }
 
     /**
      * Get current authenticated user payload
      */
     public function getCurrentUser(): ?array {
-        if (!$this->isAuthenticated()) {
+        // Do not refresh last_activity here; callers decide via isAuthenticated($touchActivity)
+        if (!$this->isAuthenticated(false)) {
             return null;
         }
 
@@ -642,5 +744,34 @@ class AuthController {
             return 2; // WH-BOND (Manila)
         }
         return 1; // WH-MAIN (Laguna)
+    }
+
+    /**
+     * Obfuscate email address for safe public disclosure (F-27)
+     */
+    public function maskEmail(string $email): string {
+        $parts = explode('@', $email);
+        $namePart = $parts[0] ?? '';
+        $domainPart = $parts[1] ?? '';
+        $maskedName = (strlen($namePart) > 2)
+            ? $namePart[0] . str_repeat('*', max(1, strlen($namePart) - 2)) . substr($namePart, -1)
+            : $namePart . '*';
+        return $maskedName . '@' . $domainPart;
+    }
+
+    /**
+     * Dispatch OTP verification email with system error_log fallback (F-27)
+     */
+    public function deliverOtpEmail(string $email, string $name, string $code, string $type = 'password_reset'): bool {
+        $subject = ($type === '2fa')
+            ? "InventoryTeam - Sign-in Verification Code (2FA)"
+            : "InventoryTeam - Password Reset Verification Code";
+        $body = "Hello {$name},\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in " . ($type === '2fa' ? '5' : '15') . " minutes.\nIf you did not request this, please secure your account immediately.";
+        $headers = "From: no-reply@inventory.local\r\nReply-To: no-reply@inventory.local\r\nX-Mailer: PHP/" . phpversion();
+        $sent = @mail($email, $subject, $body, $headers);
+        if (!$sent) {
+            error_log("OTP delivery fallback: [{$type}] verification code for {$email} is [{$code}] (system mailer unavailable).");
+        }
+        return $sent;
     }
 }

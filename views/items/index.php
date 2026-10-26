@@ -14,6 +14,7 @@ require_once __DIR__ . '/../layouts/navbar.php';
 
 $successMessage = null;
 $errorMessage   = null;
+$isSuperAdmin   = (($currentUser['role'] ?? '') === 'super_admin');
 $canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 
 // Handle New Item Creation
@@ -52,8 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } else {
 
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
-            if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
-                $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
+            if ($reorderLevel < 0 || $reorderLevel > 99999999.9999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999.9999.";
             } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
                 $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
@@ -65,48 +66,161 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $errorMessage = "An item with Item Code '{$itemCode}' already exists.";
                     } else {
                         $userId = (int)($currentUser['id'] ?? 1);
+                        
+                        // BR-01: Employees create items in 'pending' status; Super Admin can create directly in 'active' status
+                        $initialStatus = $isSuperAdmin ? 'active' : 'pending';
+
                         $stmtIns = $pdo->prepare("
                             INSERT INTO items (
-                                code, name, type, unit, reorder_level, status
+                                code, name, description, type, unit, reorder_level, status
                             ) VALUES (
-                                ?, ?, ?, ?, ?, 'active'
+                                ?, ?, ?, ?, ?, ?, ?
                             )
                         ");
                         $stmtIns->execute([
                             $itemCode,
                             $itemName,
+                            $description !== '' ? $description : null,
                             $itemType,
                             $unit,
-                            round($reorderLevel, 3)
+                            round($reorderLevel, 3),
+                            $initialStatus
                         ]);
                         $newId = (int)$pdo->lastInsertId();
 
-                        // Initialize 0-stock stock snapshot rows across all active warehouses
-                        $stmtSeedInv = $pdo->prepare("
-                            INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
-                            SELECT ?, warehouse_id, 0.00, ?
-                            FROM warehouses
-                            WHERE status = 'active'
-                        ");
-                        $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
+                        // Only active items initialize stock snapshot rows across warehouses
+                        if ($initialStatus === 'active') {
+                            $stmtSeedInv = $pdo->prepare("
+                                INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                                SELECT ?, warehouse_id, 0.00, ?
+                                FROM warehouses
+                                WHERE status = 'active'
+                            ");
+                            $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
+                        }
 
                         require_once __DIR__ . '/../../helpers/AccountabilityService.php';
                         AccountabilityService::log([
                             'user_id'          => $userId,
-                            'team'             => 'Inventory',
-                            'action_type'      => 'ITEM_CREATED',
+                            'team'             => $currentUser['team'] ?? 'Inventory',
+                            'action_type'      => ($initialStatus === 'active') ? 'ITEM_CREATED' : 'ITEM_SUBMITTED',
                             'channel'          => 'UI',
                             'item_id'          => $newId,
                             'warehouse_id'     => $currentWarehouseId ?: 1,
                             'reference_number' => $itemCode,
-                            'notes'            => "Master item created: {$itemName} ({$itemType})"
+                            'notes'            => ($initialStatus === 'active')
+                                ? "Master item created: {$itemName} ({$itemType})"
+                                : "Master item submitted for Super Admin approval: {$itemName} ({$itemType})"
                         ]);
 
-                        $successMessage = "Master item '{$itemName}' ({$itemCode}) created successfully!";
+                        if ($initialStatus === 'active') {
+                            $successMessage = "Master item '{$itemName}' ({$itemCode}) created and activated successfully!";
+                        } else {
+                            $successMessage = "Master item '{$itemName}' ({$itemCode}) submitted successfully! Awaiting Super Admin review and approval.";
+                        }
                     }
                 } catch (Throwable $e) {
                     $errorMessage = "Failed to create item: " . $e->getMessage();
                 }
+            }
+        }
+    }
+}
+
+// Handle Item Approval (Super Admin Only — BR-01)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'approve_item') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } elseif (!$isSuperAdmin) {
+        $errorMessage = "Access denied: Only Super Admin can approve pending catalog items.";
+    } else {
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        if ($itemId <= 0) {
+            $errorMessage = "Invalid item ID.";
+        } else {
+            try {
+                $stmtItem = $pdo->prepare("SELECT item_id, code, name, type, unit, reorder_level, status FROM items WHERE item_id = ?");
+                $stmtItem->execute([$itemId]);
+                $itemRow = $stmtItem->fetch(PDO::FETCH_ASSOC);
+
+                if (!$itemRow) {
+                    $errorMessage = "Catalog item not found.";
+                } elseif ($itemRow['status'] !== 'pending') {
+                    $errorMessage = "Item '{$itemRow['code']}' is not pending approval (current status: {$itemRow['status']}).";
+                } else {
+                    $stmtAppr = $pdo->prepare("UPDATE items SET status = 'active' WHERE item_id = ?");
+                    $stmtAppr->execute([$itemId]);
+
+                    // Seed warehouse stock snapshot rows for newly activated item
+                    $stmtSeedInv = $pdo->prepare("
+                        INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                        SELECT ?, warehouse_id, 0.00, ?
+                        FROM warehouses
+                        WHERE status = 'active'
+                    ");
+                    $stmtSeedInv->execute([$itemId, (float)$itemRow['reorder_level']]);
+
+                    require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                    AccountabilityService::log([
+                        'user_id'          => (int)($currentUser['id'] ?? 1),
+                        'team'             => 'Administration',
+                        'action_type'      => 'ITEM_APPROVED',
+                        'channel'          => 'UI',
+                        'item_id'          => $itemId,
+                        'warehouse_id'     => $currentWarehouseId ?: 1,
+                        'reference_number' => $itemRow['code'],
+                        'notes'            => "Super Admin approved catalog item: {$itemRow['name']} ({$itemRow['code']})"
+                    ]);
+
+                    $successMessage = "Catalog item '{$itemRow['name']}' ({$itemRow['code']}) approved and activated successfully!";
+                }
+            } catch (Throwable $e) {
+                $errorMessage = "Failed to approve item: " . $e->getMessage();
+            }
+        }
+    }
+}
+
+// Handle Item Rejection (Super Admin Only — BR-01)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reject_item') {
+    if (!validateCsrfToken()) {
+        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+    } elseif (!$isSuperAdmin) {
+        $errorMessage = "Access denied: Only Super Admin can reject pending catalog items.";
+    } else {
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        if ($itemId <= 0) {
+            $errorMessage = "Invalid item ID.";
+        } else {
+            try {
+                $stmtItem = $pdo->prepare("SELECT item_id, code, name, status FROM items WHERE item_id = ?");
+                $stmtItem->execute([$itemId]);
+                $itemRow = $stmtItem->fetch(PDO::FETCH_ASSOC);
+
+                if (!$itemRow) {
+                    $errorMessage = "Catalog item not found.";
+                } elseif ($itemRow['status'] !== 'pending') {
+                    $errorMessage = "Item '{$itemRow['code']}' is not pending approval.";
+                } else {
+                    $stmtRej = $pdo->prepare("UPDATE items SET status = 'inactive' WHERE item_id = ?");
+                    $stmtRej->execute([$itemId]);
+
+                    require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+                    AccountabilityService::log([
+                        'user_id'          => (int)($currentUser['id'] ?? 1),
+                        'team'             => 'Administration',
+                        'action_type'      => 'ITEM_REJECTED',
+                        'channel'          => 'UI',
+                        'item_id'          => $itemId,
+                        'warehouse_id'     => $currentWarehouseId ?: 1,
+                        'reference_number' => $itemRow['code'],
+                        'notes'            => "Super Admin rejected catalog item: {$itemRow['name']} ({$itemRow['code']})"
+                    ]);
+
+                    $successMessage = "Catalog item '{$itemRow['name']}' ({$itemRow['code']}) has been rejected.";
+                }
+            } catch (Throwable $e) {
+                $errorMessage = "Failed to reject item: " . $e->getMessage();
             }
         }
     }
@@ -138,13 +252,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Default reorder level must be a valid number.";
         } else {
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
-            if ($reorderLevel < 0 || $reorderLevel > 99999999999.999) {
-                $errorMessage = "Default reorder level must be between 0 and 99,999,999,999.999.";
+            if ($reorderLevel < 0 || $reorderLevel > 99999999.9999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999.9999.";
             } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
                 $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
                 try {
-                    $stmtExist = $pdo->prepare("SELECT code AS item_code, type AS item_type FROM items WHERE item_id = ?");
+                    $stmtExist = $pdo->prepare("SELECT code AS item_code, type AS item_type, unit AS item_unit, reorder_level FROM items WHERE item_id = ?");
                     $stmtExist->execute([$itemId]);
                     $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
 
@@ -180,6 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $stmtUpd = $pdo->prepare("
                                 UPDATE items
                                 SET name = ?,
+                                    description = ?,
                                     type = ?,
                                     unit = ?,
                                     reorder_level = ?,
@@ -188,6 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             ");
                             $stmtUpd->execute([
                                 $itemName,
+                                $description !== '' ? $description : null,
                                 $itemType,
                                 $unit,
                                 round($reorderLevel, 3),
@@ -274,8 +390,9 @@ $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
 // KPI metrics
 $totalSKUs    = count($itemsList);
+$pendingSKUs  = count(array_filter($itemsList, fn($x) => ($x['status'] ?? '') === 'pending'));
 $activeSKUs   = count(array_filter($itemsList, fn($x) => ($x['status'] ?? 'active') === 'active'));
-$inactiveSKUs = $totalSKUs - $activeSKUs;
+$inactiveSKUs = count(array_filter($itemsList, fn($x) => ($x['status'] ?? '') === 'inactive'));
 $rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material' && ($x['status'] ?? 'active') === 'active'));
 $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good' && ($x['status'] ?? 'active') === 'active'));
 ?>
@@ -326,7 +443,15 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <div class="stat-meta"><?= $inactiveSKUs > 0 ? "{$activeSKUs} active · {$inactiveSKUs} inactive" : 'All active in catalog' ?></div>
+        <div class="stat-meta">
+            <?= $activeSKUs ?> active
+            <?php if ($pendingSKUs > 0): ?>
+                · <span style="color: #D97706; font-weight: 700;"><?= $pendingSKUs ?> pending</span>
+            <?php endif; ?>
+            <?php if ($inactiveSKUs > 0): ?>
+                · <?= $inactiveSKUs ?> inactive
+            <?php endif; ?>
+        </div>
     </div>
 
     <div class="stat-card stat-gold">
@@ -382,6 +507,12 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 <option value="raw_material">Raw Materials</option>
                 <option value="finished_good">Finished Goods</option>
             </select>
+            <select id="statusFilter" class="select-filter" aria-label="Filter by item status" onchange="filterItemsTable()">
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending Approval</option>
+                <option value="inactive">Inactive</option>
+            </select>
         </div>
     </div>
 
@@ -408,7 +539,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
-                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>">
+                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>" data-status="<?= htmlspecialchars($row['status'] ?? 'active') ?>">
                             <td style="font-family: monospace; color: var(--gray); font-weight: 600;">
                                 #<?= (int)$row['item_id'] ?>
                             </td>
@@ -441,23 +572,58 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                             <td class="text-center">
                                 <?php if (($row['status'] ?? 'active') === 'active'): ?>
                                     <span class="badge status-completed">Active</span>
+                                <?php elseif (($row['status'] ?? '') === 'pending'): ?>
+                                    <span class="badge" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D; font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        Pending Approval
+                                    </span>
                                 <?php else: ?>
                                     <span class="badge status-cancelled">Inactive</span>
                                 <?php endif; ?>
                             </td>
                             <?php if ($canManageItems): ?>
                                 <td class="text-center">
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openEditItemModal(<?= htmlspecialchars(json_encode([
-                                        'item_id'               => (int)$row['item_id'],
-                                        'item_code'             => $row['item_code'],
-                                        'item_name'             => $row['item_name'],
-                                        'item_type'             => $row['item_type'],
-                                        'unit'                  => $row['unit'],
-                                        'default_reorder_level' => (float)$row['default_reorder_level'],
-                                        'description'           => (string)($row['description'] ?? ''),
-                                        'status'                => $row['status'] ?? 'active',
-                                        'tx_count'              => (int)($row['tx_count'] ?? 0)
-                                    ])) ?>)">Edit</button>
+                                    <?php if (($row['status'] ?? '') === 'pending'): ?>
+                                        <?php if ($isSuperAdmin): ?>
+                                            <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: center;">
+                                                <form method="POST" action="index.php" style="display: inline; margin: 0;" onsubmit="return confirm('Approve catalog item \'<?= htmlspecialchars(addslashes($row['item_name'])) ?>\' into active inventory?');">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="approve_item">
+                                                    <input type="hidden" name="item_id" value="<?= (int)$row['item_id'] ?>">
+                                                    <button type="submit" class="btn btn-primary btn-sm" style="background: #059669; border-color: #059669; padding: 4px 10px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="Approve and Activate Item">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                                        Approve
+                                                    </button>
+                                                </form>
+                                                <form method="POST" action="index.php" style="display: inline; margin: 0;" onsubmit="return confirm('Reject catalog item \'<?= htmlspecialchars(addslashes($row['item_name'])) ?>\'? It will be marked inactive.');">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="reject_item">
+                                                    <input type="hidden" name="item_id" value="<?= (int)$row['item_id'] ?>">
+                                                    <button type="submit" class="btn btn-secondary btn-sm" style="color: #DC2626; border-color: #FCA5A5; padding: 4px 8px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="Reject Item">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                                        Reject
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        <?php else: ?>
+                                            <span style="font-size: 11.5px; color: #D97706; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                                Awaiting Review
+                                            </span>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="openEditItemModal(<?= htmlspecialchars(json_encode([
+                                            'item_id'               => (int)$row['item_id'],
+                                            'item_code'             => $row['item_code'],
+                                            'item_name'             => $row['item_name'],
+                                            'item_type'             => $row['item_type'],
+                                            'unit'                  => $row['unit'],
+                                            'default_reorder_level' => (float)$row['default_reorder_level'],
+                                            'description'           => (string)($row['description'] ?? ''),
+                                            'status'                => $row['status'] ?? 'active',
+                                            'tx_count'              => (int)($row['tx_count'] ?? 0)
+                                        ])) ?>)">Edit</button>
+                                    <?php endif; ?>
                                 </td>
                             <?php endif; ?>
                         </tr>
@@ -484,6 +650,12 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'fi
                 </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <?php if (!$isSuperAdmin): ?>
+                    <div style="font-size: 12px; color: #92400E; background: #FEF3C7; padding: 10px 12px; border-radius: 6px; border: 1px solid #FCD34D; display: flex; align-items: flex-start; gap: 8px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span><strong>Approval Workflow:</strong> New catalog items submitted by warehouse staff are saved as <strong>Pending Approval</strong>. A Super Admin must review and approve this item before it can be used for stock movements or orders.</span>
+                    </div>
+                <?php endif; ?>
                 <!-- Classification -->
                 <div>
                     <label for="modalItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
@@ -691,7 +863,8 @@ function onModalCodeInput(val) {
 }
 function filterItemsTable() {
     const query = document.getElementById('itemSearch').value.toLowerCase().trim();
-    const typeFilter = document.getElementById('typeFilter').value;
+    const typeFilter = document.getElementById('typeFilter') ? document.getElementById('typeFilter').value : '';
+    const statusFilter = document.getElementById('statusFilter') ? document.getElementById('statusFilter').value : '';
     const table = document.getElementById('itemsTable');
     if (!table) return;
     const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
@@ -699,15 +872,26 @@ function filterItemsTable() {
     for (let row of rows) {
         if (row.cells.length <= 1) continue;
         const rowType = row.getAttribute('data-type') || '';
+        const rowStatus = row.getAttribute('data-status') || '';
         const text = row.textContent.toLowerCase();
         const matchesQuery = !query || text.includes(query);
         const matchesType  = !typeFilter || rowType === typeFilter;
-        const match = matchesQuery && matchesType;
+        const matchesStatus = !statusFilter || rowStatus === statusFilter;
+        const match = matchesQuery && matchesType && matchesStatus;
 
         row.dataset.filteredOut = match ? 'false' : 'true';
     }
     if (table.paginationUpdate) table.paginationUpdate(true);
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialStatus = urlParams.get('status');
+    if (initialStatus && document.getElementById('statusFilter')) {
+        document.getElementById('statusFilter').value = initialStatus;
+        filterItemsTable();
+    }
+});
 </script>
 
 <?php

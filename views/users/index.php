@@ -23,8 +23,9 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-$successMessage = null;
-$errorMessage   = null;
+$successMessage     = null;
+$errorMessage       = null;
+$generatedTokenInfo = null;
 
 // Handle User Creation & Updates (Super Admin only)
 if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -90,7 +91,12 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             'notes'            => "Created user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}"
                         ]);
 
-                        $successMessage = "User account '{$uName}' ({$uEmail}) created successfully! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
+                        $generatedTokenInfo = [
+                            'token'     => $rawApiToken,
+                            'user_name' => $uName,
+                            'email'     => $uEmail
+                        ];
+                        $successMessage = "User account '{$uName}' ({$uEmail}) created successfully!";
                     }
                 } catch (Throwable $e) {
                     $errorMessage = "Failed to create user account: " . $e->getMessage();
@@ -125,7 +131,12 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             'notes'            => "Regenerated API Bearer token for user: {$targetUser['name']} ({$targetUser['email']})"
                         ]);
 
-                        $successMessage = "API Token for user '{$targetUser['name']}' has been regenerated! <br><div class='mt-2 p-2 bg-light rounded border'><span class='text-muted small d-block font-monospace'>New API Bearer Token (Copy now &mdash; it will not be displayed again):</span><code class='user-select-all fw-bold' style='word-break: break-all; color: #0f172a; font-size: 13px;'>{$rawApiToken}</code></div>";
+                        $generatedTokenInfo = [
+                            'token'     => $rawApiToken,
+                            'user_name' => $targetUser['name'],
+                            'email'     => $targetUser['email']
+                        ];
+                        $successMessage = "API Bearer Token for user '{$targetUser['name']}' has been regenerated successfully.";
                     }
                 } catch (Throwable $e) {
                     $errorMessage = "Failed to regenerate API token: " . $e->getMessage();
@@ -335,6 +346,60 @@ function getFacilityAssignment($user) {
         </div>
         <button type="button" class="flash-alert-close" onclick="dismissFlashAlert(this.closest('.flash-alert'))" style="background: none; border: none; cursor: pointer; color: var(--success); font-size: 18px; line-height: 1; padding: 0 4px;" aria-label="Dismiss">&times;</button>
     </div>
+<?php endif; ?>
+
+<?php if (!empty($generatedTokenInfo)): ?>
+    <!-- F-24: Dedicated persistent token card that is not auto-dismissed by footer.php timers -->
+    <div id="persistentTokenCard" class="card" style="margin-bottom: 24px; border: 2px solid #0284C7; background: #F0F9FF; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);">
+        <div class="card-body" style="padding: 20px;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+                <div style="display: flex; align-items: flex-start; gap: 12px;">
+                    <div style="background: #E0F2FE; color: #0284C7; width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: #0369A1;">
+                            API Bearer Token Generated for <?= htmlspecialchars($generatedTokenInfo['user_name']) ?>
+                        </h3>
+                        <p style="margin: 0; font-size: 13px; color: #075985;">
+                            Copy this token now. For security purposes, this token cannot be viewed again once you leave this page.
+                        </p>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('persistentTokenCard').remove()" style="background: none; border: none; font-size: 20px; line-height: 1; color: #0369A1; cursor: pointer; padding: 4px;" aria-label="Dismiss">&times;</button>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; align-items: center; gap: 10px; background: #FFFFFF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 8px 12px;">
+                <input type="text" id="rawTokenInput" readonly value="<?= htmlspecialchars($generatedTokenInfo['token']) ?>" style="flex: 1; border: none; background: transparent; font-family: monospace; font-size: 13px; font-weight: 700; color: #0F172A; outline: none; user-select: all;">
+                <button type="button" id="copyTokenBtn" class="btn btn-primary" onclick="copyGeneratedToken()" style="height: 36px; padding: 0 16px; font-size: 13px; background: #0284C7; border-color: #0284C7; display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span id="copyBtnText">Copy Token</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+    function copyGeneratedToken() {
+        const input = document.getElementById('rawTokenInput');
+        if (!input) return;
+        input.select();
+        input.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(input.value).then(() => {
+            const btnText = document.getElementById('copyBtnText');
+            if (btnText) {
+                btnText.textContent = 'Copied!';
+                setTimeout(() => { btnText.textContent = 'Copy Token'; }, 3000);
+            }
+        }).catch(() => {
+            document.execCommand('copy');
+            const btnText = document.getElementById('copyBtnText');
+            if (btnText) {
+                btnText.textContent = 'Copied!';
+                setTimeout(() => { btnText.textContent = 'Copy Token'; }, 3000);
+            }
+        });
+    }
+    </script>
 <?php endif; ?>
 
 <?php if ($errorMessage): ?>

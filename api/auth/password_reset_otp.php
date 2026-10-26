@@ -66,6 +66,11 @@ switch ($action) {
         exit;
 
     case 'verify_code':
+        // Rate-limit OTP verification per IP + target email to stop credential stuffing (F-27)
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $verifyLimitKey = 'auth_verify_' . hash('sha256', $clientIp . '_' . strtolower($email));
+        checkRateLimit($verifyLimitKey, 5, 300);
+
         $code   = trim((string)($input['code'] ?? ''));
         $result = $auth->verifyPasswordResetCode($code, $email);
         if (!$result['success']) {

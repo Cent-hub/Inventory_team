@@ -15,8 +15,8 @@ class AuthenticationTest extends TestCase {
     public function run(): TestResult {
         $authController = new AuthController($this->pdo);
 
-        // 1. Valid Authentication
-        $validResult = $authController->login('admin@inventory.local', 'admin123');
+        // 1. Valid Authentication (ephemeral per-run test credential)
+        $validResult = $authController->login('admin@inventory.local', TestRunner::getTestAdminPassword());
         $this->assertTrue(
             !empty($validResult['success']) && $validResult['success'] === true,
             "Valid credentials ('admin@inventory.local') must authenticate successfully",

@@ -1,7 +1,7 @@
 <?php
 /**
  * API Endpoint: Inbound Orders Document Queue & Receiving
- * Method: GET (Query Queue) | POST (Process Receiving)
+ * Method: GET (Query Queue) | POST (Process Physical Receiving - Warehouse Admin / Super Admin Only)
  */
 
 require_once __DIR__ . '/../../config/database.php';
@@ -9,15 +9,29 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$authUser = requireApiAuth(['admin', 'inventory', 'procurement', 'production', 'sales']);
+$authUser = requireApiAuth(['inventory', 'procurement', 'production', 'sales']);
 $userId = (int)$authUser['user_id'];
 $pdo = Database::getConnection();
 $service = new StockService($pdo);
 
 $method = $_SERVER['REQUEST_METHOD'];
+$isWhAdmin = isWarehouseAdmin($authUser);
+$userTeam = strtolower(trim((string)($authUser['team'] ?? '')));
+
+// Department source_type scope for external service accounts
+$allowedSources = null;
+if (!$isWhAdmin) {
+    $allowedSources = match ($userTeam) {
+        'procurement' => ['PURCHASE_ORDER'],
+        'production'  => ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'],
+        'sales'       => ['CUSTOMER_RETURN'],
+        default       => []
+    };
+}
 
 if ($method === 'GET') {
     $orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
@@ -45,6 +59,16 @@ if ($method === 'GET') {
             jsonResponse(['success' => false, 'error' => 'Inbound order not found.'], 404);
         }
 
+        // Enforce facility & department isolation
+        resolveWarehouseScope($authUser, (int)$order['warehouse_id']);
+        if ($allowedSources !== null && !in_array($order['source_type'], $allowedSources, true)) {
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Forbidden',
+                'detail'  => "Access Denied: Your department ('{$authUser['team']}') cannot access '{$order['source_type']}' inbound orders."
+            ], 403);
+        }
+
         // Fetch line items
         $stmtItems = $pdo->prepare("
             SELECT ioi.*, i.code AS item_code, i.name AS item_name, i.unit, i.type AS item_type
@@ -59,9 +83,10 @@ if ($method === 'GET') {
         jsonResponse(['success' => true, 'data' => $order]);
     }
 
-    // List orders with optional filters
+    // List orders with facility & department scoping
     $status = isset($_GET['status']) ? trim($_GET['status']) : '';
-    $warehouseId = isset($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : 0;
+    $rawWarehouseId = isset($_GET['warehouse_id']) && $_GET['warehouse_id'] !== '' ? (int)$_GET['warehouse_id'] : null;
+    $scopedWarehouseId = resolveWarehouseScope($authUser, $rawWarehouseId);
     $limit = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 50;
 
     $sql = "SELECT io.*, w.code AS warehouse_code, w.name AS warehouse_name 
@@ -74,9 +99,17 @@ if ($method === 'GET') {
         $sql .= " AND io.status = ?";
         $params[] = $status;
     }
-    if ($warehouseId > 0) {
+    if ($scopedWarehouseId !== null) {
         $sql .= " AND io.warehouse_id = ?";
-        $params[] = $warehouseId;
+        $params[] = $scopedWarehouseId;
+    }
+    if ($allowedSources !== null) {
+        if (empty($allowedSources)) {
+            jsonResponse(['success' => true, 'count' => 0, 'data' => []]);
+        }
+        $inPlaceholders = implode(',', array_fill(0, count($allowedSources), '?'));
+        $sql .= " AND io.source_type IN ({$inPlaceholders})";
+        array_push($params, ...$allowedSources);
     }
 
     $sql .= " ORDER BY io.inbound_order_id DESC LIMIT " . (int)$limit;
@@ -87,9 +120,28 @@ if ($method === 'GET') {
 
     jsonResponse(['success' => true, 'count' => count($orders), 'data' => $orders]);
 } elseif ($method === 'POST') {
+    if (!$isWhAdmin) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Access Denied: Only Warehouse Inventory Administrators or Super Admin can execute physical dock receiving."
+        ], 403);
+    }
+
     checkRateLimit('inbound_order_receive', 30, 60, $authUser['api_token']);
 
     $payload = getRequestJson();
+
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey();
+if ($idempotencyKey) {
+    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload);
+    if (!$claim['claimed']) {
+        http_response_code($claim['response_code']);
+        echo $claim['response_body'];
+        exit;
+    }
+}
     $orderId = (int)($payload['order_id'] ?? $payload['inbound_order_id'] ?? 0);
     $orderNumber = trim($payload['order_number'] ?? '');
 
@@ -135,7 +187,9 @@ if ($method === 'GET') {
             'data'    => $result
         ], 200);
     } catch (DomainException $e) {
-        jsonResponse(['success' => false, 'error' => 'Conflict / Invalid State', 'detail' => $e->getMessage()], 409);
+    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+        $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
+        jsonResponse(['success' => false, 'error' => $status === 403 ? 'Forbidden' : 'Conflict / Invalid State', 'detail' => $e->getMessage()], $status);
     } catch (InvalidArgumentException $e) {
         jsonResponse(['success' => false, 'error' => 'Validation Error', 'detail' => $e->getMessage()], 422);
     } catch (PDOException $e) {

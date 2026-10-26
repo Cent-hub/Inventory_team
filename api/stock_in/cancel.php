@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -21,14 +22,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Inventory, Procurement, or Production)
-$authUser = requireApiAuth(['admin', 'inventory', 'procurement', 'production']);
+// Authenticate caller (Warehouse Inventory, Procurement, Production, or Sales)
+$authUser = requireApiAuth(['inventory', 'procurement', 'production', 'sales']);
 $userId = (int)$authUser['user_id'];
 
 // Enforce strict rate limiting on cancellations (10 req / 60s)
 checkRateLimit('stock_in_cancel', 10, 60, $authUser['api_token']);
 
 $payload = getRequestJson();
+
+$pdo = Database::getConnection();
+$idempotencyKey = IdempotencyService::extractKey();
+if ($idempotencyKey) {
+    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/stock_in/cancel.php', (string)$userId, $payload);
+    if (!$claim['claimed']) {
+        http_response_code($claim['response_code']);
+        echo $claim['response_body'];
+        exit;
+    }
+}
 $stockInId = (int)($payload['stock_in_id'] ?? 0);
 $cancellationReason = trim($payload['cancellation_reason'] ?? $payload['reason'] ?? '');
 
@@ -51,12 +63,20 @@ try {
     // Pass $authUser for IDOR creator ownership verification
     $result = $service->cancelStockIn($stockInId, $cancellationReason, $userId, $authUser);
 
+        if (!empty($idempotencyKey)) {
+        IdempotencyService::store($pdo, $idempotencyKey, 'api/stock_in/cancel.php', (string)$userId, $payload, 200, [
+            'success' => true,
+            'message' => $result['message'] ?? 'Action completed successfully.',
+            'data'    => $result
+        ]);
+    }
     jsonResponse([
         'success' => true,
         'message' => 'Stock IN cancelled successfully. Inventory decremented via automatic compensatory ledger entry.',
         'data'    => $result
     ], 200);
 } catch (DomainException $e) {
+    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/stock_in/cancel.php'); }
     // IDOR Protection rejection
     jsonResponse([
         'success' => false,

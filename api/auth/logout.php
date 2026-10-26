@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
+require_once __DIR__ . '/../../helpers/csrf.php';
 
 $authController = new AuthController();
 
@@ -26,6 +27,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
         exit;
     }
     // Prevent accidental logout on browser GET (prefetch / img tags); redirect safely without logout
+    header('Location: ' . $authController->getLoginRedirectUrl());
+    exit;
+}
+
+// Validate Anti-CSRF Token for state-changing logout (F-32 / SEC-04)
+$submittedCsrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? null);
+if (!$submittedCsrf && $isJson) {
+    $rawInput = file_get_contents('php://input');
+    $decoded = json_decode($rawInput, true);
+    if (is_array($decoded)) {
+        $submittedCsrf = $decoded['csrf_token'] ?? null;
+    }
+}
+
+if (!validateCsrfToken($submittedCsrf)) {
+    http_response_code(403);
+    if ($isJson) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([
+            'success' => false,
+            'error'   => 'CSRF token validation failed. Unable to logout safely.'
+        ]);
+        exit;
+    }
     header('Location: ' . $authController->getLoginRedirectUrl());
     exit;
 }

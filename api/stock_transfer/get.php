@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-// Authenticate caller (Admin, Inventory, Production, or Procurement)
-$authUser = requireApiAuth(['admin', 'inventory', 'production', 'procurement']);
+// Authenticate caller (Internal Warehouse Inventory Admin or Super Admin)
+$authUser = requireApiAuth(['inventory']);
 
 // Rate Limit: 60 req / min
 checkRateLimit('stock_transfer_get', 60, 60, $authUser['api_token']);

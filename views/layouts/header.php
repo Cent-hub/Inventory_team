@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../helpers/csrf.php';
 
 // Security: Prevent browser caching & cache snooping of authenticated views (SEC-05)
 if (!headers_sent()) {
+    emitSecurityHeaders();
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
     header('Expires: 0');
@@ -47,15 +48,35 @@ $userTeam = !empty($_SESSION['user_team'])
     ? $_SESSION['user_team']
     : (!empty($currentUser['team']) ? $currentUser['team'] : 'Inventory');
 
+// F-37: Query assigned warehouse BEFORE evaluating facility switch so 403.php displays the real facility
+/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
+$assignedWarehouse = null;
+if ($userAssignedWhId > 0) {
+    $whStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
+    $whStmt->execute([':id' => $userAssignedWhId]);
+    $res = $whStmt->fetch(PDO::FETCH_ASSOC);
+    if (is_array($res)) {
+        $assignedWarehouse = $res;
+    }
+}
+if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
+    $fallbackStmt = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
+    $res = $fallbackStmt ? $fallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
+    $assignedWarehouse = is_array($res) ? $res : [
+        'warehouse_id'   => 1,
+        'warehouse_code' => 'MAIN',
+        'warehouse_name' => 'Main Warehouse',
+        'location'       => 'HQ'
+    ];
+}
+
+// F-36: Only explicit facility switch requests (warehouse_id or branch_id) are permitted.
+// NEVER treat transfer parameters (source_warehouse_id) as facility switch requests!
 $requestedWhId = null;
 if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
     $requestedWhId = (int)$_GET['warehouse_id'];
-} elseif (isset($_POST['warehouse_id']) && (int)$_POST['warehouse_id'] > 0) {
+} elseif (isset($_POST['warehouse_id']) && (int)$_POST['warehouse_id'] > 0 && isset($_POST['action']) && in_array($_POST['action'], ['switch_warehouse', 'change_facility'], true)) {
     $requestedWhId = (int)$_POST['warehouse_id'];
-} elseif (isset($_GET['source_warehouse_id']) && (int)$_GET['source_warehouse_id'] > 0) {
-    $requestedWhId = (int)$_GET['source_warehouse_id'];
-} elseif (isset($_POST['source_warehouse_id']) && (int)$_POST['source_warehouse_id'] > 0) {
-    $requestedWhId = (int)$_POST['source_warehouse_id'];
 } elseif (isset($_GET['branch_id']) && (int)$_GET['branch_id'] > 0) {
     $requestedWhId = (int)$_GET['branch_id'];
 } elseif ($isAuthorizedForMultiWarehouse && isset($_SESSION['warehouse_id']) && (int)$_SESSION['warehouse_id'] > 0) {
@@ -66,12 +87,20 @@ if ($isAuthorizedForMultiWarehouse) {
     // Multi-warehouse viewing enabled for super_admin: allow switching across all warehouses
     if ($requestedWhId !== null && $requestedWhId > 0) {
         $currentWarehouseId = $requestedWhId;
+        if ($currentWarehouseId !== (int)($assignedWarehouse['warehouse_id'] ?? 0)) {
+            $targetStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
+            $targetStmt->execute([':id' => $currentWarehouseId]);
+            $targetWh = $targetStmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($targetWh)) {
+                $assignedWarehouse = $targetWh;
+            }
+        }
     } else {
-        $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
+        $currentWarehouseId = (int)$assignedWarehouse['warehouse_id'];
     }
 } else {
     // Non-super_admin roles: strictly enforce their assigned warehouse
-    $currentWarehouseId = $userAssignedWhId > 0 ? $userAssignedWhId : 1;
+    $currentWarehouseId = (int)$assignedWarehouse['warehouse_id'];
 
     if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $currentWarehouseId) {
         http_response_code(403);
@@ -82,34 +111,6 @@ if ($isAuthorizedForMultiWarehouse) {
         }
         exit;
     }
-}
-
-/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
-$assignedWarehouse = null;
-if ($currentWarehouseId > 0) {
-    $whStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
-    $whStmt->execute([':id' => $currentWarehouseId]);
-    $res = $whStmt->fetch(PDO::FETCH_ASSOC);
-    if (is_array($res)) {
-        $assignedWarehouse = $res;
-    }
-}
-
-if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
-    // Fallback to first active warehouse
-    $fallbackStmt = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
-    $res = $fallbackStmt ? $fallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
-    if (is_array($res)) {
-        $assignedWarehouse = $res;
-    } else {
-        $assignedWarehouse = [
-            'warehouse_id'   => 1,
-            'warehouse_code' => 'MAIN',
-            'warehouse_name' => 'Main Warehouse',
-            'location'       => 'HQ'
-        ];
-    }
-    $currentWarehouseId = (int)($assignedWarehouse['warehouse_id'] ?? 1);
 }
 
 // Ensure session & currentUser are strictly synchronized
@@ -169,7 +170,7 @@ $isSidebarCollapsed = (isset($_COOKIE['inventory_sidebar_collapsed']) && $_COOKI
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/stockpilot.css?v=<?= file_exists(__DIR__ . '/../../assets/css/stockpilot.css') ? filemtime(__DIR__ . '/../../assets/css/stockpilot.css') : time() ?>">
     <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/settings_modal.css?v=<?= file_exists(__DIR__ . '/../../assets/css/settings_modal.css') ? filemtime(__DIR__ . '/../../assets/css/settings_modal.css') : time() ?>">
-    <script>window.BASE_URL = <?= json_encode(BASE_URL) ?>;</script>
+    <script>window.BASE_URL = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
     <script src="<?= BASE_URL ?>assets/js/stockpilot_utils.js?v=<?= file_exists(__DIR__ . '/../../assets/js/stockpilot_utils.js') ? filemtime(__DIR__ . '/../../assets/js/stockpilot_utils.js') : time() ?>"></script>
 </head>
 <body class="<?= $isSidebarCollapsed ? 'sidebar-collapsed' : '' ?>">

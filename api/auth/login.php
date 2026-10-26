@@ -22,12 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Parse JSON or form POST body
 $input = getRequestJson();
 
-$email    = $input['email'] ?? '';
-$password = $input['password'] ?? '';
-$remember = !empty($input['remember']);
+$email         = $input['email'] ?? '';
+$password      = $input['password'] ?? '';
+$remember      = !empty($input['remember']);
+$twoFactorCode = $input['two_factor_code'] ?? null;
 
 $authController = new AuthController();
-$result = $authController->login($email, $password, $remember);
+$result = $authController->login($email, $password, $remember, $twoFactorCode);
 
 if (!$result['success']) {
     if (!empty($result['rate_limited'])) {

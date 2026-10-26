@@ -79,7 +79,7 @@ if ($selectedItem) {
 $movements = [];
 if ($selectedItemId > 0) {
     $sql = "
-        WITH movement_ledger AS (
+        WITH movement_base AS (
             SELECT 
                 sm.movement_id,
                 sm.item_id,
@@ -88,30 +88,28 @@ if ($selectedItemId > 0) {
                 sm.quantity,
                 sm.remarks,
                 sm.created_at,
-                sa.difference AS adjustment_difference,
-                SUM(CASE 
+                COALESCE(sm.quantity_delta, CASE 
                     WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                     WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                     WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
+                    WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity) 
                     ELSE 0 
-                END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
+                END) AS signed_delta
             FROM stock_movements sm
-            LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+            LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
+        ),
+        movement_ledger AS (
+            SELECT
+                mb.*,
+                SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
+            FROM movement_base mb
         )
         SELECT 
             sm.movement_id,
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
-            CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
-                ELSE 0 
-            END AS quantity_in,
-            CASE 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
-                ELSE 0 
-            END AS quantity_out,
+            CASE WHEN sm.signed_delta > 0 THEN sm.signed_delta ELSE 0 END AS quantity_in,
+            CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) ELSE 0 END AS quantity_out,
             sm.balance_after,
             sm.created_at,
             w.code AS warehouse_code,
@@ -270,6 +268,7 @@ if ($selectedItemId > 0) {
                 <option value="CANCELLED_INBOUND" <?= $movementType === 'CANCELLED_INBOUND' ? 'selected' : '' ?>>Cancelled Inbound Reversal</option>
                 <option value="CANCELLED_OUTBOUND" <?= $movementType === 'CANCELLED_OUTBOUND' ? 'selected' : '' ?>>Cancelled Outbound Reversal</option>
                 <option value="CANCELLED_TRANSFER" <?= $movementType === 'CANCELLED_TRANSFER' ? 'selected' : '' ?>>Cancelled Transfer Reversal</option>
+                <option value="CANCELLED_ADJUSTMENT" <?= $movementType === 'CANCELLED_ADJUSTMENT' ? 'selected' : '' ?>>Cancelled Adjustment Reversal</option>
             </select>
         </div>
 

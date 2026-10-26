@@ -8,6 +8,12 @@
  * without altering production data or existing application code.
  */
 
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Forbidden: CLI execution only.');
+}
+
 require_once __DIR__ . '/TestRunner.php';
 
 // Test Cases
@@ -25,6 +31,10 @@ require_once __DIR__ . '/accountability/AccountabilityLogTest.php';
 require_once __DIR__ . '/reports/ReportsTest.php';
 require_once __DIR__ . '/inventory/BatchCancellationTest.php';
 require_once __DIR__ . '/inventory/IdempotencyTest.php';
+require_once __DIR__ . '/inventory/ItemApprovalWorkflowTest.php';
+require_once __DIR__ . '/orders/OrderCreationTest.php';
+require_once __DIR__ . '/medium/MediumDefectsTest.php';
+require_once __DIR__ . '/low/LowSeverityImprovementsTest.php';
 
 $runner = new TestRunner();
 $pdo = $runner->getPdo();
@@ -44,6 +54,10 @@ $runner->registerTest(new AccountabilityLogTest($pdo));
 $runner->registerTest(new ReportsTest($pdo));
 $runner->registerTest(new BatchCancellationTest($pdo));
 $runner->registerTest(new IdempotencyTest($pdo));
+$runner->registerTest(new ItemApprovalWorkflowTest($pdo));
+$runner->registerTest(new OrderCreationTest($pdo));
+$runner->registerTest(new MediumDefectsTest($pdo));
+$runner->registerTest(new LowSeverityImprovementsTest($pdo));
 
 $allPassed = $runner->runAll();
 

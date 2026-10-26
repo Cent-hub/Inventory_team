@@ -61,7 +61,7 @@ foreach ($finishedGoods as $fg) {
     $qty = (float)($fg['current_stock'] ?? 0);
     $reorder = (float)($fg['default_reorder_level'] ?? 0);
     $totalFGQty += $qty;
-    if ($qty <= $reorder) {
+    if ($reorder > 0 && $qty <= $reorder) {
         $lowStockFG++;
     }
 }
@@ -168,7 +168,7 @@ foreach ($finishedGoods as $fg) {
                     <?php foreach ($finishedGoods as $item): ?>
                         <?php 
                             $isAvailable = (float)$item['current_stock'] > 0;
-                            $isReorder   = (float)$item['current_stock'] <= (float)$item['default_reorder_level'];
+                            $isReorder   = (float)$item['default_reorder_level'] > 0 && (float)$item['current_stock'] <= (float)$item['default_reorder_level'];
                         ?>
                         <tr data-warehouse="<?= htmlspecialchars($item['warehouse_code'] ?? '') ?>">
                             <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">

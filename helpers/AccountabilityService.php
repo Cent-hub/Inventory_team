@@ -530,6 +530,18 @@ class AccountabilityService {
     }
 
     /**
+     * Sanitize CSV cells starting with formula trigger characters (=, +, -, @, \t, \r)
+     * by prepending a single quote to prevent CSV formula injection in spreadsheet software.
+     */
+    public static function sanitizeCsvCell(mixed $value): string {
+        $str = (string)($value ?? '');
+        if ($str !== '' && in_array($str[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+            return "'" . $str;
+        }
+        return $str;
+    }
+
+    /**
      * Stream CSV export of filtered logs
      */
     public static function exportCsv(int $warehouseId, array $filters = []): void {
@@ -568,7 +580,7 @@ class AccountabilityService {
         ]);
 
         foreach ($logs as $row) {
-            fputcsv($out, [
+            $csvRow = [
                 $row['log_id'],
                 $row['created_at'],
                 $row['user_name'],
@@ -584,7 +596,9 @@ class AccountabilityService {
                 $row['dest_name'] ?? '',
                 $row['reference_number'] ?? '',
                 $row['notes'] ?? ''
-            ]);
+            ];
+            $sanitizedRow = array_map([self::class, 'sanitizeCsvCell'], $csvRow);
+            fputcsv($out, $sanitizedRow);
         }
 
         fclose($out);

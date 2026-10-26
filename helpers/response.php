@@ -3,11 +3,14 @@
  * API Response & Error Helper
  */
 
+// F-09: load .env (CORS_ALLOWED_ORIGINS, ENFORCE_HTTPS, TRUSTED_PROXIES) BEFORE handleCors() runs
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/cors.php';
 handleCors();
 
 function jsonResponse(array $data, int $statusCode = 200): void {
     if (!headers_sent()) {
+        emitSecurityHeaders();
         http_response_code($statusCode);
         header('Content-Type: application/json; charset=utf-8');
     }

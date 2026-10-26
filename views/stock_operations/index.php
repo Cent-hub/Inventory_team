@@ -168,6 +168,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 case 'reject_adjustment':
                     $activeTab = 'adjustment';
+                    if (($currentUser['role'] ?? '') !== 'super_admin') {
+                        throw new DomainException("Access Denied: Only super_admin can reject stock adjustments.");
+                    }
                     $adjId     = (int)($_POST['stock_adjustment_id'] ?? 0);
                     $reason    = trim($_POST['rejection_reason'] ?? 'Discrepancy count rejected by administrator');
                     if ($adjId <= 0) {
@@ -179,6 +182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 case 'cancel_adjustment':
                     $activeTab = 'adjustment';
+                    if (($currentUser['role'] ?? '') !== 'super_admin') {
+                        throw new DomainException("Access Denied: Only super_admin can cancel stock adjustments.");
+                    }
                     $adjId     = (int)($_POST['stock_adjustment_id'] ?? 0);
                     $reason    = trim($_POST['cancellation_reason'] ?? 'Administrative cancellation');
                     if ($adjId <= 0) {
@@ -475,7 +481,7 @@ if ($selectedItem) {
 $movements = [];
 if ($selectedItemId > 0) {
     $sql = "
-        WITH movement_ledger AS (
+        WITH movement_base AS (
             SELECT 
                 sm.movement_id,
                 sm.item_id,
@@ -484,30 +490,28 @@ if ($selectedItemId > 0) {
                 sm.quantity,
                 sm.remarks,
                 sm.created_at,
-                sa.difference AS adjustment_difference,
-                SUM(CASE 
+                COALESCE(sm.quantity_delta, CASE 
                     WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
                     WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                     WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
+                    WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity) 
                     ELSE 0 
-                END) OVER (PARTITION BY sm.item_id, sm.warehouse_id ORDER BY sm.created_at ASC, sm.movement_id ASC) AS balance_after
+                END) AS signed_delta
             FROM stock_movements sm
-            LEFT JOIN stock_adjustments sa ON sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.reference_id = sa.adjustment_id
+            LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
+        ),
+        movement_ledger AS (
+            SELECT
+                mb.*,
+                SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
+            FROM movement_base mb
         )
         SELECT 
             sm.movement_id,
             sm.movement_type,
             COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
-            CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference > 0 THEN sm.adjustment_difference
-                ELSE 0 
-            END AS quantity_in,
-            CASE 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' AND sm.adjustment_difference < 0 THEN ABS(sm.adjustment_difference)
-                ELSE 0 
-            END AS quantity_out,
+            CASE WHEN sm.signed_delta > 0 THEN sm.signed_delta ELSE 0 END AS quantity_in,
+            CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) ELSE 0 END AS quantity_out,
             sm.balance_after,
             sm.created_at,
             w.code AS warehouse_code,
@@ -1123,7 +1127,7 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                                        <?php if ($row['status'] === 'pending'): ?>
+                                        <?php if ($row['status'] === 'pending' && ($currentUser['role'] ?? '') === 'super_admin'): ?>
                                             <button type="button" class="btn btn-primary" style="height: 28px; padding: 0 11px; font-size: 11.5px;" onclick='openAdjDetailModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                                                 Review &amp; Details
                                             </button>
@@ -1294,6 +1298,7 @@ if ($selectedItemId > 0) {
                     <option value="CANCELLED_INBOUND" <?= $movementType === 'CANCELLED_INBOUND' ? 'selected' : '' ?>>Cancelled Inbound</option>
                     <option value="CANCELLED_OUTBOUND" <?= $movementType === 'CANCELLED_OUTBOUND' ? 'selected' : '' ?>>Cancelled Outbound</option>
                     <option value="CANCELLED_TRANSFER" <?= $movementType === 'CANCELLED_TRANSFER' ? 'selected' : '' ?>>Cancelled Transfer</option>
+                    <option value="CANCELLED_ADJUSTMENT" <?= $movementType === 'CANCELLED_ADJUSTMENT' ? 'selected' : '' ?>>Cancelled Adjustment</option>
                 </select>
             </div>
 
@@ -1565,7 +1570,7 @@ if ($selectedItemId > 0) {
                         Transfer Quantity <span style="color: #DC2626;">*</span>
                     </label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
+                        <input type="number" step="0.0001" min="0.001" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
                         <span id="unitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <div id="availStockHint" style="font-size: 11.5px; color: var(--gray); margin-top: 4px;">Select an item to view maximum transferable balance.</div>
@@ -1660,7 +1665,7 @@ if ($selectedItemId > 0) {
             <div class="modal-header">
                 <div>
                     <h3 id="newAdjustmentModalTitle" class="card-title" style="margin: 0;">New Stock Adjustment</h3>
-                    <p class="card-desc" style="margin: 0;">Record discrepancy and immediately update physical inventory balance</p>
+                    <p class="card-desc" style="margin: 0;">Submit stock discrepancy count for administrative approval and ledger audit</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewAdjustmentModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1704,7 +1709,7 @@ if ($selectedItemId > 0) {
                     </div>
                     <div>
                         <label id="adjCountLabel" for="adjInputQty" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Actual Physical Count <span style="color: #DC2626;">*</span></label>
-                        <input type="number" step="0.01" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" placeholder="0" required oninput="calcAdjDiff()">
+                        <input type="number" step="0.0001" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" placeholder="0" required oninput="calcAdjDiff()">
                         <input type="hidden" name="adjusted_quantity" id="adjPhysicalCount" value="0">
                     </div>
                 </div>
@@ -1729,7 +1734,7 @@ if ($selectedItemId > 0) {
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeNewAdjustmentModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Apply Adjustment Immediately</button>
+                <button type="submit" class="btn btn-primary">Submit Adjustment for Approval</button>
             </div>
         </form>
     </div>
@@ -1782,7 +1787,7 @@ if ($selectedItemId > 0) {
                 <div>
                     <label for="badQuantity" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Quantity to Write Off <span style="color: #DC2626;">*</span></label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 8px;" placeholder="0" required>
+                        <input type="number" step="0.0001" min="0.001" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 8px;" placeholder="0" required>
                         <span id="badUnitIndicator" style="font-size: 12.5px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <small id="badStockHint" style="color: var(--gray); font-size: 11.5px; display: block; margin-top: 3px;">Select an item to view maximum write-off balance.</small>
@@ -2054,7 +2059,7 @@ if ($selectedItemId > 0) {
 <!-- JAVASCRIPT LOGIC                                                          -->
 <!-- ========================================================================= -->
 <script>
-const isSuperAdminUser = <?= json_encode($isSuperAdmin) ?>;
+const isSuperAdminUser = <?= json_encode($isSuperAdmin, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
 // Protect creation modals from accidental backdrop-click dismissal when forms contain unsaved input
 function handleOpsBackdropClose(event, modalEl, closeFn) {
@@ -2106,7 +2111,7 @@ function switchStockTab(tabName) {
 // -----------------------------------------------------------------------------
 // Stock Transfer JS
 // -----------------------------------------------------------------------------
-const trfLinesData = <?= json_encode($linesByTransfer) ?>;
+const trfLinesData = <?= json_encode($linesByTransfer, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
 function openCancelTransferModal(trf) {
     if (!trf) return;
@@ -2229,7 +2234,7 @@ function handleTransferItemChange(selectElem) {
         const maxStock = parseFloat(selectedOption.dataset.stock);
         const unit = selectedOption.dataset.unit || '';
         unitSpan.textContent = unit;
-        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>: <strong>${Number(maxStock.toFixed(2))} ${unit}</strong>`;
+        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>: <strong>${Number(maxStock.toFixed(2))} ${escapeHtml(unit)}</strong>`;
         qtyInput.max = maxStock;
         qtyInput.placeholder = `Max ${Number(maxStock.toFixed(2))}`;
     } else {
@@ -2457,32 +2462,26 @@ function openAdjDetailModal(row) {
     }
 
     let audit = '';
-    if (row.approved_by_name) audit += 'Approved by: ' + row.approved_by_name;
+    if (row.approved_by_name) audit += 'Approved by: ' + escapeHtml(row.approved_by_name);
     if (row.cancelled_by_name) {
         const actionWord = (row.status === 'rejected') ? 'Rejected by: ' : 'Cancelled by: ';
-        audit += (audit ? ' &middot; ' : '') + actionWord + row.cancelled_by_name;
+        audit += (audit ? ' &middot; ' : '') + actionWord + escapeHtml(row.cancelled_by_name);
     }
     document.getElementById('modalAdjAuditRow').innerHTML = audit;
 
     const actionBtns = document.getElementById('modalAdjActionBtns');
     const footerEl = document.getElementById('modalAdjFooter');
     if (actionBtns) {
-        if (row.status === 'pending') {
-            let btns = '';
-            if (isSuperAdminUser) {
-                btns += `
-                    <button type="button" class="btn btn-primary" style="background: #15803D; border-color: #15803D;" onclick="closeAdjDetailModal(); openApproveModal(currentDetailAdjRow);">
-                        Approve
-                    </button>
-                `;
-            }
-            btns += `
+        if (row.status === 'pending' && isSuperAdminUser) {
+            actionBtns.innerHTML = `
+                <button type="button" class="btn btn-primary" style="background: #15803D; border-color: #15803D;" onclick="closeAdjDetailModal(); openApproveModal(currentDetailAdjRow);">
+                    Approve
+                </button>
                 <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openRejectModal(currentDetailAdjRow);">
                     Reject
                 </button>
             `;
-            actionBtns.innerHTML = btns;
-        } else if (row.status === 'approved') {
+        } else if (row.status === 'approved' && isSuperAdminUser) {
             actionBtns.innerHTML = `
                 <button type="button" class="btn btn-secondary" style="color: #B91C1C; border-color: #FCA5A5;" onclick="closeAdjDetailModal(); openCancelAdjModal(currentDetailAdjRow);">
                     Cancel Adjustment

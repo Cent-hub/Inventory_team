@@ -260,11 +260,13 @@
 }
 
 .settings-badge.bronze {
-    background: var(--gold);
+    background: #854D0E;
+    color: #FFFFFF;
 }
 
 .settings-badge.amber {
-    background: #D97706;
+    background: #B45309;
+    color: #FFFFFF;
 }
 
 /* iOS Style Switch in InventoryTeam Teal */

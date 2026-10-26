@@ -152,45 +152,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
 
                 // -------------------------------------------------------------
-                // 2. Register New Inbound Order (PO / Production Receipt / RMA)
-                // -------------------------------------------------------------
-                case 'create_inbound_order':
-                    $activeTab = 'inbound';
-                    $orderNumber  = trim($_POST['order_number'] ?? '');
-                    $sourceType   = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
-                    $entityName   = trim($_POST['entity_name'] ?? '');
-                    $expectedDate = trim($_POST['expected_date'] ?? date('Y-m-d'));
-                    $itemId       = (int)($_POST['item_id'] ?? 0);
-                    $rawQuantity  = $_POST['quantity'] ?? null;
-                    $notes        = trim($_POST['notes'] ?? '');
-                    $targetWhId   = (int)($currentWarehouseId ?: 1);
-
-                    if (empty($orderNumber)) throw new InvalidArgumentException("Order number is required.");
-                    if (empty($entityName)) throw new InvalidArgumentException("Supplier / Entity name is required.");
-                    if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
-                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'expected quantity');
-
-                    $pdo->beginTransaction();
-                    try {
-                        $pdo->prepare("INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
-                            ->execute([$orderNumber, $sourceType, $entityName, $targetWhId, $expectedDate ?: null, $notes ?: null, $userId]);
-                        $newOrderId = (int)$pdo->lastInsertId();
-
-                        $pdo->prepare("INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity) VALUES (?, ?, ?, 0)")
-                            ->execute([$newOrderId, $itemId, $quantity]);
-
-                        $pdo->commit();
-                    } catch (Throwable $t) {
-                        if ($pdo->inTransaction()) {
-                            $pdo->rollBack();
-                        }
-                        throw $t;
-                    }
-
-                    $successMessage = "Inbound order " . htmlspecialchars($orderNumber) . " registered in the receiving queue.";
-                    break;
-
-                // -------------------------------------------------------------
                 // 3. Document-Driven Outbound Order Dispatching
                 // -------------------------------------------------------------
                 case 'dispatch_outbound_order':
@@ -203,45 +164,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $res = $stockService->dispatchOutboundOrder($orderId, $dispatchedQtys, $userId, $remarks ?: null, $currentUser);
                     $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " dispatched successfully! Transaction ref: " . htmlspecialchars($res['transaction_number']);
-                    break;
-
-                // -------------------------------------------------------------
-                // 4. Register New Outbound Order (Sales Order / Material Request / RTV)
-                // -------------------------------------------------------------
-                case 'create_outbound_order':
-                    $activeTab = 'outbound';
-                    $orderNumber  = trim($_POST['order_number'] ?? '');
-                    $sourceType   = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
-                    $entityName   = trim($_POST['entity_name'] ?? '');
-                    $requiredDate = trim($_POST['required_date'] ?? date('Y-m-d'));
-                    $itemId       = (int)($_POST['item_id'] ?? 0);
-                    $rawQuantity  = $_POST['quantity'] ?? null;
-                    $notes        = trim($_POST['notes'] ?? '');
-                    $sourceWhId   = (int)($currentWarehouseId ?: 1);
-
-                    if (empty($orderNumber)) throw new InvalidArgumentException("Order number is required.");
-                    if (empty($entityName)) throw new InvalidArgumentException("Customer / Department name is required.");
-                    if ($itemId <= 0) throw new InvalidArgumentException("Please select an item.");
-                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'requested quantity');
-
-                    $pdo->beginTransaction();
-                    try {
-                        $pdo->prepare("INSERT INTO outbound_orders (order_number, source_type, entity_name, warehouse_id, required_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
-                            ->execute([$orderNumber, $sourceType, $entityName, $sourceWhId, $requiredDate ?: null, $notes ?: null, $userId]);
-                        $newOrderId = (int)$pdo->lastInsertId();
-
-                        $pdo->prepare("INSERT INTO outbound_order_items (outbound_order_id, item_id, requested_quantity, dispatched_quantity) VALUES (?, ?, ?, 0)")
-                            ->execute([$newOrderId, $itemId, $quantity]);
-
-                        $pdo->commit();
-                    } catch (Throwable $t) {
-                        if ($pdo->inTransaction()) {
-                            $pdo->rollBack();
-                        }
-                        throw $t;
-                    }
-
-                    $successMessage = "Outbound order " . htmlspecialchars($orderNumber) . " registered in the dispatch queue.";
                     break;
 
                 default:
@@ -509,8 +431,8 @@ foreach ($stmtOutLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
 
 $pendingInboundCount  = count($pendingInboundOrders);
 $pendingOutboundCount = count($pendingOutboundOrders);
-$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['source_type'] ?? '') === 'CUSTOMER_RETURN'));
-$supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_type'] ?? '') === 'SUPPLIER_RETURN'));
+$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN'));
+$supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SUPPLIER_RETURN'));
 ?>
 
 <!-- Page Header -->
@@ -647,7 +569,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
     <!-- INBOUND QUEUE: EXPECTED SHIPMENTS (RECEIVING DOCK)                   -->
     <!-- ===================================================================== -->
     <div class="card" style="margin-bottom: 24px; border-top: 3px solid #15803D;">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <h2 class="card-title" style="margin: 0;">Expected Inbound Shipments (Receiving Dock)</h2>
@@ -1055,7 +977,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
     <!-- OUTBOUND QUEUE: PENDING ORDERS (FULFILLMENT & SHIPPING DOCK)          -->
     <!-- ===================================================================== -->
     <div class="card" style="margin-bottom: 24px; border-top: 3px solid #DC2626;">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <h2 class="card-title" style="margin: 0;">Pending Outbound Orders (Fulfillment &amp; Shipping Dock)</h2>
@@ -1719,108 +1641,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['source_typ
 </div>
 
 <!-- ========================================================================= -->
-<!-- MODAL: REGISTER INBOUND ORDER (PO / PRODUCTION RECEIPT / CUSTOMER RMA)    -->
-<!-- ========================================================================= -->
-<div id="newInboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newInboundOrderModalTitle" onclick="if(event.target === this) closeNewInboundOrderModal()">
-    <div class="modal-card" style="max-width: 540px;">
-        <form method="POST" action="index.php?tab=inbound">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_inbound_order">
-            <input type="hidden" name="active_tab" value="inbound">
-
-            <div class="modal-header">
-                <div>
-                    <h3 id="newInboundOrderModalTitle" class="card-title">Register Inbound Order / RMA</h3>
-                    <p class="card-desc">Add an expected shipment document to the receiving queue for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></p>
-                </div>
-                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewInboundOrderModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Source Type -->
-                <div>
-                    <label for="newInSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Document Type <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="source_type" id="newInSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterNewInboundItems()">
-                        <option value="PURCHASE_ORDER">Purchase Order &mdash; Supplier Delivery (Raw Materials)</option>
-                        <option value="PRODUCTION_RECEIPT">Production Receipt &mdash; Distillery Output (Finished Goods)</option>
-                        <option value="CUSTOMER_RETURN">Customer Return &mdash; RMA Return (Finished Goods)</option>
-                    </select>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <!-- Order / Tracking Number -->
-                    <div>
-                        <label for="newInOrderNumber" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Document / RMA # <span style="color: #DC2626;">*</span>
-                        </label>
-                        <input type="text" name="order_number" id="newInOrderNumber" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. PO-2026-088 or RMA-042" required>
-                    </div>
-
-                    <!-- Expected Date -->
-                    <div>
-                        <label for="newInExpectedDate" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Expected Date
-                        </label>
-                        <input type="date" name="expected_date" id="newInExpectedDate" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" value="<?= date('Y-m-d') ?>">
-                    </div>
-                </div>
-
-                <!-- Supplier / Customer / Origin -->
-                <div>
-                    <label for="newInEntityName" id="newInEntityLabel" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Supplier / Origin Name <span style="color: #DC2626;">*</span>
-                    </label>
-                    <input type="text" name="entity_name" id="newInEntityName" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="150" placeholder="e.g. Apex Glassware Ltd. or Customer Name" required>
-                </div>
-
-                <!-- Item Selection -->
-                <div>
-                    <label for="newInItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Expected Item <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_id" id="newInItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleNewInItemChange(this)">
-                        <option value="">-- Select Item --</option>
-                        <?php foreach ($allItems as $it): ?>
-                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
-                                [<?= $it['item_type'] === 'finished_good' ? 'Finished Good' : 'Raw Material' ?>] <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Expected Quantity -->
-                <div>
-                    <label for="newInQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Expected Quantity <span style="color: #DC2626;">*</span>
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="any" min="0.001" name="quantity" id="newInQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
-                        <span id="newInUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
-                    </div>
-                </div>
-
-                <!-- Notes -->
-                <div>
-                    <label for="newInNotes" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Order Instructions / Notes
-                    </label>
-                    <textarea name="notes" id="newInNotes" class="search-box" style="width: 100%; border-radius: 8px; height: 50px; padding: 8px 12px; resize: vertical;" placeholder="Optional details, return reason, or tracking information..."></textarea>
-                </div>
-            </div>
-
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeNewInboundOrderModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Add to Receiving Queue</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- ========================================================================= -->
 <!-- MODAL: DISPATCH OUTBOUND ORDER (FULFILLMENT, ALLOCATION & DISPATCH)        -->
 <!-- ========================================================================= -->
 <div id="dispatchOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dispatchOrderModalTitle" onclick="if(event.target === this) closeDispatchOrderModal()">
@@ -2098,8 +1918,8 @@ window.addEventListener('popstate', function() {
 // =============================================================================
 // SECTION 1: INBOUND SCRIPTS
 // =============================================================================
-const linesData = <?= json_encode($linesByStockIn) ?>;
-const stockInList = <?= json_encode($stockIns) ?>;
+const linesData = <?= json_encode($linesByStockIn, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+const stockInList = <?= json_encode($stockIns, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockInMetaById = {};
 stockInList.forEach(r => { stockInMetaById[r.stock_in_id] = r; });
 
@@ -2215,8 +2035,8 @@ function resetStockInFilters() {
 // =============================================================================
 // SECTION 2: OUTBOUND SCRIPTS
 // =============================================================================
-const outLinesData = <?= json_encode($linesByStockOut) ?>;
-const stockOutList = <?= json_encode($stockOuts) ?>;
+const outLinesData = <?= json_encode($linesByStockOut, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+const stockOutList = <?= json_encode($stockOuts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockOutMetaById = {};
 stockOutList.forEach(r => { stockOutMetaById[r.stock_out_id] = r; });
 
@@ -2370,10 +2190,10 @@ function closeCancelStockOutModal() {
 // =============================================================================
 // ERP DOCUMENT QUEUES: RECEIVING & FULFILLMENT CONTROLLERS
 // =============================================================================
-const pendingInOrdersData   = <?= json_encode($pendingInboundOrders) ?>;
-const inLinesData           = <?= json_encode($inboundOrderLines) ?>;
-const pendingOutOrdersData  = <?= json_encode($pendingOutboundOrders) ?>;
-const outLinesOrderData     = <?= json_encode($outboundOrderLines) ?>;
+const pendingInOrdersData   = <?= json_encode($pendingInboundOrders, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+const inLinesData           = <?= json_encode($inboundOrderLines, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+const pendingOutOrdersData  = <?= json_encode($pendingOutboundOrders, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+const outLinesOrderData     = <?= json_encode($outboundOrderLines, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
 const pendingInMap = {};
 pendingInOrdersData.forEach(o => { pendingInMap[o.inbound_order_id] = o; });
@@ -2480,78 +2300,6 @@ function handleReceiveConditionChange(selectEl) {
     }
 }
 
-function openNewInboundOrderModal() {
-    filterNewInboundItems();
-    const modal = document.getElementById('newInboundOrderModal');
-    if (modal) {
-        modal.classList.add('open');
-        modal.style.display = 'flex';
-    }
-}
-
-function closeNewInboundOrderModal() {
-    const modal = document.getElementById('newInboundOrderModal');
-    if (modal) {
-        modal.classList.remove('open');
-        modal.style.display = 'none';
-    }
-}
-
-function filterNewInboundItems() {
-    const sourceSelect = document.getElementById('newInSourceType');
-    const itemSelect = document.getElementById('newInItemSelect');
-    const entityLabel = document.getElementById('newInEntityLabel');
-    const entityInput = document.getElementById('newInEntityName');
-    if (!sourceSelect || !itemSelect) return;
-
-    const source = sourceSelect.value;
-    const targetType = (source === 'PURCHASE_ORDER') ? 'raw_material' : 'finished_good';
-
-    if (source === 'PURCHASE_ORDER') {
-        if (entityLabel) entityLabel.innerHTML = 'Supplier / Vendor Name <span style="color: #DC2626;">*</span>';
-        if (entityInput) entityInput.placeholder = 'e.g. Apex Glassware Ltd. or Grain Harvest Co.';
-    } else if (source === 'PRODUCTION_RECEIPT') {
-        if (entityLabel) entityLabel.innerHTML = 'Production Facility / Plant <span style="color: #DC2626;">*</span>';
-        if (entityInput) entityInput.placeholder = 'e.g. Distillery Plant 1 — Bottling Line A';
-    } else if (source === 'CUSTOMER_RETURN') {
-        if (entityLabel) entityLabel.innerHTML = 'Customer / Client Name <span style="color: #DC2626;">*</span>';
-        if (entityInput) entityInput.placeholder = 'e.g. The Grand Hotel & Bar (Client RMA)';
-    }
-
-    let validCount = 0;
-    Array.from(itemSelect.options).forEach((opt, idx) => {
-        if (idx === 0) return;
-        const itemType = opt.getAttribute('data-type');
-        const matches = (itemType === targetType);
-        opt.hidden = !matches;
-        opt.disabled = !matches;
-        opt.style.display = matches ? '' : 'none';
-        if (matches) validCount++;
-    });
-
-    const selectedOpt = itemSelect.selectedOptions[0];
-    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
-        itemSelect.value = '';
-        handleNewInItemChange(itemSelect);
-    }
-    const defaultOpt = itemSelect.options[0];
-    if (defaultOpt) {
-        defaultOpt.textContent = (targetType === 'finished_good')
-            ? (validCount > 0 ? '-- Select Finished Good --' : '-- No active finished goods --')
-            : (validCount > 0 ? '-- Select Raw Material --' : '-- No active raw materials --');
-    }
-}
-
-function handleNewInItemChange(selectEl) {
-    const opt = selectEl.selectedOptions[0];
-    const unitLabel = document.getElementById('newInUnitLabel');
-    if (opt && opt.value) {
-        unitLabel.textContent = opt.getAttribute('data-unit') || '—';
-    } else {
-        unitLabel.textContent = '—';
-    }
-}
-
 // -----------------------------------------------------------------------------
 // Outbound Order Dispatching
 // -----------------------------------------------------------------------------
@@ -2629,7 +2377,6 @@ function closeDispatchOrderModal() {
 document.addEventListener('DOMContentLoaded', function() {
     filterStockInModalItems();
     filterStockOutModalItems();
-    filterNewInboundItems();
 });
 </script>
 

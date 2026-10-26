@@ -1,7 +1,8 @@
 <?php
 /**
  * API Authentication & Authorization Guard
- * Enforces Bearer Token / API Key verification for external ERP teams.
+ * Enforces Bearer Token / API Key verification, strict role/team separation,
+ * and facility warehouse scoping for internal admins and external ERP teams.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -50,12 +51,8 @@ function enforceHttpsSecurity(): void {
         return; // Allow plain HTTP in local development
     }
 
-    $isHttps = (
-        (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
-        (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443) ||
-        (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
-        (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on')
-    );
+    // F-09: X-Forwarded-Proto / X-Forwarded-Ssl are only trusted when REMOTE_ADDR is in TRUSTED_PROXIES
+    $isHttps = isHttpsRequest();
 
     if (!$isHttps) {
         if (!headers_sent()) {
@@ -71,25 +68,26 @@ function enforceHttpsSecurity(): void {
 }
 
 /**
- * Authenticates the incoming request against active users by api_token.
- * Supports SHA-256 hashed token matching (SEC-04).
- * 
- * @param array $allowed List of permitted roles or teams (e.g. ['procurement', 'production', 'sales', 'admin'])
- * @return array Authenticated user record
- */
-/**
- * Resolve user team with standardized heuristic fallback
+ * Resolve user team with explicit normalization and heuristic fallback
  */
 function resolveUserTeam(?string $team, ?string $email = ''): string {
     $cleanTeam = trim((string)$team);
-    if (!empty($cleanTeam) && strcasecmp($cleanTeam, 'inventory') === 0) {
-        return 'Inventory';
-    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'procurement') === 0) {
-        return 'Procurement';
-    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'production') === 0) {
-        return 'Production';
-    } elseif (!empty($cleanTeam) && strcasecmp($cleanTeam, 'sales') === 0) {
-        return 'Sales';
+    if ($cleanTeam !== '') {
+        if (strcasecmp($cleanTeam, 'administration') === 0) {
+            return 'Administration';
+        }
+        if (strcasecmp($cleanTeam, 'inventory') === 0) {
+            return 'Inventory';
+        }
+        if (strcasecmp($cleanTeam, 'procurement') === 0) {
+            return 'Procurement';
+        }
+        if (strcasecmp($cleanTeam, 'production') === 0) {
+            return 'Production';
+        }
+        if (strcasecmp($cleanTeam, 'sales') === 0) {
+            return 'Sales';
+        }
     }
     $emailLower = strtolower(trim((string)$email));
     if (str_contains($emailLower, 'procure')) {
@@ -102,6 +100,97 @@ function resolveUserTeam(?string $team, ?string $email = ''): string {
     return 'Inventory';
 }
 
+/**
+ * Returns true strictly for Super Admin or internal Warehouse Inventory/Administration admins.
+ * External ERP service accounts (Procurement, Production, Sales) always return false.
+ */
+function isWarehouseAdmin(array $user): bool {
+    $role = strtolower(trim((string)($user['role'] ?? '')));
+    if ($role === 'super_admin') {
+        return true;
+    }
+    if ($role !== 'admin') {
+        return false;
+    }
+    $team = strtolower(resolveUserTeam($user['team'] ?? '', $user['email'] ?? ''));
+    return in_array($team, ['inventory', 'administration'], true);
+}
+
+/**
+ * Pure RBAC evaluation separating system role ('super_admin', 'admin') from department team.
+ *
+ * Rules:
+ *  1. super_admin always passes.
+ *  2. Empty $allowed permits any active authenticated account.
+ *  3. External ERP service accounts (team in procurement, production, sales) ONLY match
+ *     when their explicit team tag is in $allowed (never matching 'admin', 'inventory', or 'super_admin').
+ *  4. Internal Warehouse Admins (role='admin' and team in inventory, administration) match
+ *     'inventory' or 'admin', never 'super_admin'.
+ */
+function checkApiAuthorization(array $user, array $allowed = []): bool {
+    $userRole = strtolower(trim((string)($user['role'] ?? '')));
+    if ($userRole === 'super_admin') {
+        return true;
+    }
+
+    if (empty($allowed)) {
+        return true;
+    }
+
+    $userTeam = strtolower(resolveUserTeam($user['team'] ?? '', $user['email'] ?? ''));
+    $allowedNormalized = array_map(static fn($item) => strtolower(trim((string)$item)), $allowed);
+
+    // External department tokens only match their exact team identifier
+    if (in_array($userTeam, ['procurement', 'production', 'sales'], true)) {
+        return in_array($userTeam, $allowedNormalized, true);
+    }
+
+    // Internal Warehouse Administrators match 'inventory' or 'admin' (never 'super_admin')
+    if ($userRole === 'admin' && in_array($userTeam, ['inventory', 'administration'], true)) {
+        return in_array('inventory', $allowedNormalized, true) || in_array('admin', $allowedNormalized, true);
+    }
+
+    return false;
+}
+
+/**
+ * Enforces warehouse facility isolation for API callers.
+ * - super_admin: returns $requestedWarehouseId (>0) or null (all warehouses).
+ * - non-super_admin: rejects cross-warehouse requests with 403 Forbidden and returns assigned warehouse_id.
+ */
+function resolveWarehouseScope(array $authUser, ?int $requestedWarehouseId = null): ?int {
+    $role = strtolower(trim((string)($authUser['role'] ?? '')));
+    if ($role === 'super_admin') {
+        return ($requestedWarehouseId !== null && $requestedWarehouseId > 0) ? $requestedWarehouseId : null;
+    }
+
+    $assignedWhId = (int)($authUser['warehouse_id'] ?? 0);
+    if ($assignedWhId <= 0) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => 'Account has no assigned warehouse facility.'
+        ], 403);
+    }
+
+    if ($requestedWarehouseId !== null && $requestedWarehouseId > 0 && $requestedWarehouseId !== $assignedWhId) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Access Denied: You cannot access warehouse #{$requestedWarehouseId}. Your assigned warehouse is #{$assignedWhId}."
+        ], 403);
+    }
+
+    return $assignedWhId;
+}
+
+/**
+ * Authenticates the incoming request against active users by SHA-256 hashed api_token
+ * and enforces checkApiAuthorization($user, $allowed).
+ *
+ * @param array $allowed List of permitted roles/teams (e.g. ['inventory', 'procurement'])
+ * @return array Authenticated user record
+ */
 function requireApiAuth(array $allowed = []): array {
     // 1. Enforce HTTPS in production / when configured (SEC-06)
     enforceHttpsSecurity();
@@ -116,8 +205,7 @@ function requireApiAuth(array $allowed = []): array {
         ], 401);
     }
 
-    // 2. Hash incoming token with SHA-256 for secure constant-time DB lookup (SEC-04)
-    // Only SHA-256 token hashes are stored in the database for security (no plaintext token storage)
+    // 2. Hash incoming token with SHA-256 for secure DB lookup (SEC-04)
     $tokenHash = hash('sha256', $token);
 
     $pdo = Database::getConnection();
@@ -141,36 +229,12 @@ function requireApiAuth(array $allowed = []): array {
     // Standardize team assignment
     $user['team'] = resolveUserTeam($user['team'] ?? '', $user['email'] ?? '');
 
-    // Always permit Super Admin
-    if (($user['role'] ?? '') === 'super_admin') {
-        return $user;
-    }
-
-    if (!empty($allowed)) {
-        $userRole = strtolower(trim((string)($user['role'] ?? '')));
-        $userTeam = strtolower(trim((string)($user['team'] ?? '')));
-
-        $isAuthorized = false;
-        foreach ($allowed as $item) {
-            $tag = strtolower(trim((string)$item));
-            if ($tag === $userRole || $tag === $userTeam) {
-                $isAuthorized = true;
-                break;
-            }
-            // Allow 'admin' tag to authorize administrative roles
-            if (($tag === 'admin' || $tag === 'super_admin') && in_array($userRole, ['admin', 'super_admin'], true)) {
-                $isAuthorized = true;
-                break;
-            }
-        }
-
-        if (!$isAuthorized) {
-            jsonResponse([
-                'success' => false,
-                'error'   => 'Forbidden',
-                'detail'  => "Team account '{$user['name']}' (role: {$user['role']}, team: {$user['team']}) is not authorized to access this endpoint."
-            ], 403);
-        }
+    if (!checkApiAuthorization($user, $allowed)) {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Forbidden',
+            'detail'  => "Team account '{$user['name']}' (role: {$user['role']}, team: {$user['team']}) is not authorized to access this endpoint."
+        ], 403);
     }
 
     return $user;

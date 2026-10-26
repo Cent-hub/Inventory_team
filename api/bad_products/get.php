@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     ], 405);
 }
 
-$authUser = requireApiAuth(['admin', 'inventory', 'production']);
+$authUser = requireApiAuth(['inventory']);
 checkRateLimit('bad_prod_get', 60, 60, $authUser['api_token']);
 $badProductId = (int)($_GET['id'] ?? $_GET['bad_product_id'] ?? 0);
 
