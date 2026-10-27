@@ -5,7 +5,6 @@
  * Uses transient local cache file without querying deprecated api_rate_limits table.
  */
 
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/response.php';
 
 function checkRateLimit(
@@ -51,7 +50,7 @@ function checkRateLimit(
 
     // Opportunistic garbage collection: 1 in 100 requests purges expired temp files (SEC-03)
     if (mt_rand(1, 100) === 1) {
-        pruneExpiredRateLimits(null, 3600);
+        pruneExpiredRateLimits(3600);
     }
 
     $remaining = max(0, $maxRequests - $currentCount);
@@ -85,7 +84,7 @@ function checkRateLimit(
 /**
  * Automated opportunistic pruning for expired rate limit files.
  */
-function pruneExpiredRateLimits(?PDO $pdo = null, int $maxAgeSeconds = 3600): int {
+function pruneExpiredRateLimits(int $maxAgeSeconds = 3600): int {
     $count = 0;
     $files = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_api_rl_*.txt');
     if ($files) {

@@ -76,23 +76,6 @@ $transferDoneRow = $stmtTransferDone->fetch(PDO::FETCH_ASSOC);
 $transfersDoneCount  = (int)($transferDoneRow['txn_count'] ?? 0);
 $transfersDoneVolume = (float)($transferDoneRow['total_qty'] ?? 0);
 
-if ($transfersDoneCount === 0) {
-    $stmtSmTr = $pdo->prepare("
-        SELECT 
-            COUNT(sm.movement_id) AS txn_count,
-            COALESCE(SUM(sm.quantity), 0) AS total_qty
-        FROM stock_movements sm
-        WHERE sm.warehouse_id = :wid
-          AND sm.movement_type IN ('STOCK_TRANSFER_IN')
-    ");
-    $stmtSmTr->execute([':wid' => $currentWarehouseId]);
-    $smTrRow = $stmtSmTr->fetch(PDO::FETCH_ASSOC);
-    if ((int)($smTrRow['txn_count'] ?? 0) > 0) {
-        $transfersDoneCount = (int)$smTrRow['txn_count'];
-        $transfersDoneVolume = (float)$smTrRow['total_qty'];
-    }
-}
-
 // 3. Return Products (Customer RMA returns & Supplier RTV returns for assigned warehouse)
 $stmtRP = $pdo->prepare("
     SELECT 
@@ -117,31 +100,6 @@ $stmtRP->execute([':wid' => $currentWarehouseId]);
 $rpRow = $stmtRP->fetch(PDO::FETCH_ASSOC);
 $returnProductsCount  = (int)($rpRow['txn_count'] ?? 0);
 $returnProductsVolume = (float)($rpRow['total_qty'] ?? 0);
-
-if ($returnProductsCount === 0) {
-    $stmtRO = $pdo->prepare("
-        SELECT 
-            (
-                (SELECT COUNT(*) FROM inbound_orders WHERE warehouse_id = :wid1 AND source_type = 'CUSTOMER_RETURN' AND status != 'cancelled') +
-                (SELECT COUNT(*) FROM outbound_orders WHERE warehouse_id = :wid2 AND source_type = 'SUPPLIER_RETURN' AND status != 'cancelled')
-            ) AS order_count,
-            (
-                COALESCE((SELECT SUM(ioi.received_quantity) FROM inbound_orders io JOIN inbound_order_items ioi ON io.inbound_order_id = ioi.inbound_order_id WHERE io.warehouse_id = :wid3 AND io.source_type = 'CUSTOMER_RETURN' AND io.status != 'cancelled'), 0) +
-                COALESCE((SELECT SUM(ooi.dispatched_quantity) FROM outbound_orders oo JOIN outbound_order_items ooi ON oo.outbound_order_id = ooi.outbound_order_id WHERE oo.warehouse_id = :wid4 AND oo.source_type = 'SUPPLIER_RETURN' AND oo.status != 'cancelled'), 0)
-            ) AS total_qty
-    ");
-    $stmtRO->execute([
-        ':wid1' => $currentWarehouseId,
-        ':wid2' => $currentWarehouseId,
-        ':wid3' => $currentWarehouseId,
-        ':wid4' => $currentWarehouseId
-    ]);
-    $roRow = $stmtRO->fetch(PDO::FETCH_ASSOC);
-    if ((int)($roRow['order_count'] ?? 0) > 0) {
-        $returnProductsCount = (int)$roRow['order_count'];
-        $returnProductsVolume = (float)$roRow['total_qty'];
-    }
-}
 
 // 4. Recent Inventory Activity in assigned warehouse (within 3 days only)
 $stmtRecent = $pdo->prepare("

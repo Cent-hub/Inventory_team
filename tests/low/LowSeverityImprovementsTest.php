@@ -176,13 +176,13 @@ class LowSeverityImprovementsTest extends TestCase {
 
         $stockCardView = file_get_contents(__DIR__ . '/../../views/inventory/stock_card.php');
         $this->assertTrue(
-            strpos($stockCardView, 'StockPilot.initItemAutocomplete') !== false,
-            "CLN-09: stock_card.php must initialize shared StockPilot.initItemAutocomplete",
-            "stock_card.php uses shared autocomplete"
+            strpos($stockCardView, 'stock_operations/index.php?tab=stock_card') !== false,
+            "CLN-09: stock_card.php must forward directly to unified stock operations hub",
+            "stock_card.php redirect stub"
         );
         $this->assertTrue(
             strpos($stockCardView, 'function renderItemDropdown') === false,
-            "CLN-09: stock_card.php must not contain duplicate renderItemDropdown definition",
+            "CLN-09: stock_card.php must not contain duplicate renderItemDropdown definition or dead markup",
             "stock_card.php deduplicated"
         );
 

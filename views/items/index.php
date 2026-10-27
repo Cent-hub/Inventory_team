@@ -366,15 +366,11 @@ if (empty($uoms)) {
 $stmtItems = $pdo->query("
     SELECT    
         i.item_id,
-        i.code,
         i.code AS item_code,
-        i.name,
         i.name AS item_name,
         COALESCE(i.description, '') AS description,
-        i.type,
         i.type AS item_type,
         i.unit,
-        i.reorder_level,
         i.reorder_level AS default_reorder_level,
         (
             (SELECT COUNT(*) FROM stock_movements sm WHERE sm.item_id = i.item_id) +
