@@ -147,14 +147,17 @@ $stmtRecent = $pdo->prepare("
 $stmtRecent->execute([':wid' => $currentWarehouseId]);
 $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
 
-// --- 7-Day Inbound vs. Outbound Movement Trend Data ---
+// --- 7-Day Inbound vs. Outbound Movement Trend Data (Strict Realtime 7 Days) ---
 $chartDays = [];
 for ($i = 6; $i >= 0; $i--) {
     $dateKey = date('Y-m-d', strtotime("-$i days"));
     $chartDays[$dateKey] = [
         'date'     => $dateKey,
-        'label'    => date('D, M j', strtotime($dateKey)),
+        'label'    => date('D, M j, Y', strtotime($dateKey)),
         'day_name' => date('D', strtotime($dateKey)),
+        'day_num'  => date('j', strtotime($dateKey)),
+        'month'    => date('M', strtotime($dateKey)),
+        'is_today' => ($i === 0),
         'inbound'  => 0.0,
         'outbound' => 0.0
     ];
@@ -184,43 +187,6 @@ foreach ($chartDbRows as $row) {
     if (isset($chartDays[$d])) {
         $chartDays[$d]['inbound'] = (float)$row['total_in'];
         $chartDays[$d]['outbound'] = (float)$row['total_out'];
-    }
-}
-
-// Fallback to recent active transaction dates if rolling 7 days is empty (e.g. initial demo/test datasets)
-$hasChartData = (array_sum(array_column($chartDays, 'inbound')) + array_sum(array_column($chartDays, 'outbound'))) > 0;
-if (!$hasChartData) {
-    $stmtRecentActive = $pdo->prepare("
-        SELECT 
-            DATE(sm.created_at) AS txn_date,
-            COALESCE(SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
-                ELSE 0 
-            END), 0) AS total_in,
-            COALESCE(SUM(CASE 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
-                ELSE 0 
-            END), 0) AS total_out
-        FROM stock_movements sm
-        WHERE sm.warehouse_id = :wid
-        GROUP BY DATE(sm.created_at)
-        ORDER BY txn_date DESC
-        LIMIT 7
-    ");
-    $stmtRecentActive->execute([':wid' => $currentWarehouseId]);
-    $activeRows = array_reverse($stmtRecentActive->fetchAll(PDO::FETCH_ASSOC));
-    if (!empty($activeRows)) {
-        $chartDays = [];
-        foreach ($activeRows as $r) {
-            $d = $r['txn_date'];
-            $chartDays[$d] = [
-                'date'     => $d,
-                'label'    => date('M j', strtotime($d)),
-                'day_name' => date('D', strtotime($d)),
-                'inbound'  => (float)$r['total_in'],
-                'outbound' => (float)$r['total_out']
-            ];
-        }
     }
 }
 
@@ -415,18 +381,18 @@ if (count($recentWarehouseStaff) < 3) {
                     Inventory Flow Velocity
                 </h2>
                 <p class="card-desc" style="margin: 3px 0 0 0;">
-                    Daily units received vs. dispatched &bull; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>)</strong>
+                    7-Day Movement (<strong><?= date('M j', strtotime('-6 days')) ?> &ndash; <?= date('M j, Y') ?></strong>) &bull; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>)</strong>
                 </p>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #10B981;"></span>
-                    <span style="color: var(--gray);">Inbound:</span>
+                    <span style="color: var(--gray);">7-Day Inbound:</span>
                     <strong style="color: #059669;">+<?= number_format($totalWeekIn) ?></strong>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #3B82F6;"></span>
-                    <span style="color: var(--gray);">Outbound:</span>
+                    <span style="color: var(--gray);">7-Day Outbound:</span>
                     <strong style="color: #2563EB;">-<?= number_format($totalWeekOut) ?></strong>
                 </div>
             </div>
@@ -436,25 +402,25 @@ if (count($recentWarehouseStaff) < 3) {
         <div style="width: 100%; overflow-x: auto;">
             <?php
             $svgWidth = 560;
-            $svgHeight = 190;
+            $svgHeight = 210;
             $padL = 40;
             $padR = 15;
-            $padT = 15;
-            $padB = 30;
+            $padT = 16;
+            $padB = 44;
             $plotW = $svgWidth - $padL - $padR;
             $plotH = $svgHeight - $padT - $padB;
 
-            $maxVal = 1;
+            $maxVal = 0;
             foreach ($chartDays as $d) {
                 if ($d['inbound'] > $maxVal) $maxVal = $d['inbound'];
                 if ($d['outbound'] > $maxVal) $maxVal = $d['outbound'];
             }
             $yMax = max(10, ceil($maxVal * 1.15));
-            $numDays = max(1, count($chartDays));
+            $numDays = count($chartDays); // Exactly 7
             $slotW = $plotW / $numDays;
-            $barW = max(6, min(20, $slotW * 0.32));
+            $barW = 14;
             ?>
-            <svg viewBox="0 0 <?= $svgWidth ?> <?= $svgHeight ?>" style="width: 100%; height: auto; max-height: 220px; display: block;" role="img" aria-label="Inventory movement trend chart">
+            <svg viewBox="0 0 <?= $svgWidth ?> <?= $svgHeight ?>" style="width: 100%; height: auto; max-height: 230px; display: block;" role="img" aria-label="Realtime 7-day inventory movement trend chart">
                 <!-- Y-Axis Gridlines & Labels -->
                 <?php for ($step = 0; $step <= 3; $step++): 
                     $ratio = $step / 3;
@@ -465,29 +431,54 @@ if (count($recentWarehouseStaff) < 3) {
                     <text x="<?= $padL - 6 ?>" y="<?= $yPos + 3 ?>" text-anchor="end" font-size="10" font-family="sans-serif" fill="#94A3B8"><?= $yVal ?></text>
                 <?php endfor; ?>
 
-                <!-- Bars for each day -->
+                <!-- Bars & Labels for each of the 7 Realtime Days -->
                 <?php 
                 $dayIndex = 0;
                 foreach ($chartDays as $d): 
                     $slotCenter = $padL + ($dayIndex * $slotW) + ($slotW / 2);
-                    $inH = ($d['inbound'] / $yMax) * $plotH;
-                    $outH = ($d['outbound'] / $yMax) * $plotH;
+                    $inH = $yMax > 0 ? ($d['inbound'] / $yMax) * $plotH : 0;
+                    $outH = $yMax > 0 ? ($d['outbound'] / $yMax) * $plotH : 0;
                     $inX = $slotCenter - $barW - 2;
                     $outX = $slotCenter + 2;
                     $inY = $padT + $plotH - $inH;
                     $outY = $padT + $plotH - $outH;
+                    $isToday = !empty($d['is_today']);
                 ?>
-                    <!-- Inbound Bar -->
-                    <rect x="<?= $inX ?>" y="<?= $inY ?>" width="<?= $barW ?>" height="<?= max(1, $inH) ?>" rx="3" fill="#10B981" style="transition: fill-opacity 0.2s; cursor: pointer;">
-                        <title><?= htmlspecialchars($d['label']) ?> — Inbound: +<?= formatQty($d['inbound']) ?> units</title>
-                    </rect>
-                    <!-- Outbound Bar -->
-                    <rect x="<?= $outX ?>" y="<?= $outY ?>" width="<?= $barW ?>" height="<?= max(1, $outH) ?>" rx="3" fill="#3B82F6" style="transition: fill-opacity 0.2s; cursor: pointer;">
-                        <title><?= htmlspecialchars($d['label']) ?> — Outbound: -<?= formatQty($d['outbound']) ?> units</title>
-                    </rect>
-                    <!-- Date Label -->
-                    <text x="<?= $slotCenter ?>" y="<?= $svgHeight - 10 ?>" text-anchor="middle" font-size="10.5" font-family="sans-serif" font-weight="600" fill="#64748B">
-                        <?= htmlspecialchars($d['day_name'] . ' ' . date('j', strtotime($d['date']))) ?>
+                    <!-- Subtle highlight column for Today -->
+                    <?php if ($isToday): ?>
+                        <rect x="<?= $slotCenter - ($slotW / 2) + 2 ?>" y="<?= $padT ?>" width="<?= $slotW - 4 ?>" height="<?= $plotH ?>" rx="4" fill="rgba(31, 122, 108, 0.05)" />
+                    <?php endif; ?>
+
+                    <?php if ($d['inbound'] > 0): ?>
+                        <!-- Inbound Bar -->
+                        <rect x="<?= $inX ?>" y="<?= $inY ?>" width="<?= $barW ?>" height="<?= max(2, $inH) ?>" rx="3" fill="#10B981" style="transition: fill-opacity 0.2s; cursor: pointer;">
+                            <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Inbound: +<?= formatQty($d['inbound']) ?> units</title>
+                        </rect>
+                    <?php else: ?>
+                        <!-- Zero activity base indicator -->
+                        <rect x="<?= $inX ?>" y="<?= $padT + $plotH - 2 ?>" width="<?= $barW ?>" height="2" rx="1" fill="#E2E8F0" opacity="0.8">
+                            <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Inbound: 0 units</title>
+                        </rect>
+                    <?php endif; ?>
+
+                    <?php if ($d['outbound'] > 0): ?>
+                        <!-- Outbound Bar -->
+                        <rect x="<?= $outX ?>" y="<?= $outY ?>" width="<?= $barW ?>" height="<?= max(2, $outH) ?>" rx="3" fill="#3B82F6" style="transition: fill-opacity 0.2s; cursor: pointer;">
+                            <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Outbound: -<?= formatQty($d['outbound']) ?> units</title>
+                        </rect>
+                    <?php else: ?>
+                        <!-- Zero activity base indicator -->
+                        <rect x="<?= $outX ?>" y="<?= $padT + $plotH - 2 ?>" width="<?= $barW ?>" height="2" rx="1" fill="#E2E8F0" opacity="0.8">
+                            <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Outbound: 0 units</title>
+                        </rect>
+                    <?php endif; ?>
+
+                    <!-- Realtime Date Labels (X-Axis: Month Day & Day Name / Today) -->
+                    <text x="<?= $slotCenter ?>" y="<?= $padT + $plotH + 16 ?>" text-anchor="middle" font-size="10.5" font-family="sans-serif" font-weight="<?= $isToday ? '700' : '600' ?>" fill="<?= $isToday ? '#1F7A6C' : '#475569' ?>">
+                        <?= htmlspecialchars($d['month'] . ' ' . $d['day_num']) ?>
+                    </text>
+                    <text x="<?= $slotCenter ?>" y="<?= $padT + $plotH + 28 ?>" text-anchor="middle" font-size="9.5" font-family="sans-serif" font-weight="<?= $isToday ? '700' : '500' ?>" fill="<?= $isToday ? '#1F7A6C' : '#94A3B8' ?>">
+                        <?= $isToday ? 'Today' : htmlspecialchars($d['day_name']) ?>
                     </text>
                 <?php 
                     $dayIndex++;
