@@ -304,6 +304,22 @@ class AuthController {
         $_SESSION['login_time']     = time();
         $_SESSION['last_activity']  = time();
 
+        require_once __DIR__ . '/../helpers/AccountabilityService.php';
+        try {
+            AccountabilityService::log([
+                'user_id'          => (int)$user['user_id'],
+                'user_name'        => $user['name'],
+                'team'             => $user['team'] ?? 'Inventory',
+                'action_type'      => 'USER_LOGIN',
+                'channel'          => 'UI',
+                'warehouse_id'     => $assignedWhId,
+                'reference_number' => 'LOGIN-' . (int)$user['user_id'],
+                'notes'            => 'User signed in to warehouse session'
+            ]);
+        } catch (Throwable $e) {
+            error_log('Failed to log user login: ' . $e->getMessage());
+        }
+
         require_once __DIR__ . '/../helpers/csrf.php';
         if (function_exists('regenerateCsrfToken')) {
             regenerateCsrfToken();

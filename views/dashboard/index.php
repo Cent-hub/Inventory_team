@@ -146,6 +146,133 @@ $stmtRecent = $pdo->prepare("
 ");
 $stmtRecent->execute([':wid' => $currentWarehouseId]);
 $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
+
+// --- 7-Day Inbound vs. Outbound Movement Trend Data ---
+$chartDays = [];
+for ($i = 6; $i >= 0; $i--) {
+    $dateKey = date('Y-m-d', strtotime("-$i days"));
+    $chartDays[$dateKey] = [
+        'date'     => $dateKey,
+        'label'    => date('D, M j', strtotime($dateKey)),
+        'day_name' => date('D', strtotime($dateKey)),
+        'inbound'  => 0.0,
+        'outbound' => 0.0
+    ];
+}
+
+$stmtChart = $pdo->prepare("
+    SELECT 
+        DATE(sm.created_at) AS txn_date,
+        COALESCE(SUM(CASE 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+            ELSE 0 
+        END), 0) AS total_in,
+        COALESCE(SUM(CASE 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
+            ELSE 0 
+        END), 0) AS total_out
+    FROM stock_movements sm
+    WHERE sm.warehouse_id = :wid
+      AND sm.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+    GROUP BY DATE(sm.created_at)
+");
+$stmtChart->execute([':wid' => $currentWarehouseId]);
+$chartDbRows = $stmtChart->fetchAll(PDO::FETCH_ASSOC);
+
+foreach ($chartDbRows as $row) {
+    $d = $row['txn_date'];
+    if (isset($chartDays[$d])) {
+        $chartDays[$d]['inbound'] = (float)$row['total_in'];
+        $chartDays[$d]['outbound'] = (float)$row['total_out'];
+    }
+}
+
+// Fallback to recent active transaction dates if rolling 7 days is empty (e.g. initial demo/test datasets)
+$hasChartData = (array_sum(array_column($chartDays, 'inbound')) + array_sum(array_column($chartDays, 'outbound'))) > 0;
+if (!$hasChartData) {
+    $stmtRecentActive = $pdo->prepare("
+        SELECT 
+            DATE(sm.created_at) AS txn_date,
+            COALESCE(SUM(CASE 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+                ELSE 0 
+            END), 0) AS total_in,
+            COALESCE(SUM(CASE 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
+                ELSE 0 
+            END), 0) AS total_out
+        FROM stock_movements sm
+        WHERE sm.warehouse_id = :wid
+        GROUP BY DATE(sm.created_at)
+        ORDER BY txn_date DESC
+        LIMIT 7
+    ");
+    $stmtRecentActive->execute([':wid' => $currentWarehouseId]);
+    $activeRows = array_reverse($stmtRecentActive->fetchAll(PDO::FETCH_ASSOC));
+    if (!empty($activeRows)) {
+        $chartDays = [];
+        foreach ($activeRows as $r) {
+            $d = $r['txn_date'];
+            $chartDays[$d] = [
+                'date'     => $d,
+                'label'    => date('M j', strtotime($d)),
+                'day_name' => date('D', strtotime($d)),
+                'inbound'  => (float)$r['total_in'],
+                'outbound' => (float)$r['total_out']
+            ];
+        }
+    }
+}
+
+$totalWeekIn = array_sum(array_column($chartDays, 'inbound'));
+$totalWeekOut = array_sum(array_column($chartDays, 'outbound'));
+
+// --- Recent Warehouse Staff Activity (Warehouse-Scoped) ---
+$stmtWhStaff = $pdo->prepare("
+    SELECT 
+        al.log_id,
+        al.user_id,
+        COALESCE(u.name, 'Warehouse Staff') AS user_name,
+        COALESCE(u.email, '') AS user_email,
+        COALESCE(u.role, 'admin') AS user_role,
+        COALESCE(u.team, al.team, 'Inventory') AS user_team,
+        al.action AS action_type,
+        al.created_at,
+        al.details,
+        al.warehouse_id
+    FROM accountability_logs al
+    LEFT JOIN users u ON u.user_id = al.user_id
+    WHERE al.warehouse_id = :wid
+      AND al.action IN ('USER_LOGIN', 'STOCK_IN', 'STOCK_OUT', 'TRANSFER_INITIATED', 'TRANSFER_RECEIVED', 'ADJUSTMENT_REQUESTED', 'BAD_PRODUCT', 'USER_CREATED')
+    ORDER BY al.created_at DESC
+    LIMIT 5
+");
+$stmtWhStaff->execute([':wid' => $currentWarehouseId]);
+$recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
+
+if (count($recentWarehouseStaff) < 3) {
+    $existingIds = array_filter(array_column($recentWarehouseStaff, 'user_id'));
+    $excludeSql = !empty($existingIds) ? 'AND user_id NOT IN (' . implode(',', array_map('intval', $existingIds)) . ')' : '';
+    $stmtFallback = $pdo->prepare("
+        SELECT 
+            user_id,
+            name AS user_name,
+            email AS user_email,
+            role AS user_role,
+            team AS user_team,
+            'ASSIGNED' AS action_type,
+            COALESCE(updated_at, created_at) AS created_at,
+            '' AS details,
+            warehouse_id
+        FROM users
+        WHERE warehouse_id = :wid AND status = 'active' {$excludeSql}
+        ORDER BY updated_at DESC
+        LIMIT 5
+    ");
+    $stmtFallback->execute([':wid' => $currentWarehouseId]);
+    $fallbackStaff = $stmtFallback->fetchAll(PDO::FETCH_ASSOC);
+    $recentWarehouseStaff = array_merge($recentWarehouseStaff, $fallbackStaff);
+}
 ?>
 
 <!-- Page Header -->
@@ -270,6 +397,178 @@ $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div class="stat-value"><?= formatQty($returnProductsVolume) ?></div>
         <div class="stat-meta"><?= $returnProductsCount ?> processed return<?= $returnProductsCount === 1 ? '' : 's' ?></div>
+    </div>
+</div>
+
+<!-- 2-Column Section: 7-Day Movement Trend Chart (Left) + Warehouse Staff Logins (Right) -->
+<div class="dashboard-analytics-grid">
+    <!-- Left Column: 7-Day Inbound vs. Outbound Movement Trend Chart -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+            <div>
+                <h2 class="card-title" style="margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Inventory Flow Velocity
+                </h2>
+                <p class="card-desc" style="margin: 3px 0 0 0;">
+                    Daily units received vs. dispatched &bull; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>)</strong>
+                </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #10B981;"></span>
+                    <span style="color: var(--gray);">Inbound:</span>
+                    <strong style="color: #059669;">+<?= number_format($totalWeekIn) ?></strong>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #3B82F6;"></span>
+                    <span style="color: var(--gray);">Outbound:</span>
+                    <strong style="color: #2563EB;">-<?= number_format($totalWeekOut) ?></strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- Responsive SVG Chart -->
+        <div style="width: 100%; overflow-x: auto;">
+            <?php
+            $svgWidth = 560;
+            $svgHeight = 190;
+            $padL = 40;
+            $padR = 15;
+            $padT = 15;
+            $padB = 30;
+            $plotW = $svgWidth - $padL - $padR;
+            $plotH = $svgHeight - $padT - $padB;
+
+            $maxVal = 1;
+            foreach ($chartDays as $d) {
+                if ($d['inbound'] > $maxVal) $maxVal = $d['inbound'];
+                if ($d['outbound'] > $maxVal) $maxVal = $d['outbound'];
+            }
+            $yMax = max(10, ceil($maxVal * 1.15));
+            $numDays = max(1, count($chartDays));
+            $slotW = $plotW / $numDays;
+            $barW = max(6, min(20, $slotW * 0.32));
+            ?>
+            <svg viewBox="0 0 <?= $svgWidth ?> <?= $svgHeight ?>" style="width: 100%; height: auto; max-height: 220px; display: block;" role="img" aria-label="Inventory movement trend chart">
+                <!-- Y-Axis Gridlines & Labels -->
+                <?php for ($step = 0; $step <= 3; $step++): 
+                    $ratio = $step / 3;
+                    $yVal = round($yMax * (1 - $ratio));
+                    $yPos = $padT + ($plotH * $ratio);
+                ?>
+                    <line x1="<?= $padL ?>" y1="<?= $yPos ?>" x2="<?= $svgWidth - $padR ?>" y2="<?= $yPos ?>" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="<?= $step === 3 ? '0' : '3,3' ?>" />
+                    <text x="<?= $padL - 6 ?>" y="<?= $yPos + 3 ?>" text-anchor="end" font-size="10" font-family="sans-serif" fill="#94A3B8"><?= $yVal ?></text>
+                <?php endfor; ?>
+
+                <!-- Bars for each day -->
+                <?php 
+                $dayIndex = 0;
+                foreach ($chartDays as $d): 
+                    $slotCenter = $padL + ($dayIndex * $slotW) + ($slotW / 2);
+                    $inH = ($d['inbound'] / $yMax) * $plotH;
+                    $outH = ($d['outbound'] / $yMax) * $plotH;
+                    $inX = $slotCenter - $barW - 2;
+                    $outX = $slotCenter + 2;
+                    $inY = $padT + $plotH - $inH;
+                    $outY = $padT + $plotH - $outH;
+                ?>
+                    <!-- Inbound Bar -->
+                    <rect x="<?= $inX ?>" y="<?= $inY ?>" width="<?= $barW ?>" height="<?= max(1, $inH) ?>" rx="3" fill="#10B981" style="transition: fill-opacity 0.2s; cursor: pointer;">
+                        <title><?= htmlspecialchars($d['label']) ?> — Inbound: +<?= formatQty($d['inbound']) ?> units</title>
+                    </rect>
+                    <!-- Outbound Bar -->
+                    <rect x="<?= $outX ?>" y="<?= $outY ?>" width="<?= $barW ?>" height="<?= max(1, $outH) ?>" rx="3" fill="#3B82F6" style="transition: fill-opacity 0.2s; cursor: pointer;">
+                        <title><?= htmlspecialchars($d['label']) ?> — Outbound: -<?= formatQty($d['outbound']) ?> units</title>
+                    </rect>
+                    <!-- Date Label -->
+                    <text x="<?= $slotCenter ?>" y="<?= $svgHeight - 10 ?>" text-anchor="middle" font-size="10.5" font-family="sans-serif" font-weight="600" fill="#64748B">
+                        <?= htmlspecialchars($d['day_name'] . ' ' . date('j', strtotime($d['date']))) ?>
+                    </text>
+                <?php 
+                    $dayIndex++;
+                endforeach; 
+                ?>
+            </svg>
+        </div>
+    </div>
+
+    <!-- Right Column: Recent Staff Logins (Warehouse Scoped) -->
+    <div class="card" style="margin-bottom: 0; display: flex; flex-direction: column;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">
+            <div>
+                <h2 class="card-title" style="margin: 0; font-size: 15px; display: flex; align-items: center; gap: 6px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    Recent Staff Activity
+                </h2>
+                <p class="card-desc" style="margin: 2px 0 0 0; font-size: 11px;">
+                    Facility: <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>
+                </p>
+            </div>
+            <span class="badge" style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; font-size: 10.5px; padding: 2px 7px; font-weight: 600;">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10B981; margin-right: 4px;"></span> Active
+            </span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+            <?php if (empty($recentWarehouseStaff)): ?>
+                <div style="text-align: center; color: var(--gray); font-size: 12px; padding: 28px 0;">
+                    No recent staff activity recorded for this warehouse.
+                </div>
+            <?php else: ?>
+                <?php foreach ($recentWarehouseStaff as $st): ?>
+                    <?php
+                        $nameParts = explode(' ', trim($st['user_name'] ?: 'WS'));
+                        $initials = count($nameParts) >= 2 
+                            ? (strtoupper(substr($nameParts[0], 0, 1) . substr($nameParts[count($nameParts)-1], 0, 1)))
+                            : strtoupper(substr($nameParts[0], 0, 2));
+                        $timeStr = !empty($st['created_at']) ? date('M d, H:i', strtotime($st['created_at'])) : 'Recent';
+                        $actionLabel = match($st['action_type']) {
+                            'USER_LOGIN'          => 'Signed in to facility',
+                            'STOCK_IN'            => 'Received stock in',
+                            'STOCK_OUT'           => 'Dispatched stock out',
+                            'TRANSFER_RECEIVED'   => 'Received transfer',
+                            'TRANSFER_INITIATED'  => 'Initiated transfer',
+                            'ADJUSTMENT_REQUESTED'=> 'Requested adjustment',
+                            'BAD_PRODUCT'         => 'Reported damaged stock',
+                            default               => 'Assigned warehouse staff'
+                        };
+                    ?>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #F8FAFC; border: 1px solid #EDF2F7;">
+                        <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
+                            <div style="width: 32px; height: 32px; border-radius: 50%; background: #E2E8F0; color: #1E293B; font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                <?= htmlspecialchars($initials) ?>
+                            </div>
+                            <div style="min-width: 0;">
+                                <div style="font-size: 12px; font-weight: 600; color: var(--panel-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    <?= htmlspecialchars($st['user_name']) ?>
+                                </div>
+                                <div style="font-size: 10.5px; color: var(--gray); margin-top: 1px;">
+                                    <?= htmlspecialchars($actionLabel) ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="text-align: right; flex-shrink: 0;">
+                            <span class="badge" style="font-size: 9.5px; padding: 1px 5px; background: #EEF2F6; color: #475569;">
+                                <?= htmlspecialchars($st['user_team'] ?: 'Inventory') ?>
+                            </span>
+                            <div style="font-size: 10px; color: var(--gray); margin-top: 2px; font-family: monospace;">
+                                <?= htmlspecialchars($timeStr) ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 

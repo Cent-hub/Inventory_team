@@ -507,7 +507,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
     <!-- Inbound KPI Cards -->
     <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
-        <div class="stat-card" style="border-left: 4px solid #F59E0B;">
+        <div class="stat-card">
             <div class="stat-header">
                 <span class="stat-label">Pending Inbounds</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #D97706; background: #FEF3C7;">
@@ -568,7 +568,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
     <!-- ===================================================================== -->
     <!-- INBOUND QUEUE: EXPECTED SHIPMENTS (RECEIVING DOCK)                   -->
     <!-- ===================================================================== -->
-    <div class="card" style="margin-bottom: 24px; border-top: 3px solid #15803D;">
+    <div class="card" style="margin-bottom: 24px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -913,7 +913,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
     <!-- Outbound KPI Cards -->
     <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
-        <div class="stat-card" style="border-left: 4px solid #DC2626;">
+        <div class="stat-card">
             <div class="stat-header">
                 <span class="stat-label">Pending Dispatches</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #DC2626; background: #FEE2E2;">
@@ -976,7 +976,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
     <!-- ===================================================================== -->
     <!-- OUTBOUND QUEUE: PENDING ORDERS (FULFILLMENT & SHIPPING DOCK)          -->
     <!-- ===================================================================== -->
-    <div class="card" style="margin-bottom: 24px; border-top: 3px solid #DC2626;">
+    <div class="card" style="margin-bottom: 24px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -1558,7 +1558,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 
             <div class="modal-header">
                 <div>
-                    <h3 id="receiveOrderModalTitle" class="card-title" style="margin: 0; color: #15803D;">Receive Inbound Shipment</h3>
+                    <h3 id="receiveOrderModalTitle" class="card-title" style="margin: 0;">Receive Inbound Shipment</h3>
                     <p class="card-desc" style="margin: 0;">Perform quality inspection, confirm quantities, and receive into warehouse</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeReceiveOrderModal()">
@@ -1653,7 +1653,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 
             <div class="modal-header">
                 <div>
-                    <h3 id="dispatchOrderModalTitle" class="card-title" style="margin: 0; color: #1D4ED8;">Fulfill &amp; Dispatch Outbound Order</h3>
+                    <h3 id="dispatchOrderModalTitle" class="card-title" style="margin: 0;">Fulfill &amp; Dispatch Outbound Order</h3>
                     <p class="card-desc" style="margin: 0;">Verify available inventory, pack quantities, and dispatch to carrier or department</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeDispatchOrderModal()">

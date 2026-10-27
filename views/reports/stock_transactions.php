@@ -381,7 +381,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 </div>
 
 <!-- Transaction Report Filter Card -->
-<div class="card" style="margin-bottom: 20px;">
+<div class="card no-print" style="margin-bottom: 20px;">
     <form method="GET" action="stock_transactions.php" id="reportFilterForm" class="report-filter-form" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <input type="hidden" name="tab" id="filterTabInput" value="<?= htmlspecialchars($activeTab) ?>">
 

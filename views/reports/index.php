@@ -178,7 +178,7 @@ $currentBalanceData = $allInventoryData;
 </div>
 
 <!-- Inventory Report Filter Card -->
-<div class="card" style="margin-bottom: 20px;">
+<div class="card no-print" style="margin-bottom: 20px;">
     <form method="GET" action="index.php" id="reportFilterForm" class="report-filter-form" onsubmit="event.preventDefault(); filterActiveReportTable(); return false;" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <input type="hidden" name="type" id="filterReportTypeInput" value="<?= htmlspecialchars($activeTab) ?>">
 
