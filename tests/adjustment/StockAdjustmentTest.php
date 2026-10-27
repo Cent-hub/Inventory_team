@@ -170,6 +170,32 @@ class StockAdjustmentTest extends TestCase {
         $netLedgerDiff = round($finalDeltaSum - $startDeltaSum, 4);
         $this->assertEquals($netStockDiff, $netLedgerDiff, "Net stock balance change must match net signed quantity_delta sum in stock_movements (0.0000 variance)", "stock vs stock_movements");
 
+        // 10. QC Workflow: Confirm & Dispose Defective Inventory (confirmBadProduct & disposeBadProduct)
+        $bpRes = $stockService->recordBadProduct($whId, $itemId, 'damaged', 1.0, 'Bottle cracked in transit - QC test', $adminUserId);
+        $testBpId = (int)$bpRes['bad_product_id'];
+        $this->assertEquals('reported', $bpRes['status'] ?? '', "New bad product report must initialize with status 'reported'", "recordBadProduct status");
+
+        $confirmRes = $stockService->confirmBadProduct($testBpId, $adminUserId);
+        $this->assertEquals('confirmed', $confirmRes['status'] ?? '', "QC confirmation must transition status to 'confirmed'", "confirmBadProduct");
+
+        // Confirmed defect cannot be cancelled
+        $cancelConfirmedBlocked = false;
+        try {
+            $stockService->cancelBadProduct($testBpId, 'Attempting cancellation after QC confirm', $adminUserId);
+        } catch (DomainException $e) {
+            $cancelConfirmedBlocked = true;
+        }
+        $this->assertTrue($cancelConfirmedBlocked, "Cancelling a QC-confirmed bad product must be forbidden", "cancelBadProduct guard");
+
+        $disposeRes = $stockService->disposeBadProduct($testBpId, 'Glass Crushed & Recycled', $adminUserId);
+        $this->assertEquals('disposed', $disposeRes['status'] ?? '', "Disposal must transition status to 'disposed'", "disposeBadProduct");
+
+        // Cleanup test bad product and restore the 1 unit
+        $this->pdo->exec("UPDATE stock SET qty_on_hand = qty_on_hand + 1.0 WHERE item_id = {$itemId} AND warehouse_id = {$whId}");
+        $this->pdo->exec("DELETE FROM stock_movements WHERE reference_id = {$testBpId} AND movement_type = 'BAD_PRODUCT_DISCARD'");
+        $this->pdo->exec("DELETE FROM accountability_logs WHERE details LIKE '%BP-{$testBpId}%'");
+        $this->pdo->exec("DELETE FROM bad_products WHERE bad_product_id = {$testBpId}");
+
         return $this->getAggregateResult();
     }
 }

@@ -292,17 +292,12 @@ if ($isSuperAdmin) {
     $totalWarehouses = count($warehousesList);
 }
 
-// Map functional department/team based on email or role for liquor ERP display
+// Map functional department/team using official ERP rulebook (helpers/auth.php::resolveUserTeam)
 function getTeamAssignment($email, $role, $teamColumn = '') {
-    if (!empty($teamColumn) && strtolower($teamColumn) !== 'inventory') {
-        return $teamColumn . ' Team';
+    if ($role === 'super_admin' && (empty($teamColumn) || strcasecmp($teamColumn, 'inventory') === 0)) {
+        return 'Administration';
     }
-    $emailLower = strtolower($email);
-    if (str_contains($emailLower, 'procure')) return 'Procurement Team';
-    if (str_contains($emailLower, 'prod') || str_contains($emailLower, 'brew') || str_contains($emailLower, 'distill')) return 'Production & Distillation';
-    if (str_contains($emailLower, 'sale') || str_contains($emailLower, 'order')) return 'Commercial Sales';
-    if (str_contains($emailLower, 'super') || $role === 'super_admin') return 'Executive Administration';
-    return 'Warehouse Inventory Operations';
+    return resolveUserTeam($teamColumn, $email);
 }
 
 function getFacilityAssignment($user) {
@@ -810,10 +805,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             Functional Team <span style="color: #DC2626;">*</span>
                         </label>
                         <select name="team" id="createUserTeam" class="select-filter" style="width: 100%;" required>
-                            <option value="Inventory">Inventory Operations</option>
-                            <option value="Procurement">Procurement Team</option>
-                            <option value="Production">Production &amp; Distillation</option>
-                            <option value="Sales">Commercial Sales</option>
+                            <option value="Administration">Administration</option>
+                            <option value="Inventory" selected>Inventory</option>
+                            <option value="Procurement">Procurement</option>
+                            <option value="Production">Production</option>
+                            <option value="Sales">Sales</option>
                         </select>
                     </div>
                     <div>
@@ -916,10 +912,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             Functional Team <span style="color: #DC2626;">*</span>
                         </label>
                         <select name="team" id="editUserTeam" class="select-filter" style="width: 100%;" required>
-                            <option value="Inventory">Inventory Operations</option>
-                            <option value="Procurement">Procurement Team</option>
-                            <option value="Production">Production &amp; Distillation</option>
-                            <option value="Sales">Commercial Sales</option>
+                            <option value="Administration">Administration</option>
+                            <option value="Inventory">Inventory</option>
+                            <option value="Procurement">Procurement</option>
+                            <option value="Production">Production</option>
+                            <option value="Sales">Sales</option>
                         </select>
                     </div>
                     <div>

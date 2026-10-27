@@ -234,6 +234,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $result = $stockService->cancelBadProduct($bpId, $reason, $userId, $currentUser);
                     $successMessage = "Damaged product report " . htmlspecialchars($result['bad_product_number']) . " cancelled. Deducted stock has been refunded back into your warehouse inventory.";
                     break;
+
+                case 'confirm_bad_product':
+                    $activeTab = 'adjustment';
+                    $bpId      = (int)($_POST['bad_product_id'] ?? 0);
+                    if ($bpId <= 0) {
+                        throw new InvalidArgumentException("Invalid defect record ID.");
+                    }
+                    $result = $stockService->confirmBadProduct($bpId, $userId, $currentUser);
+                    $successMessage = "Defective product write-off " . htmlspecialchars($result['bad_product_number']) . " confirmed by QC / Supervisor.";
+                    break;
+
+                case 'dispose_bad_product':
+                    $activeTab      = 'adjustment';
+                    $bpId           = (int)($_POST['bad_product_id'] ?? 0);
+                    $disposalMethod = trim($_POST['disposal_method'] ?? '');
+                    if ($bpId <= 0) {
+                        throw new InvalidArgumentException("Invalid defect record ID.");
+                    }
+                    if (empty($disposalMethod)) {
+                        throw new InvalidArgumentException("Please select or specify the physical disposal method.");
+                    }
+                    $result = $stockService->disposeBadProduct($bpId, $disposalMethod, $userId, $currentUser);
+                    $successMessage = "Defective inventory " . htmlspecialchars($result['bad_product_number']) . " marked as physically disposed (" . htmlspecialchars($disposalMethod) . ").";
+                    break;
             }
         } catch (Throwable $e) {
             $errorMessage = $e->getMessage();
@@ -412,17 +436,20 @@ $stmtBad = $pdo->prepare("
         NULL AS cancelled_at,
         bp.status,
         bp.reported_at AS created_at,
+        bp.confirmed_at,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
         i.code AS item_code,
         i.name AS item_name,
         i.unit,
         COALESCE(u.name, 'Warehouse Operator') AS reported_by_name,
+        COALESCE(cu.name, '—') AS confirmed_by_name,
         NULL AS cancelled_by_name
     FROM bad_products bp
     JOIN warehouses w ON bp.warehouse_id = w.warehouse_id
     JOIN items i ON bp.item_id = i.item_id
     LEFT JOIN users u ON bp.reported_by = u.user_id
+    LEFT JOIN users cu ON bp.confirmed_by = cu.user_id
     WHERE bp.warehouse_id = :wid
     ORDER BY bp.bad_product_id DESC
 ");
@@ -1214,17 +1241,36 @@ if ($selectedItemId > 0) {
                                     <?= date('M d, Y', strtotime($bp['created_at'])) ?>
                                 </td>
                                 <td class="text-center">
-                                    <?php if ($bp['status'] === 'completed'): ?>
-                                        <span class="badge status-completed">Written Off</span>
+                                    <?php if ($bp['status'] === 'reported'): ?>
+                                        <span class="badge status-pending" style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">Pending QC</span>
+                                    <?php elseif ($bp['status'] === 'confirmed'): ?>
+                                        <span class="badge status-approved" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Confirmed Defect</span>
+                                    <?php elseif ($bp['status'] === 'disposed'): ?>
+                                        <span class="badge status-completed" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">Disposed</span>
                                     <?php else: ?>
                                         <span class="badge status-cancelled">Cancelled</span>
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
-                                    <?php if ($bp['status'] === 'completed'): ?>
-                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                    <?php if ($bp['status'] === 'reported'): ?>
+                                        <form method="POST" action="index.php?tab=adjustment" style="display: inline; margin: 0;" onsubmit="return confirm('Confirm defect report <?= htmlspecialchars($bp['bad_product_number']) ?> as verified QC write-off?');">
+                                            <?= csrfField() ?>
+                                            <input type="hidden" name="action" value="confirm_bad_product">
+                                            <input type="hidden" name="active_tab" value="adjustment">
+                                            <input type="hidden" name="bad_product_id" value="<?= (int)$bp['bad_product_id'] ?>">
+                                            <button type="submit" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #1E40AF; border-color: #93C5FD; background: #EFF6FF;" title="Verify and confirm defect (QC Inspector)">
+                                                Confirm (QC)
+                                            </button>
+                                        </form>
+                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Cancel write-off report and restore stock">
                                             Cancel / Restore
                                         </button>
+                                    <?php elseif ($bp['status'] === 'confirmed'): ?>
+                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #7C3AED; border-color: #DDD6FE; background: #F5F3FF;" onclick='openDisposeBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Record physical disposal/destruction of defective goods">
+                                            Dispose / Discard
+                                        </button>
+                                    <?php elseif ($bp['status'] === 'disposed'): ?>
+                                        <span style="font-size: 11.5px; color: var(--gray); font-style: italic;">Disposed</span>
                                     <?php else: ?>
                                         <span style="font-size: 11.5px; color: var(--gray); font-style: italic;">Restored</span>
                                     <?php endif; ?>
@@ -1953,6 +1999,48 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
+<!-- 9b. Dispose Defective Product Modal (QC Physical Destruction) -->
+<div id="disposeBadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="disposeBadModalTitle" onclick="if(event.target === this) closeDisposeBadModal()">
+    <div class="modal-card" style="max-width: 480px;">
+        <form method="POST" action="index.php?tab=adjustment">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="dispose_bad_product">
+            <input type="hidden" name="active_tab" value="adjustment">
+            <input type="hidden" name="bad_product_id" id="disposeBadId" value="">
+            
+            <div class="modal-header">
+                <div>
+                    <h3 id="disposeBadModalTitle" class="card-title" style="margin: 0; color: #7C3AED;">Record Defect Disposal</h3>
+                    <p class="card-desc" style="margin: 0;">Physical destruction / discard of confirmed defective goods</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeDisposeBadModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
+                    Confirm physical disposal for write-off report <strong id="disposeBadRef" style="font-family: monospace;">—</strong> (<span id="disposeBadItem">—</span>)?
+                </p>
+                <div>
+                    <label for="disposeMethodSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Disposal Method / Action <span style="color: #DC2626;">*</span></label>
+                    <select id="disposeMethodSelect" class="select-filter" style="width: 100%; margin-bottom: 8px;" onchange="onDisposeMethodChange(this.value)">
+                        <option value="Discarded / Poured Out (Drain Disposal)">Discarded / Poured Out (Drain Disposal)</option>
+                        <option value="Glass Crushed &amp; Recycled">Glass Crushed &amp; Recycled</option>
+                        <option value="Incinerated / Industrial Waste">Incinerated / Industrial Waste</option>
+                        <option value="Returned to Supplier / Scrap Credit">Returned to Supplier / Scrap Credit</option>
+                        <option value="custom">Other (Specify below)...</option>
+                    </select>
+                    <input type="text" name="disposal_method" id="disposeMethodInput" class="search-box" style="width: 100%;" value="Discarded / Poured Out (Drain Disposal)" placeholder="Enter disposal details..." required>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeDisposeBadModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="background: #7C3AED; border-color: #7C3AED;">Confirm Physical Disposal</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- 10. Adjustment Details Modal -->
 <div id="adjustmentDetailModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalAdjTitle" onclick="if(event.target === this) closeAdjDetailModal()">
     <div class="modal-card" style="max-width: 540px;">
@@ -2414,6 +2502,27 @@ function openCancelBadModal(row) {
 }
 function closeCancelBadModal() {
     document.getElementById('confirmCancelBadModal').style.display = 'none';
+}
+
+function openDisposeBadModal(row) {
+    if (!row) return;
+    document.getElementById('disposeBadId').value = row.bad_product_id;
+    document.getElementById('disposeBadRef').textContent = row.bad_product_number;
+    document.getElementById('disposeBadItem').textContent = (row.item_name || '') + ' (' + (row.quantity || '') + ' ' + (row.unit || '') + ')';
+    document.getElementById('disposeBadModal').style.display = 'flex';
+}
+function closeDisposeBadModal() {
+    document.getElementById('disposeBadModal').style.display = 'none';
+}
+function onDisposeMethodChange(val) {
+    const input = document.getElementById('disposeMethodInput');
+    if (val === 'custom') {
+        input.value = '';
+        input.placeholder = 'Enter custom disposal details...';
+        input.focus();
+    } else {
+        input.value = val;
+    }
 }
 
 let currentDetailAdjRow = null;

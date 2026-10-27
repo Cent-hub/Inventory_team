@@ -130,7 +130,7 @@ if (!function_exists('getWarehouseBadgeClass')) {
     }
 }
 
-if (!function_exists('formatQuantity')) {
+if (!function_exists('formatQty')) {
     /**
      * Formats a quantity value cleanly, removing unnecessary .00 and .0 trailing decimals.
      * Preserves non-zero decimal values (e.g. 10.5, 12.75).
@@ -139,16 +139,19 @@ if (!function_exists('formatQuantity')) {
      * @param int $decimals
      * @return string
      */
-    function formatQuantity($val, $decimals = 2) {
+    function formatQty($val, $decimals = 2) {
         if ($val === null || $val === '') return '0';
         $n = number_format((float)$val, $decimals);
         return strpos($n, '.') !== false ? rtrim(rtrim($n, '0'), '.') : $n;
     }
 }
 
-if (!function_exists('formatQty')) {
-    function formatQty($val, $decimals = 2) {
-        return formatQuantity($val, $decimals);
+if (!function_exists('formatQuantity')) {
+    /**
+     * Alias for formatQty() for backward compatibility.
+     */
+    function formatQuantity($val, $decimals = 2) {
+        return formatQty($val, $decimals);
     }
 }
 
