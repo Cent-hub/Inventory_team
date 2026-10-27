@@ -74,7 +74,9 @@ class TestRunner {
                 $colsSource = $testPdo->query("SHOW COLUMNS FROM stock_movements LIKE 'source_type'")->fetchAll();
                 $colsItemStatus = $testPdo->query("SHOW COLUMNS FROM items LIKE 'status'")->fetch();
                 $itemStatusType = $colsItemStatus['Type'] ?? '';
-                if (empty($colsRef) || empty($colsDelta) || empty($colsSource) || !str_contains($itemStatusType, 'pending')) {
+                $colsEmpCode = $testPdo->query("SHOW COLUMNS FROM users LIKE 'employee_code'")->fetchAll();
+                $hasEmployeesTable = !empty($testPdo->query("SHOW TABLES LIKE 'employees'")->fetchAll());
+                if (empty($colsRef) || empty($colsDelta) || empty($colsSource) || !str_contains($itemStatusType, 'pending') || empty($colsEmpCode) || $hasEmployeesTable) {
                     $needsReload = true;
                 }
             }
@@ -146,19 +148,20 @@ class TestRunner {
         $tokenHashOp2   = hash('sha256', self::$testTokens['op2']);
 
         $this->pdo->exec("
-            INSERT INTO users (user_id, name, email, password, role, team, warehouse_id, api_token, status)
+            INSERT INTO users (user_id, name, email, password, role, team, warehouse_id, employee_code, api_token, status)
             VALUES 
-                (1, 'System Super Admin', 'admin@inventory.local', '{$passHash}', 'super_admin', 'Administration', 1, '{$tokenHashAdmin}', 'active'),
-                (2, 'Procurement Service API', 'procurement@inventory.local', '{$passHash}', 'admin', 'Procurement', 1, '{$tokenHashProc}', 'active'),
-                (3, 'Production Service API', 'production@inventory.local', '{$passHash}', 'admin', 'Production', 1, '{$tokenHashProd}', 'active'),
-                (4, 'Sales Service API', 'sales@inventory.local', '{$passHash}', 'admin', 'Sales', 1, '{$tokenHashSales}', 'active'),
-                (101, 'Test Operator Laguna', 'test_op1@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 1, '{$tokenHashOp1}', 'active'),
-                (102, 'Test Operator Manila', 'test_op2@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 2, '{$tokenHashOp2}', 'active')
+                (1, 'System Super Admin', 'admin@inventory.local', '{$passHash}', 'super_admin', 'Administration', 1, '5', '{$tokenHashAdmin}', 'active'),
+                (2, 'Procurement Service API', 'procurement@inventory.local', '{$passHash}', 'admin', 'Procurement', 1, NULL, '{$tokenHashProc}', 'active'),
+                (3, 'Production Service API', 'production@inventory.local', '{$passHash}', 'admin', 'Production', 1, NULL, '{$tokenHashProd}', 'active'),
+                (4, 'Sales Service API', 'sales@inventory.local', '{$passHash}', 'admin', 'Sales', 1, NULL, '{$tokenHashSales}', 'active'),
+                (101, 'Test Operator Laguna', 'test_op1@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 1, NULL, '{$tokenHashOp1}', 'active'),
+                (102, 'Test Operator Manila', 'test_op2@inventory.local', '{$userOp1Hash}', 'admin', 'Inventory', 2, NULL, '{$tokenHashOp2}', 'active')
             ON DUPLICATE KEY UPDATE
                 password = VALUES(password),
                 role = VALUES(role),
                 team = VALUES(team),
                 warehouse_id = VALUES(warehouse_id),
+                employee_code = VALUES(employee_code),
                 api_token = VALUES(api_token),
                 status = 'active'
         ");

@@ -42,6 +42,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
             $uTeam       = trim($_POST['team'] ?? 'Inventory');
             $uWarehouse  = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : null;
             $uStatus     = trim($_POST['status'] ?? 'active');
+            $uEmpCode    = trim($_POST['employee_code'] ?? '');
+            $uEmpCode    = $uEmpCode !== '' ? $uEmpCode : null;
 
             if (empty($uName) || mb_strlen($uName) > 100) {
                 $errorMessage = "Full Name is required and cannot exceed 100 characters.";
@@ -53,6 +55,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                 $errorMessage = "Security role must be either 'super_admin' or 'admin'.";
             } elseif (!in_array($uStatus, ['active', 'inactive'], true)) {
                 $errorMessage = "Account status must be either 'active' or 'inactive'.";
+            } elseif ($uEmpCode !== null && mb_strlen($uEmpCode) > 30) {
+                $errorMessage = "Employee Code cannot exceed 30 characters.";
             } else {
                 try {
                     $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
@@ -65,8 +69,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                         $apiTokenHash = hash('sha256', $rawApiToken);
 
                         $stmtIns = $pdo->prepare("
-                            INSERT INTO users (name, email, password, role, team, warehouse_id, api_token, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO users (name, email, password, role, team, warehouse_id, employee_code, api_token, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmtIns->execute([
                             $uName,
@@ -75,6 +79,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             $uRole,
                             $uTeam ?: 'Inventory',
                             $uWarehouse,
+                            $uEmpCode,
                             $apiTokenHash,
                             $uStatus
                         ]);
@@ -88,7 +93,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             'channel'          => 'UI',
                             'warehouse_id'     => $uWarehouse ?: ($currentWarehouseId ?: 1),
                             'reference_number' => "USR-{$newUserId}",
-                            'notes'            => "Created user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}"
+                            'notes'            => "Created user account: {$uName} ({$uEmail})" . ($uEmpCode ? " [Emp Code: {$uEmpCode}]" : "") . " — Role: {$uRole}, Status: {$uStatus}"
                         ]);
 
                         $generatedTokenInfo = [
@@ -151,6 +156,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
             $uWarehouse   = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : null;
             $uStatus      = trim($_POST['status'] ?? 'active');
             $newPassword  = $_POST['new_password'] ?? '';
+            $uEmpCode     = trim($_POST['employee_code'] ?? '');
+            $uEmpCode     = $uEmpCode !== '' ? $uEmpCode : null;
 
             if ($targetUserId <= 0) {
                 $errorMessage = "Invalid user account selected for update.";
@@ -162,6 +169,8 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                 $errorMessage = "Security role must be either 'super_admin' or 'admin'.";
             } elseif (!in_array($uStatus, ['active', 'inactive'], true)) {
                 $errorMessage = "Account status must be either 'active' or 'inactive'.";
+            } elseif ($uEmpCode !== null && mb_strlen($uEmpCode) > 30) {
+                $errorMessage = "Employee Code cannot exceed 30 characters.";
             } elseif ($newPassword !== '' && strlen($newPassword) < 6) {
                 $errorMessage = "New password must be at least 6 characters long.";
             } elseif ($targetUserId === (int)($currentUser['id'] ?? 0) && ($uStatus !== 'active' || $uRole !== 'super_admin')) {
@@ -177,17 +186,17 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
                             $stmtUpd = $pdo->prepare("
                                 UPDATE users
-                                SET name = ?, email = ?, password = ?, role = ?, team = ?, warehouse_id = ?, status = ?
+                                SET name = ?, email = ?, password = ?, role = ?, team = ?, warehouse_id = ?, employee_code = ?, status = ?
                                 WHERE user_id = ?
                             ");
-                            $stmtUpd->execute([$uName, $uEmail, $passwordHash, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uStatus, $targetUserId]);
+                            $stmtUpd->execute([$uName, $uEmail, $passwordHash, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uEmpCode, $uStatus, $targetUserId]);
                         } else {
                             $stmtUpd = $pdo->prepare("
                                 UPDATE users
-                                SET name = ?, email = ?, role = ?, team = ?, warehouse_id = ?, status = ?
+                                SET name = ?, email = ?, role = ?, team = ?, warehouse_id = ?, employee_code = ?, status = ?
                                 WHERE user_id = ?
                             ");
-                            $stmtUpd->execute([$uName, $uEmail, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uStatus, $targetUserId]);
+                            $stmtUpd->execute([$uName, $uEmail, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uEmpCode, $uStatus, $targetUserId]);
                         }
 
                         require_once __DIR__ . '/../../helpers/AccountabilityService.php';
@@ -198,7 +207,7 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                             'channel'          => 'UI',
                             'warehouse_id'     => $uWarehouse ?: ($currentWarehouseId ?: 1),
                             'reference_number' => "USR-{$targetUserId}",
-                            'notes'            => "Updated user account: {$uName} ({$uEmail}) — Role: {$uRole}, Status: {$uStatus}" . ($newPassword !== '' ? " [Password Reset]" : "")
+                            'notes'            => "Updated user account: {$uName} ({$uEmail})" . ($uEmpCode ? " [Emp Code: {$uEmpCode}]" : "") . " — Role: {$uRole}, Status: {$uStatus}" . ($newPassword !== '' ? " [Password Reset]" : "")
                         ]);
 
                         $successMessage = "User account '{$uName}' updated successfully!";
@@ -243,15 +252,11 @@ if ($isSuperAdmin) {
             u.warehouse_id,
             w.code AS warehouse_code,
             w.name AS warehouse_name,
+            u.employee_code,
             u.created_at,
-            u.updated_at,
-            e.employee_id,
-            e.employee_code,
-            e.position AS employee_position,
-            e.department AS employee_department
+            u.updated_at
         FROM users u
         LEFT JOIN warehouses w ON u.warehouse_id = w.warehouse_id
-        LEFT JOIN employees e ON e.user_id = u.user_id
         WHERE 1=1
     ";
     $params = [];
@@ -611,7 +616,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <div class="font-mono text-xs text-muted">
                                             <?= htmlspecialchars($u['email']) ?>
                                             <?php if (!empty($u['employee_code'])): ?>
-                                                &middot; <span style="color: #1F7A6C; font-weight: 600;" title="Linked Employee (employees.user_id = users.user_id)">Emp #<?= htmlspecialchars($u['employee_code']) ?></span>
+                                                &middot; <span style="color: #1F7A6C; font-weight: 600;" title="Central HR Employee Code">Emp #<?= htmlspecialchars($u['employee_code']) ?></span>
                                             <?php endif; ?>
                                         </div>
                                     </div>
@@ -655,8 +660,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         'team' => $team,
                                         'facility' => $facility,
                                         'employee_code' => $u['employee_code'] ?? '',
-                                        'employee_position' => $u['employee_position'] ?? '',
-                                        'created_at' => $u['created_at'] ? date('M d, Y H:i:s', strtotime($u['created_at'])) : '—'
+                                                                                'created_at' => $u['created_at'] ? date('M d, Y H:i:s', strtotime($u['created_at'])) : '—'
                                     ])) ?>)">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
@@ -671,6 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         'role'         => $u['role'] ?? 'admin',
                                         'team'         => $u['team'] ?? 'Inventory',
                                         'warehouse_id' => $u['warehouse_id'] ? (int)$u['warehouse_id'] : '',
+                                        'employee_code' => $u['employee_code'] ?? '',
                                         'status'       => $u['status'] ?? 'active',
                                         'is_self'      => $isCurrent
                                     ])) ?>)">
@@ -726,7 +731,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     <label class="form-label" style="font-size: 11px;">Assigned Warehouse</label>
                     <div id="modalFacilityText" class="text-sm font-medium text-navy">—</div>
                 </div>
-                <div style="grid-column: 1 / -1;">
+                <div>
+                    <label class="form-label" style="font-size: 11px;">Central HR Employee ID</label>
+                    <div id="modalEmployeeCodeText" class="text-sm font-mono font-medium text-teal">—</div>
+                </div>
+                <div>
                     <label class="form-label" style="font-size: 11px;">Created Timestamp</label>
                     <div id="modalCreatedText" class="font-mono text-xs text-muted">—</div>
                 </div>
@@ -818,18 +827,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
 
-                <div>
-                    <label for="createUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Assigned Warehouse Facility
-                    </label>
-                    <select name="warehouse_id" id="createUserWarehouse" class="select-filter" style="width: 100%;">
-                        <option value="">— Global / Unassigned (Super Admin) —</option>
-                        <?php foreach ($warehousesList as $wh): ?>
-                            <option value="<?= (int)$wh['warehouse_id'] ?>">
-                                <?= htmlspecialchars($wh['warehouse_code']) ?> — <?= htmlspecialchars($wh['warehouse_name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="createUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Assigned Facility
+                        </label>
+                        <select name="warehouse_id" id="createUserWarehouse" class="select-filter" style="width: 100%;">
+                            <option value="">— Global / Unassigned —</option>
+                            <?php foreach ($warehousesList as $wh): ?>
+                                <option value="<?= (int)$wh['warehouse_id'] ?>">
+                                    <?= htmlspecialchars($wh['warehouse_code']) ?> — <?= htmlspecialchars($wh['warehouse_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="createUserEmpCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                            Central HR Employee Code <span style="color: var(--gray); font-weight: 400;">(Optional)</span>
+                        </label>
+                        <input type="text" name="employee_code" id="createUserEmpCode" class="search-box" style="width: 100%; padding-left: 12px;" maxlength="30" placeholder="e.g. EMP-0042 or 5">
+                    </div>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -921,6 +938,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
 
                 <div>
+                    <label for="editUserEmpCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Central HR Employee Code
+                    </label>
+                    <input type="text" name="employee_code" id="editUserEmpCode" class="search-box" style="width: 100%; padding-left: 12px;" maxlength="30" placeholder="e.g. EMP-0042 or 5">
+                </div>
+
+                <div>
                     <label for="editUserPassword" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Reset Password <span style="color: var(--gray); font-weight: 400;">(Leave blank to keep current password)</span>
                     </label>
@@ -958,6 +982,7 @@ function openEditUserModal(u) {
     document.getElementById('editUserStatus').value = u.status || 'active';
     document.getElementById('editUserTeam').value = u.team || 'Inventory';
     document.getElementById('editUserWarehouse').value = u.warehouse_id || '';
+    document.getElementById('editUserEmpCode').value = u.employee_code || '';
     document.getElementById('editUserPassword').value = '';
     const modal = document.getElementById('editUserModal');
     if (modal) {
@@ -1014,6 +1039,7 @@ function showUserDetails(userData) {
     document.getElementById('modalStatusText').innerText = userData.status.toUpperCase();
     document.getElementById('modalTeamText').innerText = userData.team;
     document.getElementById('modalFacilityText').innerText = userData.facility;
+    document.getElementById('modalEmployeeCodeText').innerText = userData.employee_code ? ('Emp #' + userData.employee_code) : 'None';
     document.getElementById('modalCreatedText').innerText = userData.created_at;
     const regenInput = document.getElementById('modalRegenerateUserId');
     if (regenInput) {

@@ -49,6 +49,7 @@ CREATE TABLE `users` (
   `role` ENUM('super_admin','admin') NOT NULL DEFAULT 'admin',
   `team` VARCHAR(50) DEFAULT NULL,
   `warehouse_id` INT(11) DEFAULT NULL,
+  `employee_code` VARCHAR(30) DEFAULT NULL,
   `api_token` VARCHAR(64) DEFAULT NULL,
   `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -58,6 +59,7 @@ CREATE TABLE `users` (
   UNIQUE KEY `uq_users_api_token` (`api_token`),
   KEY `idx_users_role` (`role`),
   KEY `idx_users_warehouse` (`warehouse_id`),
+  KEY `idx_users_employee_code` (`employee_code`),
   KEY `idx_users_status` (`status`),
   CONSTRAINT `fk_users_warehouse`
     FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`warehouse_id`)
@@ -73,29 +75,6 @@ CREATE TABLE `user_preferences` (
   CONSTRAINT `fk_user_preferences_user`
     FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
     ON UPDATE CASCADE ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `employees` (
-  `employee_id` INT(11) NOT NULL AUTO_INCREMENT,
-  `user_id` INT(11) DEFAULT NULL,
-  `employee_code` VARCHAR(20) NOT NULL,
-  `first_name` VARCHAR(50) NOT NULL,
-  `last_name` VARCHAR(50) NOT NULL,
-  `position` VARCHAR(50) NOT NULL,
-  `department` ENUM(
-    'Procurement','Inventory','Production','Sales',
-    'Finance','HR','Admin','Delivery'
-  ) NOT NULL,
-  `hire_date` DATE NOT NULL,
-  `status` ENUM('Active','Inactive','Resigned') DEFAULT 'Active',
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`employee_id`),
-  UNIQUE KEY `uq_employees_code` (`employee_code`),
-  KEY `idx_employees_user` (`user_id`),
-  KEY `idx_employees_department` (`department`),
-  CONSTRAINT `fk_emp_user`
-    FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
-    ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `items` (

@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/OrderService.php';
 require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -120,81 +121,157 @@ if ($method === 'GET') {
 
     jsonResponse(['success' => true, 'count' => count($orders), 'data' => $orders]);
 } elseif ($method === 'POST') {
-    if (!$isWhAdmin) {
-        jsonResponse([
-            'success' => false,
-            'error'   => 'Forbidden',
-            'detail'  => "Access Denied: Only Warehouse Inventory Administrators or Super Admin can execute physical outbound dispatch."
-        ], 403);
-    }
-
-    checkRateLimit('outbound_order_dispatch', 30, 60, $authUser['api_token']);
-
     $payload = getRequestJson();
+    $pdo = Database::getConnection();
 
-$pdo = Database::getConnection();
-$idempotencyKey = IdempotencyService::extractKey();
-if ($idempotencyKey) {
-    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/outbound.php', (string)$userId, $payload);
-    if (!$claim['claimed']) {
-        http_response_code($claim['response_code']);
-        echo $claim['response_body'];
-        exit;
-    }
-}
-    $orderId = (int)($payload['order_id'] ?? $payload['outbound_order_id'] ?? 0);
-    $orderNumber = trim($payload['order_number'] ?? '');
+    // Determine whether this request is physical dispatch or order document registration
+    $isDispatchAction = (
+        isset($payload['order_id']) || 
+        isset($payload['outbound_order_id']) || 
+        (isset($payload['action']) && $payload['action'] === 'dispatch')
+    );
 
-    if ($orderId <= 0 && $orderNumber !== '') {
-        $stmtFind = $pdo->prepare("SELECT outbound_order_id FROM outbound_orders WHERE order_number = ? LIMIT 1");
-        $stmtFind->execute([$orderNumber]);
-        $orderId = (int)($stmtFind->fetchColumn() ?: 0);
-    }
+    if ($isDispatchAction) {
+        // ---------------------------------------------------------------------
+        // 1. Process Physical Outbound Dispatch (Warehouse Admin / Super Admin)
+        // ---------------------------------------------------------------------
+        if (!$isWhAdmin) {
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Forbidden',
+                'detail'  => "Access Denied: Only Warehouse Inventory Administrators or Super Admin can execute physical outbound dispatch."
+            ], 403);
+        }
 
-    if ($orderId <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error: valid order_id or order_number is required.'], 400);
-    }
+        checkRateLimit('outbound_order_dispatch', 30, 60, $authUser['api_token']);
 
-    $rawQuantities = $payload['dispatched_quantities'] ?? $payload['items'] ?? [];
-    $dispatchedQuantities = [];
-
-    if (is_array($rawQuantities)) {
-        foreach ($rawQuantities as $k => $v) {
-            if (is_array($v)) {
-                $itemId = (int)($v['item_id'] ?? $v['material_id'] ?? $v['product_id'] ?? 0);
-                $qty = (float)($v['quantity'] ?? $v['dispatched_quantity'] ?? 0);
-                if ($itemId > 0 && $qty > 0) {
-                    $dispatchedQuantities[$itemId] = $qty;
-                }
-            } elseif (is_numeric($k) && is_numeric($v)) {
-                $dispatchedQuantities[(int)$k] = (float)$v;
+        $idempotencyKey = IdempotencyService::extractKey();
+        if ($idempotencyKey) {
+            $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/outbound.php', (string)$userId, $payload);
+            if (!$claim['claimed']) {
+                http_response_code($claim['response_code']);
+                echo $claim['response_body'];
+                exit;
             }
         }
-    }
 
-    if (empty($dispatchedQuantities)) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error: dispatched quantities are required ({item_id => quantity}).'], 400);
-    }
+        $orderId = (int)($payload['order_id'] ?? $payload['outbound_order_id'] ?? 0);
+        $orderNumber = trim($payload['order_number'] ?? '');
 
-    $remarks = isset($payload['remarks']) ? trim($payload['remarks']) : null;
+        if ($orderId <= 0 && $orderNumber !== '') {
+            $stmtFind = $pdo->prepare("SELECT outbound_order_id FROM outbound_orders WHERE order_number = ? LIMIT 1");
+            $stmtFind->execute([$orderNumber]);
+            $orderId = (int)($stmtFind->fetchColumn() ?: 0);
+        }
 
-    try {
-        $result = $service->dispatchOutboundOrder($orderId, $dispatchedQuantities, $userId, $remarks, $authUser);
-        jsonResponse([
-            'success' => true,
-            'message' => 'Outbound order items dispatched and deducted from inventory.',
-            'data'    => $result
-        ], 200);
-    } catch (DomainException $e) {
-    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
-        $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
-        jsonResponse(['success' => false, 'error' => $status === 403 ? 'Forbidden' : 'Conflict / Invalid State', 'detail' => $e->getMessage()], $status);
-    } catch (InvalidArgumentException $e) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error', 'detail' => $e->getMessage()], 422);
-    } catch (PDOException $e) {
-        handleDbException($e);
-    } catch (Throwable $e) {
-        jsonResponse(['success' => false, 'error' => 'Internal Server Error', 'detail' => $e->getMessage()], 500);
+        if ($orderId <= 0) {
+            jsonResponse(['success' => false, 'error' => 'Validation Error: valid order_id or order_number is required.'], 400);
+        }
+
+        $rawQuantities = $payload['dispatched_quantities'] ?? $payload['items'] ?? [];
+        $dispatchedQuantities = [];
+
+        if (is_array($rawQuantities)) {
+            foreach ($rawQuantities as $k => $v) {
+                if (is_array($v)) {
+                    $itemId = (int)($v['item_id'] ?? $v['material_id'] ?? $v['product_id'] ?? 0);
+                    $qty = (float)($v['quantity'] ?? $v['dispatched_quantity'] ?? 0);
+                    if ($itemId > 0 && $qty > 0) {
+                        $dispatchedQuantities[$itemId] = $qty;
+                    }
+                } elseif (is_numeric($k) && is_numeric($v)) {
+                    $dispatchedQuantities[(int)$k] = (float)$v;
+                }
+            }
+        }
+
+        if (empty($dispatchedQuantities)) {
+            jsonResponse(['success' => false, 'error' => 'Validation Error: dispatched quantities are required ({item_id => quantity}).'], 400);
+        }
+
+        $remarks = isset($payload['remarks']) ? trim($payload['remarks']) : null;
+
+        try {
+            $result = $service->dispatchOutboundOrder($orderId, $dispatchedQuantities, $userId, $remarks, $authUser);
+            $response = [
+                'success' => true,
+                'message' => 'Outbound order items dispatched and deducted from inventory.',
+                'data'    => $result
+            ];
+
+            if ($idempotencyKey) {
+                IdempotencyService::store($pdo, $idempotencyKey, 'api/orders/outbound.php', (string)$userId, $payload, 200, $response);
+            }
+
+            jsonResponse($response, 200);
+        } catch (DomainException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
+            jsonResponse(['success' => false, 'error' => $status === 403 ? 'Forbidden' : 'Conflict / Invalid State', 'detail' => $e->getMessage()], $status);
+        } catch (InvalidArgumentException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            jsonResponse(['success' => false, 'error' => 'Validation Error', 'detail' => $e->getMessage()], 422);
+        } catch (PDOException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            handleDbException($e);
+        } catch (Throwable $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            jsonResponse(['success' => false, 'error' => 'Internal Server Error', 'detail' => $e->getMessage()], 500);
+        }
+    } else {
+        // ---------------------------------------------------------------------
+        // 2. Register Outbound Order (Sales Delivery, Material Request, Return)
+        // ---------------------------------------------------------------------
+        checkRateLimit('outbound_order_create', 30, 60, $authUser['api_token']);
+
+        $idempotencyKey = IdempotencyService::extractKey();
+        if ($idempotencyKey) {
+            $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/outbound.php', (string)$userId, $payload);
+            if (!$claim['claimed']) {
+                http_response_code($claim['response_code']);
+                echo $claim['response_body'];
+                exit;
+            }
+        }
+
+        $orderService = new OrderService($pdo);
+
+        try {
+            $result = $orderService->createOutboundOrder($payload, $authUser);
+
+            if ($idempotencyKey) {
+                IdempotencyService::store($pdo, $idempotencyKey, 'api/orders/outbound.php', (string)$userId, $payload, 201, $result);
+            }
+
+            jsonResponse($result, 201);
+        } catch (InvalidArgumentException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Bad Request',
+                'detail'  => $e->getMessage()
+            ], 400);
+        } catch (DomainException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            $code = str_contains($e->getMessage(), 'already exists') ? 409 : 403;
+            $errTitle = ($code === 409) ? 'Conflict' : 'Forbidden';
+            jsonResponse([
+                'success' => false,
+                'error'   => $errTitle,
+                'detail'  => $e->getMessage()
+            ], $code);
+        } catch (PDOException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            handleDbException($e);
+        } catch (Throwable $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/outbound.php'); }
+            error_log("Outbound order creation error: " . $e->getMessage());
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Internal Server Error',
+                'detail'  => $e->getMessage()
+            ], 500);
+        }
     }
 } else {
     jsonResponse(['success' => false, 'error' => 'Method Not Allowed. Use GET or POST.'], 405);

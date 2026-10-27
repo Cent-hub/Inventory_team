@@ -20,23 +20,37 @@ class LowSeverityImprovementsTest extends TestCase {
         $this->testNoDuplicateCssImports();
         $this->testQuantityCommaHandling();
         $this->testAudioContextLeakPrevention();
+        $this->testAutocompleteComponentConsolidation();
 
         return $this->getAggregateResult();
     }
 
     /**
-     * F-33: Verify private HR data columns were dropped from employees table
+     * F-33: Verify Central HR integration schema — legacy employees table retired/dropped,
+     * employee_code column added to users table, and sensitive HR data eliminated from Inventory.
      */
     protected function testHrPrivacySchema(): void {
-        $stmt = $this->pdo->query("SHOW COLUMNS FROM employees");
-        $columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $empTable = $this->pdo->query("SHOW TABLES LIKE 'employees'")->fetchAll();
+        $this->assertTrue(
+            empty($empTable),
+            "F-33: Legacy employees table must be dropped (Central HR is the single source of truth)",
+            "employees table retired"
+        );
 
+        $cols = $this->pdo->query("SHOW COLUMNS FROM users LIKE 'employee_code'")->fetchAll();
+        $this->assertTrue(
+            !empty($cols),
+            "F-33: users table must contain employee_code column for Central HR integration",
+            "users.employee_code exists"
+        );
+
+        $userCols = $this->pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
         $sensitiveCols = ['basic_salary', 'sss_no', 'philhealth_no', 'pagibig_no', 'birthdate'];
         foreach ($sensitiveCols as $col) {
             $this->assertTrue(
-                !in_array($col, $columns, true),
-                "F-33: Sensitive HR column '{$col}' must not exist in Inventory employees table",
-                "employees schema privacy"
+                !in_array($col, $userCols, true),
+                "F-33: Sensitive HR column '{$col}' must not exist in Inventory users table",
+                "users schema privacy"
             );
         }
     }
@@ -146,6 +160,42 @@ class LowSeverityImprovementsTest extends TestCase {
             strpos($footerView, 'window._appAudioContext') !== false,
             "F-43: footer.php must use a singleton window._appAudioContext to avoid browser audio context exhaustion",
             "AudioContext leak prevention"
+        );
+    }
+
+    /**
+     * CLN-09: Verify Item Autocomplete search dropdown logic is consolidated into stockpilot_utils.js
+     */
+    protected function testAutocompleteComponentConsolidation(): void {
+        $utilsJs = file_get_contents(__DIR__ . '/../../assets/js/stockpilot_utils.js');
+        $this->assertTrue(
+            strpos($utilsJs, 'initItemAutocomplete') !== false,
+            "CLN-09: stockpilot_utils.js must export initItemAutocomplete component",
+            "stockpilot_utils.js initItemAutocomplete"
+        );
+
+        $stockCardView = file_get_contents(__DIR__ . '/../../views/inventory/stock_card.php');
+        $this->assertTrue(
+            strpos($stockCardView, 'StockPilot.initItemAutocomplete') !== false,
+            "CLN-09: stock_card.php must initialize shared StockPilot.initItemAutocomplete",
+            "stock_card.php uses shared autocomplete"
+        );
+        $this->assertTrue(
+            strpos($stockCardView, 'function renderItemDropdown') === false,
+            "CLN-09: stock_card.php must not contain duplicate renderItemDropdown definition",
+            "stock_card.php deduplicated"
+        );
+
+        $stockOpsView = file_get_contents(__DIR__ . '/../../views/stock_operations/index.php');
+        $this->assertTrue(
+            strpos($stockOpsView, 'StockPilot.initItemAutocomplete') !== false,
+            "CLN-09: stock_operations/index.php must initialize shared StockPilot.initItemAutocomplete",
+            "stock_operations/index.php uses shared autocomplete"
+        );
+        $this->assertTrue(
+            strpos($stockOpsView, 'function renderItemDropdown') === false,
+            "CLN-09: stock_operations/index.php must not contain duplicate renderItemDropdown definition",
+            "stock_operations/index.php deduplicated"
         );
     }
 }

@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../helpers/response.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/rate_limiter.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/OrderService.php';
 require_once __DIR__ . '/../../helpers/idempotency.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -120,82 +121,158 @@ if ($method === 'GET') {
 
     jsonResponse(['success' => true, 'count' => count($orders), 'data' => $orders]);
 } elseif ($method === 'POST') {
-    if (!$isWhAdmin) {
-        jsonResponse([
-            'success' => false,
-            'error'   => 'Forbidden',
-            'detail'  => "Access Denied: Only Warehouse Inventory Administrators or Super Admin can execute physical dock receiving."
-        ], 403);
-    }
-
-    checkRateLimit('inbound_order_receive', 30, 60, $authUser['api_token']);
-
     $payload = getRequestJson();
+    $pdo = Database::getConnection();
 
-$pdo = Database::getConnection();
-$idempotencyKey = IdempotencyService::extractKey();
-if ($idempotencyKey) {
-    $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload);
-    if (!$claim['claimed']) {
-        http_response_code($claim['response_code']);
-        echo $claim['response_body'];
-        exit;
-    }
-}
-    $orderId = (int)($payload['order_id'] ?? $payload['inbound_order_id'] ?? 0);
-    $orderNumber = trim($payload['order_number'] ?? '');
+    // Determine whether this request is physical receiving or order document registration
+    $isReceiveAction = (
+        isset($payload['order_id']) || 
+        isset($payload['inbound_order_id']) || 
+        (isset($payload['action']) && $payload['action'] === 'receive')
+    );
 
-    if ($orderId <= 0 && $orderNumber !== '') {
-        $stmtFind = $pdo->prepare("SELECT inbound_order_id FROM inbound_orders WHERE order_number = ? LIMIT 1");
-        $stmtFind->execute([$orderNumber]);
-        $orderId = (int)($stmtFind->fetchColumn() ?: 0);
-    }
+    if ($isReceiveAction) {
+        // ---------------------------------------------------------------------
+        // 1. Process Physical Inbound Receiving (Warehouse Admin / Super Admin)
+        // ---------------------------------------------------------------------
+        if (!$isWhAdmin) {
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Forbidden',
+                'detail'  => "Access Denied: Only Warehouse Inventory Administrators or Super Admin can execute physical dock receiving."
+            ], 403);
+        }
 
-    if ($orderId <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error: valid order_id or order_number is required.'], 400);
-    }
+        checkRateLimit('inbound_order_receive', 30, 60, $authUser['api_token']);
 
-    $rawQuantities = $payload['received_quantities'] ?? $payload['items'] ?? [];
-    $receivedQuantities = [];
-
-    if (is_array($rawQuantities)) {
-        foreach ($rawQuantities as $k => $v) {
-            if (is_array($v)) {
-                $itemId = (int)($v['item_id'] ?? $v['material_id'] ?? $v['product_id'] ?? 0);
-                $qty = (float)($v['quantity'] ?? $v['received_quantity'] ?? 0);
-                if ($itemId > 0 && $qty > 0) {
-                    $receivedQuantities[$itemId] = $qty;
-                }
-            } elseif (is_numeric($k) && is_numeric($v)) {
-                $receivedQuantities[(int)$k] = (float)$v;
+        $idempotencyKey = IdempotencyService::extractKey();
+        if ($idempotencyKey) {
+            $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload);
+            if (!$claim['claimed']) {
+                http_response_code($claim['response_code']);
+                echo $claim['response_body'];
+                exit;
             }
         }
-    }
 
-    if (empty($receivedQuantities)) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error: received quantities are required ({item_id => quantity}).'], 400);
-    }
+        $orderId = (int)($payload['order_id'] ?? $payload['inbound_order_id'] ?? 0);
+        $orderNumber = trim($payload['order_number'] ?? '');
 
-    $remarks = isset($payload['remarks']) ? trim($payload['remarks']) : null;
-    $condition = isset($payload['condition']) ? strtolower(trim($payload['condition'])) : 'salable';
+        if ($orderId <= 0 && $orderNumber !== '') {
+            $stmtFind = $pdo->prepare("SELECT inbound_order_id FROM inbound_orders WHERE order_number = ? LIMIT 1");
+            $stmtFind->execute([$orderNumber]);
+            $orderId = (int)($stmtFind->fetchColumn() ?: 0);
+        }
 
-    try {
-        $result = $service->receiveInboundOrder($orderId, $receivedQuantities, $userId, $remarks, $authUser, $condition);
-        jsonResponse([
-            'success' => true,
-            'message' => 'Inbound order items received and posted to inventory ledger.',
-            'data'    => $result
-        ], 200);
-    } catch (DomainException $e) {
-    if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
-        $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
-        jsonResponse(['success' => false, 'error' => $status === 403 ? 'Forbidden' : 'Conflict / Invalid State', 'detail' => $e->getMessage()], $status);
-    } catch (InvalidArgumentException $e) {
-        jsonResponse(['success' => false, 'error' => 'Validation Error', 'detail' => $e->getMessage()], 422);
-    } catch (PDOException $e) {
-        handleDbException($e);
-    } catch (Throwable $e) {
-        jsonResponse(['success' => false, 'error' => 'Internal Server Error', 'detail' => $e->getMessage()], 500);
+        if ($orderId <= 0) {
+            jsonResponse(['success' => false, 'error' => 'Validation Error: valid order_id or order_number is required.'], 400);
+        }
+
+        $rawQuantities = $payload['received_quantities'] ?? $payload['items'] ?? [];
+        $receivedQuantities = [];
+
+        if (is_array($rawQuantities)) {
+            foreach ($rawQuantities as $k => $v) {
+                if (is_array($v)) {
+                    $itemId = (int)($v['item_id'] ?? $v['material_id'] ?? $v['product_id'] ?? 0);
+                    $qty = (float)($v['quantity'] ?? $v['received_quantity'] ?? 0);
+                    if ($itemId > 0 && $qty > 0) {
+                        $receivedQuantities[$itemId] = $qty;
+                    }
+                } elseif (is_numeric($k) && is_numeric($v)) {
+                    $receivedQuantities[(int)$k] = (float)$v;
+                }
+            }
+        }
+
+        if (empty($receivedQuantities)) {
+            jsonResponse(['success' => false, 'error' => 'Validation Error: received quantities are required ({item_id => quantity}).'], 400);
+        }
+
+        $remarks = isset($payload['remarks']) ? trim($payload['remarks']) : null;
+        $condition = isset($payload['condition']) ? strtolower(trim($payload['condition'])) : 'salable';
+
+        try {
+            $result = $service->receiveInboundOrder($orderId, $receivedQuantities, $userId, $remarks, $authUser, $condition);
+            $response = [
+                'success' => true,
+                'message' => 'Inbound order items received and posted to inventory ledger.',
+                'data'    => $result
+            ];
+
+            if ($idempotencyKey) {
+                IdempotencyService::store($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload, 200, $response);
+            }
+
+            jsonResponse($response, 200);
+        } catch (DomainException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            $status = str_contains($e->getMessage(), 'Access Denied') ? 403 : 409;
+            jsonResponse(['success' => false, 'error' => $status === 403 ? 'Forbidden' : 'Conflict / Invalid State', 'detail' => $e->getMessage()], $status);
+        } catch (InvalidArgumentException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            jsonResponse(['success' => false, 'error' => 'Validation Error', 'detail' => $e->getMessage()], 422);
+        } catch (PDOException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            handleDbException($e);
+        } catch (Throwable $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            jsonResponse(['success' => false, 'error' => 'Internal Server Error', 'detail' => $e->getMessage()], 500);
+        }
+    } else {
+        // ---------------------------------------------------------------------
+        // 2. Register Inbound Order (Purchase Order, Production Receipt, or RMA)
+        // ---------------------------------------------------------------------
+        checkRateLimit('inbound_order_create', 30, 60, $authUser['api_token']);
+
+        $idempotencyKey = IdempotencyService::extractKey();
+        if ($idempotencyKey) {
+            $claim = IdempotencyService::claim($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload);
+            if (!$claim['claimed']) {
+                http_response_code($claim['response_code']);
+                echo $claim['response_body'];
+                exit;
+            }
+        }
+
+        $orderService = new OrderService($pdo);
+
+        try {
+            $result = $orderService->createInboundOrder($payload, $authUser);
+
+            if ($idempotencyKey) {
+                IdempotencyService::store($pdo, $idempotencyKey, 'api/orders/inbound.php', (string)$userId, $payload, 201, $result);
+            }
+
+            jsonResponse($result, 201);
+        } catch (InvalidArgumentException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Bad Request',
+                'detail'  => $e->getMessage()
+            ], 400);
+        } catch (DomainException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            $code = str_contains($e->getMessage(), 'already exists') ? 409 : 403;
+            $errTitle = ($code === 409) ? 'Conflict' : 'Forbidden';
+            jsonResponse([
+                'success' => false,
+                'error'   => $errTitle,
+                'detail'  => $e->getMessage()
+            ], $code);
+        } catch (PDOException $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            handleDbException($e);
+        } catch (Throwable $e) {
+            if (!empty($idempotencyKey)) { IdempotencyService::release($pdo, $idempotencyKey, 'api/orders/inbound.php'); }
+            error_log("Inbound order creation error: " . $e->getMessage());
+            jsonResponse([
+                'success' => false,
+                'error'   => 'Internal Server Error',
+                'detail'  => $e->getMessage()
+            ], 500);
+        }
     }
 } else {
     jsonResponse(['success' => false, 'error' => 'Method Not Allowed. Use GET or POST.'], 405);

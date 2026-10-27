@@ -5,17 +5,15 @@
  * Refactored under F-22 & F-35 via NotificationService
  */
 
+require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/NotificationService.php';
 
-if (!function_exists('getNotificationTimeAgo')) {
-    function getNotificationTimeAgo($datetime) {
-        return NotificationService::getTimeAgo($datetime);
-    }
-}
-
-if (!function_exists('getNotificationCategory')) {
-    function getNotificationCategory($datetime, $isRead = false) {
-        return NotificationService::getCategory($datetime, $isRead);
+// Ensure database connection is initialized defensively
+if (!isset($pdo) || !($pdo instanceof PDO)) {
+    try {
+        $pdo = Database::getConnection();
+    } catch (Throwable $e) {
+        $pdo = null;
     }
 }
 
@@ -33,15 +31,20 @@ if (!empty($_COOKIE['inventory_read_notifications'])) {
 
 if (!isset($notificationList) || !is_array($notificationList)) {
     try {
-        $feed = NotificationService::getFeed(
-            $pdo,
-            (int)($currentWarehouseId ?? 1),
-            $currentUser ?? [],
-            $readNotificationIds,
-            defined('BASE_URL') ? BASE_URL : ''
-        );
-        $notificationList = $feed['notifications'];
-        $unreadNotificationsCount = $feed['unread_count'];
+        if ($pdo instanceof PDO) {
+            $feed = NotificationService::getFeed(
+                $pdo,
+                (int)($currentWarehouseId ?? 1),
+                $currentUser ?? [],
+                $readNotificationIds,
+                defined('BASE_URL') ? BASE_URL : ''
+            );
+            $notificationList = $feed['notifications'];
+            $unreadNotificationsCount = $feed['unread_count'];
+        } else {
+            $notificationList = [];
+            $unreadNotificationsCount = 0;
+        }
     } catch (Throwable $e) {
         $notificationList = [];
         $unreadNotificationsCount = 0;
@@ -86,10 +89,12 @@ foreach ($notificationList as $notifItem) {
 ?>
 <?php if (!empty($isAuthorizedForMultiWarehouse)): 
     $headerWarehouses = [];
-    try {
-        $headerWarehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        $headerWarehouses = [];
+    if ($pdo instanceof PDO) {
+        try {
+            $headerWarehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $headerWarehouses = [];
+        }
     }
     if (count($headerWarehouses) > 1):
 ?>
@@ -324,7 +329,7 @@ foreach ($notificationList as $notifItem) {
 
         <div class="notif-footer">
             <span style="color: #64748B;">Liquor Inventory Alerts</span>
-            <a href="<?= BASE_URL ?>views/inbound_outbound/index.php">Manage Stock &rarr;</a>
+            <a href="<?= htmlspecialchars(defined('BASE_URL') ? BASE_URL : '') ?>views/inbound_outbound/index.php">Manage Stock &rarr;</a>
         </div>
     </div>
 </div>
