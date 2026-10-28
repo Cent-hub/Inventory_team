@@ -755,13 +755,8 @@ function toggleSidebar() {
     toggleMobileSidebar();
 }
 
-// Shared HTML-escaping helper used across modals and dynamic table renders
-window.escapeHtml = window.escapeHtml || function(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-    });
-};
+// Shared HTML-escaping helper (delegates to StockPilot utility in stockpilot_utils.js)
+window.escapeHtml = window.escapeHtml || (window.StockPilot && window.StockPilot.escapeHtml);
 
 // Universal Client-side Table Filter with Pagination Integration
 function filterTable(inputId, tableId) {

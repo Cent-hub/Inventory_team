@@ -579,6 +579,12 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     Document-driven receiving: Select an open PO, Production Batch, or Customer RMA return to verify and accept into stock
                 </p>
             </div>
+            <div>
+                <button type="button" class="btn btn-primary" onclick="openRecordStockInModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>Manual Stock In</span>
+                </button>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -986,6 +992,12 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 <p class="card-desc" style="margin: 4px 0 0 0;">
                     Document-driven fulfillment: Select an approved Sales Order, Material Requisition, or Return to Vendor (RTV) to pack and ship
                 </p>
+            </div>
+            <div>
+                <button type="button" class="btn btn-primary" onclick="openRecordStockOutModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>Manual Stock Out</span>
+                </button>
             </div>
         </div>
 
@@ -1899,12 +1911,14 @@ function switchStockTab(tabName) {
     url.searchParams.set('tab', tabName);
     window.history.replaceState({ tab: tabName }, '', url.toString());
 
-    // Trigger pagination re-calculation for the newly visible table
-    const activeTable = (tabName === 'inbound') 
-        ? document.getElementById('stockInTable') 
-        : document.getElementById('stockOutTable');
-    if (activeTable && typeof activeTable.paginationUpdate === 'function') {
-        activeTable.paginationUpdate(false);
+    // Trigger pagination re-calculation for all tables in the newly visible tab pane
+    const activePane = document.getElementById('pane-' + tabName);
+    if (activePane) {
+        activePane.querySelectorAll('table').forEach(tbl => {
+            if (typeof tbl.paginationUpdate === 'function') {
+                tbl.paginationUpdate(false);
+            }
+        });
     }
 }
 

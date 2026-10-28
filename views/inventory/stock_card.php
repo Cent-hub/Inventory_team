@@ -15,7 +15,7 @@ $queryString = !empty($_SERVER['QUERY_STRING']) ? ('&' . $_SERVER['QUERY_STRING'
 $targetUrl = "{$projectRoot}/views/stock_operations/index.php?tab=stock_card{$queryString}";
 
 if (!headers_sent()) {
-    header("Location: {$targetUrl}");
+    header("Location: {$targetUrl}", true, 301);
     exit;
 }
 

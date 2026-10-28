@@ -2194,6 +2194,16 @@ function switchStockTab(tabName) {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tabName);
     window.history.replaceState({}, '', url.toString());
+
+    // Trigger pagination re-calculation for newly visible tables in active pane
+    const activePane = document.getElementById('pane-' + tabName);
+    if (activePane) {
+        activePane.querySelectorAll('table').forEach(tbl => {
+            if (typeof tbl.paginationUpdate === 'function') {
+                tbl.paginationUpdate(false);
+            }
+        });
+    }
 }
 
 // -----------------------------------------------------------------------------

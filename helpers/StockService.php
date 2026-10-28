@@ -795,7 +795,10 @@ class StockService {
         $stmtOrder = $this->pdo->prepare("SELECT * FROM outbound_orders WHERE outbound_order_id = ? FOR UPDATE");
         $stmtItems = $this->pdo->prepare("SELECT * FROM outbound_order_items WHERE outbound_order_id = ?");
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmtOrder->execute([$orderId]);
             $order = $stmtOrder->fetch(PDO::FETCH_ASSOC);
@@ -880,7 +883,9 @@ class StockService {
                 true
             );
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'success'            => true,
@@ -890,7 +895,7 @@ class StockService {
                 'items_dispatched'   => $itemsToDispatch
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -1509,7 +1514,7 @@ class StockService {
                 // F-14: If stock out is linked to an outbound_orders entry, revert dispatched_quantity and status
                 $outOrderNum = $bm['reference_number'] ?? '';
                 if (!empty($outOrderNum)) {
-                    $stmtFindOutOrder = $this->pdo->prepare("SELECT outbound_order_id, status FROM outbound_orders WHERE order_number = ? LIMIT 1");
+                    $stmtFindOutOrder = $this->pdo->prepare("SELECT outbound_order_id, status, warehouse_id FROM outbound_orders WHERE order_number = ? LIMIT 1");
                     $stmtFindOutOrder->execute([$outOrderNum]);
                     $outOrd = $stmtFindOutOrder->fetch(PDO::FETCH_ASSOC);
                     if ($outOrd) {
@@ -1529,6 +1534,10 @@ class StockService {
 
                         $stmtUpdOrd = $this->pdo->prepare("UPDATE outbound_orders SET status = ?, updated_at = NOW() WHERE outbound_order_id = ?");
                         $stmtUpdOrd->execute([$newOrdStatus, $ordId]);
+
+                        // Restore reserved stock balance for the un-dispatched portion of the order
+                        $stmtRestoreRes = $this->pdo->prepare("UPDATE stock SET qty_reserved = qty_reserved + ? WHERE item_id = ? AND warehouse_id = ?");
+                        $stmtRestoreRes->execute([$qty, $itemId, (int)$outOrd['warehouse_id']]);
                     }
                 }
 
@@ -1614,7 +1623,10 @@ class StockService {
             $whMap[(int)$w['warehouse_id']] = $w;
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $items = self::sortItemsById($items); // F-31 in recordStockTransfer
             $txnNumber = 'TRF-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
@@ -1751,7 +1763,9 @@ class StockService {
                 ]);
             }
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_transfer_id'        => $firstTransferId,
@@ -1763,7 +1777,7 @@ class StockService {
                 'items'                    => $processedItems
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -1781,7 +1795,10 @@ class StockService {
             throw new InvalidArgumentException("Invalid user ID.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("
                 SELECT st.*, 
@@ -1874,7 +1891,9 @@ class StockService {
                 'notes'                    => "Stock transfer delivery confirmed and received into {$txn['dest_warehouse_name']} from {$txn['source_warehouse_name']}"
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_transfer_id'     => $stockTransferId,
@@ -1893,7 +1912,7 @@ class StockService {
                 ]]
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -1915,7 +1934,10 @@ class StockService {
             throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("
                 SELECT st.*, 
@@ -1996,7 +2018,9 @@ class StockService {
                 'notes'            => "Transfer cancelled: " . $cancellationReason
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_transfer_id'  => $stockTransferId,
@@ -2005,7 +2029,7 @@ class StockService {
                 'cancellation_reason'=> $cancellationReason
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2329,7 +2353,10 @@ class StockService {
             throw new InvalidArgumentException("Active warehouse with ID {$warehouseId} not found.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $items = self::sortItemsById($items); // F-31 in recordStockAdjustment
             $txnNumber = 'ADJ-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
@@ -2429,7 +2456,9 @@ class StockService {
                 ]);
             }
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_adjustment_id' => $firstAdjId,
@@ -2443,7 +2472,7 @@ class StockService {
                 'items'               => $processedItems
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2458,7 +2487,10 @@ class StockService {
             throw new InvalidArgumentException("Invalid adjustment ID.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("
                 SELECT sa.*, i.code AS item_code, i.name AS item_name, i.unit, w.name AS warehouse_name
@@ -2563,7 +2595,9 @@ class StockService {
                 'notes'            => "Adjustment approved: " . $adj['reason']
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_adjustment_id' => $adjustmentId,
@@ -2572,7 +2606,7 @@ class StockService {
                 'difference'          => $diff
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2591,7 +2625,10 @@ class StockService {
             throw new InvalidArgumentException("A rejection reason is required.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             if (!$authUser && $userId > 0) {
                 $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
@@ -2632,7 +2669,9 @@ class StockService {
                 'notes'            => "Adjustment rejected: " . $reason
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_adjustment_id' => $adjustmentId,
@@ -2640,7 +2679,7 @@ class StockService {
                 'status'              => 'rejected'
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2663,7 +2702,10 @@ class StockService {
             throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             if (!$authUser && $userId > 0) {
                 $stmtU = $this->pdo->prepare("SELECT role, team, warehouse_id FROM users WHERE user_id = ?");
@@ -2751,7 +2793,9 @@ class StockService {
                 'notes'            => "Adjustment ({$priorStatus}) cancelled: " . $reason
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'stock_adjustment_id' => $adjustmentId,
@@ -2762,7 +2806,7 @@ class StockService {
                 'balance_after'       => $newBalance
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -2968,7 +3012,10 @@ class StockService {
             throw new InvalidArgumentException("Cancellation reason cannot exceed 255 characters.");
         }
 
-        $this->pdo->beginTransaction();
+        $isRootTxn = !$this->pdo->inTransaction();
+        if ($isRootTxn) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare("SELECT * FROM bad_products WHERE bad_product_id = ? FOR UPDATE");
             $stmt->execute([$badProductId]);
@@ -3035,7 +3082,9 @@ class StockService {
                 'notes'            => "Defect write-off cancelled: " . $reason
             ]);
 
-            $this->pdo->commit();
+            if ($isRootTxn) {
+                $this->pdo->commit();
+            }
 
             return [
                 'bad_product_id'     => $badProductId,
@@ -3043,7 +3092,7 @@ class StockService {
                 'status'             => 'cancelled'
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($isRootTxn && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -3183,6 +3232,9 @@ class StockService {
             }
             if ($bp['status'] === 'cancelled') {
                 throw new DomainException("Cannot dispose cancelled bad product record #{$badProductId}.");
+            }
+            if ($bp['status'] !== 'confirmed') {
+                throw new DomainException("Cannot dispose bad product record #{$badProductId}: Current status is '{$bp['status']}'. It must be inspected and confirmed by a QC Supervisor before disposal.");
             }
 
             if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {

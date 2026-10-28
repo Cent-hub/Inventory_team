@@ -35,6 +35,7 @@ require_once __DIR__ . '/inventory/ItemApprovalWorkflowTest.php';
 require_once __DIR__ . '/orders/OrderCreationTest.php';
 require_once __DIR__ . '/medium/MediumDefectsTest.php';
 require_once __DIR__ . '/low/LowSeverityImprovementsTest.php';
+require_once __DIR__ . '/integration/MultiSystemIntegrationTest.php';
 
 $runner = new TestRunner();
 $pdo = $runner->getPdo();
@@ -58,6 +59,7 @@ $runner->registerTest(new ItemApprovalWorkflowTest($pdo));
 $runner->registerTest(new OrderCreationTest($pdo));
 $runner->registerTest(new MediumDefectsTest($pdo));
 $runner->registerTest(new LowSeverityImprovementsTest($pdo));
+$runner->registerTest(new MultiSystemIntegrationTest($pdo));
 
 $allPassed = $runner->runAll();
 

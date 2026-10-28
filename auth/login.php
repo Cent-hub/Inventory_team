@@ -990,34 +990,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         document.body.style.overflow = '';
     }
 
-    function handleSimulateLoginSupportSend() {
+    async function handleSimulateLoginSupportSend() {
         const btn = document.getElementById('btn-submit-login-support');
         const btnText = document.getElementById('text-login-support-btn');
         const feedback = document.getElementById('login-support-feedback');
+        const emailInput = document.getElementById('login-support-email');
+        const categoryInput = document.getElementById('login-support-category');
+        const subjectInput = document.getElementById('login-support-subject');
+        const messageInput = document.getElementById('login-support-message');
+
+        const email = emailInput ? emailInput.value.trim() : '';
+        const category = categoryInput ? categoryInput.value : 'general';
+        const subject = subjectInput ? subjectInput.value.trim() : '';
+        const message = messageInput ? messageInput.value.trim() : '';
+
+        if (!email || !subject || !message) {
+            alert('Please fill in your email address, subject, and message.');
+            return;
+        }
 
         if (btn && btnText) {
             btn.disabled = true;
             btnText.textContent = 'Sending...';
         }
 
-        setTimeout(() => {
+        try {
+            const res = await fetch('<?= BASE_URL ?>api/auth/login_support.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ email, category, subject, message })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                if (feedback) {
+                    const textEl = feedback.querySelector('div div:last-child div:first-child');
+                    const subTextEl = feedback.querySelector('div div:last-child div:last-child');
+                    if (textEl) textEl.textContent = 'Message Dispatched Successfully';
+                    if (subTextEl) subTextEl.textContent = data.message || 'Your inquiry has been logged in the system audit log.';
+                    feedback.style.display = 'block';
+                    feedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+                if (subjectInput) subjectInput.value = '';
+                if (messageInput) messageInput.value = '';
+                setTimeout(() => {
+                    closeLoginSupportModal();
+                }, 3500);
+            } else {
+                alert(data.message || 'Failed to submit support inquiry. Please try again.');
+            }
+        } catch (err) {
+            console.error('Support submission error:', err);
+            alert('A network error occurred while sending your support inquiry. Please try again.');
+        } finally {
             if (btn && btnText) {
                 btn.disabled = false;
                 btnText.textContent = 'Send Message';
             }
-            if (feedback) {
-                feedback.style.display = 'block';
-                feedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-            const subject = document.getElementById('login-support-subject');
-            const message = document.getElementById('login-support-message');
-            if (subject) subject.value = '';
-            if (message) message.value = '';
-
-            setTimeout(() => {
-                closeLoginSupportModal();
-            }, 3000);
-        }, 600);
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -786,7 +786,8 @@ class AuthController {
         $headers = "From: no-reply@inventory.local\r\nReply-To: no-reply@inventory.local\r\nX-Mailer: PHP/" . phpversion();
         $sent = @mail($email, $subject, $body, $headers);
         if (!$sent) {
-            error_log("OTP delivery fallback: [{$type}] verification code for {$email} is [{$code}] (system mailer unavailable).");
+            // SEC-05: Redact plaintext OTP verification codes from server error logs
+            error_log("OTP delivery notice: [{$type}] verification email could not be sent to {$email} (system mailer unavailable).");
         }
         return $sent;
     }

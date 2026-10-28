@@ -50,13 +50,10 @@ function handleCors(): void {
     if (!empty($origin) && isAllowedOrigin($origin)) {
         header("Access-Control-Allow-Origin: {$origin}");
         header("Access-Control-Allow-Credentials: true");
-    } else {
-        // Disallow arbitrary cross-origin credentials reflection
-        header("Access-Control-Allow-Origin: null");
     }
 
     header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, X-Requested-With, Origin, Accept");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, X-Requested-With, Origin, Accept, Idempotency-Key, X-Idempotency-Key, X-CSRF-Token");
     header("Access-Control-Max-Age: 86400");
 
     // Intercept HTTP OPTIONS preflight request

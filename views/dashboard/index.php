@@ -107,26 +107,8 @@ $stmtRecent = $pdo->prepare("
         sm.movement_id,
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT(sm.movement_type, ' #', sm.movement_id)) AS reference_number,
-        CASE 
-            WHEN COALESCE(sm.quantity_delta, CASE
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity)
-                WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity)
-                ELSE 0
-            END) > 0 THEN ABS(COALESCE(sm.quantity_delta, sa.difference, sm.quantity))
-            ELSE 0 
-        END AS quantity_in,
-        CASE 
-            WHEN COALESCE(sm.quantity_delta, CASE
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity
-                WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity)
-                WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity)
-                ELSE 0
-            END) < 0 THEN ABS(COALESCE(sm.quantity_delta, sa.difference, sm.quantity))
-            ELSE 0 
-        END AS quantity_out,
+        CASE WHEN COALESCE(sm.quantity_delta, 0) > 0 THEN sm.quantity_delta ELSE 0 END AS quantity_in,
+        CASE WHEN COALESCE(sm.quantity_delta, 0) < 0 THEN ABS(sm.quantity_delta) ELSE 0 END AS quantity_out,
         COALESCE(sm.balance_after, 0) AS balance_after,
         sm.created_at,
         i.code AS item_code,
@@ -138,7 +120,6 @@ $stmtRecent = $pdo->prepare("
     FROM stock_movements sm
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
-    LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
     WHERE sm.warehouse_id = :wid
       AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC

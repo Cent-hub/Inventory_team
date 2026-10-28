@@ -15,9 +15,21 @@ if (!$auth->isAuthenticated()) {
 $currentUser = $auth->getCurrentUser();
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
-$pageTitle   = $isSuperAdmin ? 'Users & Accounts — InventoryTeam' : 'My Account — InventoryTeam';
-$activePage  = $isSuperAdmin ? 'users' : 'settings';
-$activeGroup = $isSuperAdmin ? 'users' : 'settings';
+// SEC-01: Enforce Super Admin authorization for User Directory & Account Administration
+if (!$isSuperAdmin) {
+    http_response_code(403);
+    $deniedDetail = 'Access Denied: Only Super Administrators are authorized to view or manage the User Directory and Account Administration.';
+    if (file_exists(__DIR__ . '/../errors/403.php')) {
+        require_once __DIR__ . '/../errors/403.php';
+    } else {
+        echo "<h1>403 Forbidden</h1><p>Access Denied: Only Super Administrators can view or manage the User Directory.</p>";
+    }
+    exit;
+}
+
+$pageTitle   = 'Users & Accounts — InventoryTeam';
+$activePage  = 'users';
+$activeGroup = 'users';
 
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
