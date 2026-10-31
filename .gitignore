@@ -15,8 +15,10 @@ desktop.ini
 # Logs
 *.log
 
-# Database Backups
+# Database Backups & Dumps
 database/*backup*.sql
+database/MergedCentral.sql
+database/Merged*.sql
 
 # Environment & Secrets
 .env

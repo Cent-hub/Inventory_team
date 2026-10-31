@@ -72,9 +72,9 @@ $sql = "
         i.unit,
         COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level,
         CASE 
-            WHEN i.type = 'raw_material' THEN 'Raw Materials'
-            WHEN i.type = 'finished_good' THEN 'Finished Goods'
-            WHEN i.type = 'packaging' THEN 'Packaging'
+            WHEN i.type IN ('raw_material', 'Raw Material') THEN 'Raw Materials'
+            WHEN i.type IN ('finished_good', 'Finished Good') THEN 'Finished Goods'
+            WHEN i.type IN ('packaging', 'Packaging') THEN 'Packaging'
             ELSE 'General'
         END AS category_name,
         w.code AS warehouse_code,
@@ -83,7 +83,7 @@ $sql = "
     FROM items i
     JOIN warehouses w ON w.warehouse_id = ?
     LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = w.warehouse_id
-    WHERE i.status = 'active'
+    WHERE (LOWER(i.status) = 'active')
 ";
 $params = [$currentWarehouseId];
 
@@ -98,8 +98,8 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $allInventoryData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$rawMaterialsData   = array_values(array_filter($allInventoryData, fn($r) => $r['item_type'] === 'raw_material'));
-$finishedGoodsData  = array_values(array_filter($allInventoryData, fn($r) => $r['item_type'] === 'finished_good'));
+$rawMaterialsData   = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['raw_material', 'Raw Material'], true)));
+$finishedGoodsData  = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['finished_good', 'Finished Good'], true)));
 $currentBalanceData = $allInventoryData;
 ?>
 

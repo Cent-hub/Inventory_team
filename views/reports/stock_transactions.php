@@ -83,8 +83,8 @@ $sqlM = "
             sm.remarks,
             sm.created_at,
             COALESCE(sm.quantity_delta, CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER', 'IN') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND', 'OUT') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity) 
                 ELSE 0 
@@ -137,7 +137,7 @@ $sqlIn = "
         sm.movement_id AS stock_in_id,
         CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type = 'finished_good' THEN 'PRODUCTION_RETURN'
+            WHEN i.type IN ('finished_good', 'Finished Good') THEN 'PRODUCTION_RETURN'
             ELSE 'PURCHASE_ORDER'
         END AS source_type,
         COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
@@ -158,7 +158,7 @@ $sqlIn = "
         AND (rev.movement_type = 'CANCELLED_INBOUND' OR rev.remarks LIKE 'Cancelled Stock IN %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
-      AND sm.movement_type = 'STOCK_IN'
+      AND sm.movement_type IN ('STOCK_IN', 'IN')
       AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
       AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
 ";
@@ -181,7 +181,7 @@ $sqlOut = "
         sm.movement_id AS stock_out_id,
         CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type = 'raw_material' THEN 'MATERIAL_REQUEST'
+            WHEN i.type IN ('raw_material', 'Raw Material') THEN 'MATERIAL_REQUEST'
             ELSE 'SALES_DELIVERY'
         END AS source_type,
         COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
@@ -202,7 +202,7 @@ $sqlOut = "
         AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR rev.remarks LIKE 'Cancelled Stock OUT %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
-      AND sm.movement_type = 'STOCK_OUT'
+      AND sm.movement_type IN ('STOCK_OUT', 'OUT')
       AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
 ";
 $paramsOut = [$startDate, $endDate, $currentWarehouseId];

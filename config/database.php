@@ -14,7 +14,7 @@ class Database {
             // .env is loaded eagerly by config/bootstrap.php (F-09)
             $host = getenv('DB_HOST') ?: '127.0.0.1';
             $port = getenv('DB_PORT') ?: '3306';
-            $dbname = getenv('DB_NAME') ?: 'team_inventory_local';
+            $dbname = getenv('DB_NAME') ?: 'erp_db';
             $username = getenv('DB_USER') ?: 'root';
             $password = getenv('DB_PASS') ?: '';
             $charset = 'utf8mb4';

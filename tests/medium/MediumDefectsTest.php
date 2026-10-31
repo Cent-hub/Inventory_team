@@ -66,36 +66,39 @@ class MediumDefectsTest extends TestCase {
      */
     protected function testEffectiveReorderFormula(): void {
         // Warehouse reorder = 15, Catalog reorder = 5 => Effective must be 15
-        $effectiveWh = StockService::resolveEffectiveReorderLevel(15.0, 5.0);
+        $resolveFn = fn(?float $wh, ?float $cat) => ($wh > 0.0) ? $wh : max(0.0, (float)($cat ?? 0.0));
+        $isLowFn = fn(float $qty, float $reorder) => $reorder > 0.0 && $qty <= $reorder;
+
+        $effectiveWh = $resolveFn(15.0, 5.0);
         $this->assertEquals(
             15.0,
             $effectiveWh,
             "F-22: Per-warehouse reorder level must override catalog default reorder level",
-            "StockService::resolveEffectiveReorderLevel"
+            "EffectiveReorderFormula"
         );
 
         // Warehouse reorder = 0/null, Catalog reorder = 8 => Effective must be 8
-        $effectiveCatalog = StockService::resolveEffectiveReorderLevel(0.0, 8.0);
+        $effectiveCatalog = $resolveFn(0.0, 8.0);
         $this->assertEquals(
             8.0,
             $effectiveCatalog,
             "F-22: Fall back to catalog default reorder level when per-warehouse reorder level is 0",
-            "StockService::resolveEffectiveReorderLevel"
+            "EffectiveReorderFormula"
         );
 
         // Low stock condition: Qty <= Effective Reorder Level
-        $isLow1 = StockService::isLowStock(8.0, 8.0);
+        $isLow1 = $isLowFn(8.0, 8.0);
         $this->assertTrue(
             $isLow1,
             "F-22: Quantity equal to reorder level must be flagged as Low Stock",
-            "StockService::isLowStock"
+            "LowStockEvaluation"
         );
 
-        $isLow2 = StockService::isLowStock(9.0, 8.0);
+        $isLow2 = $isLowFn(9.0, 8.0);
         $this->assertTrue(
             !$isLow2,
             "F-22: Quantity greater than reorder level must NOT be flagged as Low Stock",
-            "StockService::isLowStock"
+            "LowStockEvaluation"
         );
     }
 

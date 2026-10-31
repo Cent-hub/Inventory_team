@@ -369,7 +369,7 @@ $stmtItems = $pdo->query("
         i.code AS item_code,
         i.name AS item_name,
         COALESCE(i.description, '') AS description,
-        i.type AS item_type,
+        COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
         i.reorder_level AS default_reorder_level,
         (
@@ -386,11 +386,11 @@ $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
 // KPI metrics
 $totalSKUs    = count($itemsList);
-$pendingSKUs  = count(array_filter($itemsList, fn($x) => ($x['status'] ?? '') === 'pending'));
-$activeSKUs   = count(array_filter($itemsList, fn($x) => ($x['status'] ?? 'active') === 'active'));
-$inactiveSKUs = count(array_filter($itemsList, fn($x) => ($x['status'] ?? '') === 'inactive'));
-$rawSKUs      = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'raw_material' && ($x['status'] ?? 'active') === 'active'));
-$finishedSKUs = count(array_filter($itemsList, fn($x) => $x['item_type'] === 'finished_good' && ($x['status'] ?? 'active') === 'active'));
+$pendingSKUs  = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? '') === 'pending'));
+$activeSKUs   = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? 'active') === 'active'));
+$inactiveSKUs = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? '') === 'inactive'));
+$rawSKUs      = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['raw_material', 'raw'], true) && strtolower($x['status'] ?? 'active') === 'active'));
+$finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['finished_good', 'finished'], true) && strtolower($x['status'] ?? 'active') === 'active'));
 ?>
 
 <!-- Page Header -->

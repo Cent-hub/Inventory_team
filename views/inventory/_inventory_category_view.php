@@ -49,19 +49,21 @@ $stmt = $pdo->prepare("
         INNER JOIN (
             SELECT item_id, warehouse_id, MAX(movement_id) AS max_m_id
             FROM stock_movements
-            WHERE movement_type = 'STOCK_IN' AND warehouse_id = :wid2
+            WHERE movement_type IN ('STOCK_IN', 'IN') AND warehouse_id = :wid2
             GROUP BY item_id, warehouse_id
         ) latest_m ON sm.movement_id = latest_m.max_m_id
     ) latest_mov ON latest_mov.item_id = i.item_id AND latest_mov.warehouse_id = w.warehouse_id
-    WHERE i.type = :item_type AND i.status = 'active'
+    WHERE (i.type = :item_type OR i.type = :item_type_title) AND (LOWER(i.status) = 'active')
     ORDER BY i.name ASC, w.code ASC
 ");
+$titleType = ($itemType === 'raw_material') ? 'Raw Material' : 'Finished Good';
 $stmt->execute([
-    ':cat_name'   => $categoryLabel,
-    ':wid1'       => $currentWarehouseId,
-    ':ref_prefix' => $refPrefix,
-    ':wid2'       => $currentWarehouseId,
-    ':item_type'  => $itemType
+    ':cat_name'         => $categoryLabel,
+    ':wid1'             => $currentWarehouseId,
+    ':ref_prefix'       => $refPrefix,
+    ':wid2'             => $currentWarehouseId,
+    ':item_type'        => $itemType,
+    ':item_type_title'  => $titleType
 ]);
 $categoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

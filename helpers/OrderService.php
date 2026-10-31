@@ -78,7 +78,7 @@ class OrderService {
         }
 
         // Validate warehouse exists
-        $stmtWh = $this->pdo->prepare("SELECT name FROM warehouses WHERE warehouse_id = ? AND status = 'active'");
+        $stmtWh = $this->pdo->prepare("SELECT name FROM warehouses WHERE warehouse_id = ? AND (LOWER(status) = 'active')");
         $stmtWh->execute([$warehouseId]);
         if (!$stmtWh->fetch()) {
             throw new InvalidArgumentException("Active warehouse #{$warehouseId} not found.");
@@ -120,20 +120,20 @@ class OrderService {
             if (($item['status'] ?? '') === 'pending') {
                 throw new DomainException("Item '{$item['code']}' is pending Super Admin approval and cannot be ordered.");
             }
-            if (($item['status'] ?? '') !== 'active') {
+            if (strtolower($item['status'] ?? '') !== 'active') {
                 throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
             }
 
             $qty = StockService::validatePositiveQuantity($rawQty, $item['unit'], "quantity for item '{$item['code']}'");
 
             // Classification check
-            if ($sourceType === 'PURCHASE_ORDER' && $item['type'] !== 'raw_material') {
+            if ($sourceType === 'PURCHASE_ORDER' && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['raw_material', 'raw'], true)) {
                 throw new InvalidArgumentException("Procurement PO violation: Item '{$item['code']}' is a finished good. Purchase orders can only receive raw materials.");
             }
-            if (($sourceType === 'PRODUCTION_RECEIPT' || $sourceType === 'PRODUCTION_RETURN') && $item['type'] !== 'finished_good') {
+            if (($sourceType === 'PRODUCTION_RECEIPT' || $sourceType === 'PRODUCTION_RETURN') && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['finished_good', 'finished'], true)) {
                 throw new InvalidArgumentException("Production Receipt violation: Item '{$item['code']}' is a raw material. Production orders can only receive finished goods.");
             }
-            if ($sourceType === 'CUSTOMER_RETURN' && $item['type'] !== 'finished_good') {
+            if ($sourceType === 'CUSTOMER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['finished_good', 'finished'], true)) {
                 throw new InvalidArgumentException("Customer Return violation: Item '{$item['code']}' is a raw material. Customer returns only apply to finished goods.");
             }
 
@@ -269,7 +269,7 @@ class OrderService {
         }
 
         // Validate warehouse exists
-        $stmtWh = $this->pdo->prepare("SELECT name FROM warehouses WHERE warehouse_id = ? AND status = 'active'");
+        $stmtWh = $this->pdo->prepare("SELECT name FROM warehouses WHERE warehouse_id = ? AND (LOWER(status) = 'active')");
         $stmtWh->execute([$warehouseId]);
         if (!$stmtWh->fetch()) {
             throw new InvalidArgumentException("Active warehouse #{$warehouseId} not found.");
@@ -311,20 +311,20 @@ class OrderService {
             if (($item['status'] ?? '') === 'pending') {
                 throw new DomainException("Item '{$item['code']}' is pending Super Admin approval and cannot be ordered.");
             }
-            if (($item['status'] ?? '') !== 'active') {
+            if (strtolower($item['status'] ?? '') !== 'active') {
                 throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
             }
 
             $qty = StockService::validatePositiveQuantity($rawQty, $item['unit'], "quantity for item '{$item['code']}'");
 
             // Classification check
-            if ($sourceType === 'MATERIAL_REQUEST' && $item['type'] !== 'raw_material') {
+            if ($sourceType === 'MATERIAL_REQUEST' && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['raw_material', 'raw'], true)) {
                 throw new InvalidArgumentException("Production Material Request violation: Item '{$item['code']}' is a finished good. Material requests can only dispatch raw materials.");
             }
-            if ($sourceType === 'SUPPLIER_RETURN' && $item['type'] !== 'raw_material') {
+            if ($sourceType === 'SUPPLIER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['raw_material', 'raw'], true)) {
                 throw new InvalidArgumentException("Supplier Return violation: Item '{$item['code']}' is a finished good. Supplier returns only apply to raw materials.");
             }
-            if ($sourceType === 'SALES_DELIVERY' && $item['type'] !== 'finished_good') {
+            if ($sourceType === 'SALES_DELIVERY' && !in_array(strtolower(str_replace(' ', '_', $item['type'] ?? '')), ['finished_good', 'finished'], true)) {
                 throw new InvalidArgumentException("Sales Delivery violation: Item '{$item['code']}' is a raw material. Sales deliveries can only dispatch finished goods.");
             }
 

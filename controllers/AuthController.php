@@ -146,29 +146,22 @@ class AuthController {
             ];
         }
 
-        $email = trim(filter_var($email, FILTER_SANITIZE_EMAIL));
+        $identifier = trim($email);
 
-        if (empty($email) || empty($password)) {
+        if (empty($identifier) || empty($password)) {
             return [
                 'success' => false,
-                'error'   => 'Please provide both email address and password.'
-            ];
-        }
-
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return [
-                'success' => false,
-                'error'   => 'Invalid email address format.'
+                'error'   => 'Please provide both username/email and password.'
             ];
         }
 
         $stmt = $this->db->prepare("
             SELECT user_id, name, email, password, role, team, warehouse_id, api_token, status
             FROM users 
-            WHERE email = :email 
+            WHERE email = :email_ident OR username = :uname_ident 
             LIMIT 1
         ");
-        $stmt->execute([':email' => $email]);
+        $stmt->execute([':email_ident' => $identifier, ':uname_ident' => $identifier]);
         $user = $stmt->fetch();
 
         if (!$user) {
@@ -191,7 +184,7 @@ class AuthController {
             ];
         }
 
-        if ($user['status'] !== 'active') {
+        if (strtolower($user['status'] ?? '') !== 'active') {
             return [
                 'success' => false,
                 'error'   => 'This account is inactive. Please contact the administrator.'
@@ -428,7 +421,7 @@ class AuthController {
         $stmt->execute([':uid' => $userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$user || ($user['status'] ?? '') !== 'active') {
+        if (!$user || strtolower($user['status'] ?? '') !== 'active') {
             return [
                 'success' => false,
                 'message' => 'Active user account not found.'
@@ -484,7 +477,7 @@ class AuthController {
             ];
         }
 
-        $stmt = $this->db->prepare("SELECT user_id, name, email FROM users WHERE email = :email AND status = 'active' LIMIT 1");
+        $stmt = $this->db->prepare("SELECT user_id, name, email FROM users WHERE email = :email AND (status = 'active' OR status = 'Active') LIMIT 1");
         $stmt->execute([':email' => $email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -626,7 +619,7 @@ class AuthController {
         }
 
         $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 10]);
-        $stmt = $this->db->prepare("UPDATE users SET password = :password, updated_at = NOW() WHERE email = :email AND status = 'active' LIMIT 1");
+        $stmt = $this->db->prepare("UPDATE users SET password = :password, updated_at = NOW() WHERE email = :email AND (status = 'active' OR status = 'Active') LIMIT 1");
         $updated = $stmt->execute([
             ':password' => $hash,
             ':email'    => $stored['email']
@@ -705,7 +698,7 @@ class AuthController {
             return $validatedThisRequest[$uid] = false;
         }
 
-        if (!$row || ($row['status'] ?? '') !== 'active') {
+        if (!$row || strtolower($row['status'] ?? '') !== 'active') {
             return $validatedThisRequest[$uid] = false;
         }
 

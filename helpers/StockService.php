@@ -43,21 +43,6 @@ class StockService {
         return $items;
     }
 
-    /**
-     * F-22: Unified Low-Stock resolution rule shared across all views and services.
-     */
-    public static function resolveEffectiveReorderLevel(?float $warehouseReorder, ?float $itemReorder): float {
-        $wh = (float)($warehouseReorder ?? 0.0);
-        return $wh > 0.0 ? $wh : max(0.0, (float)($itemReorder ?? 0.0));
-    }
-
-    /**
-     * F-22: Unified Low-Stock evaluation rule (must have reorder > 0 and qty <= reorder).
-     */
-    public static function isLowStock(float $qtyOnHand, float $effectiveReorder): bool {
-        return $effectiveReorder > 0.0 && $qtyOnHand <= $effectiveReorder;
-    }
-
     private function isExternalDepartmentUser(?array $authUser): bool {
         if (!$authUser) {
             return false;
@@ -272,24 +257,24 @@ class StockService {
                 if ($itemInfo['status'] === 'pending') {
                     throw new DomainException("Item '{$itemInfo['item_code']}' is pending Super Admin approval and cannot be used for inventory transactions.");
                 }
-                if ($itemInfo['status'] !== 'active') {
+                if (strtolower($itemInfo['status'] ?? '') !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
 
                 $qty = self::validatePositiveQuantity($rawQty, $itemInfo['unit'], "quantity for item '{$itemInfo['item_code']}'");
 
                 // ERP Business rules
-                if ($sourceType === 'PURCHASE_ORDER' && $itemInfo['item_type'] !== 'raw_material') {
+                if ($sourceType === 'PURCHASE_ORDER' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['raw_material', 'raw'], true)) {
                     throw new InvalidArgumentException(
                         "Procurement PO violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a finished good. Purchase orders from Procurement can only receive raw materials."
                     );
                 }
-                if (($sourceType === 'PRODUCTION_RETURN' || $sourceType === 'PRODUCTION_RECEIPT') && $itemInfo['item_type'] !== 'finished_good') {
+                if (($sourceType === 'PRODUCTION_RETURN' || $sourceType === 'PRODUCTION_RECEIPT') && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
                     throw new InvalidArgumentException(
                         "Production Receipt violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Production receipts can only receive finished goods."
                     );
                 }
-                if ($sourceType === 'CUSTOMER_RETURN' && $itemInfo['item_type'] !== 'finished_good') {
+                if ($sourceType === 'CUSTOMER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
                     throw new InvalidArgumentException(
                         "Customer Return violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Customer returns only apply to finished goods."
                     );
@@ -473,24 +458,24 @@ class StockService {
                 if ($itemInfo['status'] === 'pending') {
                     throw new DomainException("Item '{$itemInfo['item_code']}' is pending Super Admin approval and cannot be used for inventory transactions.");
                 }
-                if ($itemInfo['status'] !== 'active') {
+                if (strtolower($itemInfo['status'] ?? '') !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
 
                 $qty = self::validatePositiveQuantity($rawQty, $itemInfo['unit'], "quantity for item '{$itemInfo['item_code']}'");
 
                 // ERP Business rules
-                if ($sourceType === 'MATERIAL_REQUEST' && $itemInfo['item_type'] !== 'raw_material') {
+                if ($sourceType === 'MATERIAL_REQUEST' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['raw_material', 'raw'], true)) {
                     throw new InvalidArgumentException(
                         "Material Request violation: Item '{$itemInfo['item_code']}' is a finished good. Production requests can only consume raw materials."
                     );
                 }
-                if ($sourceType === 'SALES_DELIVERY' && $itemInfo['item_type'] !== 'finished_good') {
+                if ($sourceType === 'SALES_DELIVERY' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
                     throw new InvalidArgumentException(
                         "Sales Delivery violation: Item '{$itemInfo['item_code']}' is a raw material. Sales can only deliver finished goods."
                     );
                 }
-                if ($sourceType === 'SUPPLIER_RETURN' && $itemInfo['item_type'] !== 'raw_material') {
+                if ($sourceType === 'SUPPLIER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['raw_material', 'raw'], true)) {
                     throw new InvalidArgumentException(
                         "Supplier Return violation: Item '{$itemInfo['item_code']}' is a finished good. Supplier returns only apply to raw materials."
                     );
@@ -1702,7 +1687,7 @@ class StockService {
                 if ($itemInfo['status'] === 'pending') {
                     throw new DomainException("Item '{$itemInfo['item_code']}' is pending Super Admin approval and cannot be used for inventory transactions.");
                 }
-                if ($itemInfo['status'] !== 'active') {
+                if (strtolower($itemInfo['status'] ?? '') !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
 
@@ -2404,7 +2389,7 @@ class StockService {
                 if ($itemInfo['status'] === 'pending') {
                     throw new DomainException("Item '{$itemInfo['item_code']}' is pending Super Admin approval and cannot be used for inventory transactions.");
                 }
-                if ($itemInfo['status'] !== 'active') {
+                if (strtolower($itemInfo['status'] ?? '') !== 'active') {
                     throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
                 }
 

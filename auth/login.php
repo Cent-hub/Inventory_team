@@ -597,14 +597,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <form id="login-form" class="form" method="POST" action="login.php" novalidate>
                         <!-- Email Address Field -->
                         <div class="field">
-                            <label class="label" for="login_input">Email Address</label>
+                            <label class="label" for="login_input">Email Address or Username</label>
                             <div class="input-wrap">
                                 <input 
                                     id="login_input" 
                                     name="email" 
-                                    type="email" 
+                                    type="text" 
                                     class="input" 
-                                    placeholder="Enter your registered email"
+                                    placeholder="Enter your email or username"
                                     autocomplete="email"
                                     value="<?= htmlspecialchars($emailVal ?? '') ?>"
                                     required
@@ -742,7 +742,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="field" style="margin-bottom:18px;">
                         <label class="label" for="otp-input-email">Email Address</label>
                         <div class="input-wrap">
-                            <input id="otp-input-email" type="email" class="input" placeholder="e.g. storeowner@gmail.com" required autocomplete="email" />
+                            <input id="otp-input-email" type="text" class="input" placeholder="e.g. storeowner@gmail.com" required autocomplete="email" />
                         </div>
                     </div>
                     <button type="submit" id="btn-send-otp" class="login-btn">
@@ -899,7 +899,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="field" style="margin-bottom:12px;">
                     <label class="label" for="login-support-email" style="font-size:12px;">Your Email Address <span style="color:var(--error);">*</span></label>
                     <div class="input-wrap">
-                        <input id="login-support-email" type="email" class="input" placeholder="e.g. employee@inventory.local" required autocomplete="email" style="font-size:13px;" />
+                        <input id="login-support-email" type="text" class="input" placeholder="e.g. employee@inventory.local" required autocomplete="email" style="font-size:13px;" />
                     </div>
                 </div>
 
@@ -1232,10 +1232,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!emailVal) {
                 loginInput.classList.add('input-error');
-                errorEmail.textContent = 'Email address is required';
+                errorEmail.textContent = 'Email or username is required';
                 errorEmail.style.display = 'block';
                 hasError = true;
-            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+            } else if (emailVal.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
                 loginInput.classList.add('input-error');
                 errorEmail.textContent = 'Please enter a valid email address';
                 errorEmail.style.display = 'block';

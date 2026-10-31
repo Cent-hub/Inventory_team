@@ -19,14 +19,14 @@ $stmtInventory = $pdo->prepare("
         w.name AS warehouse_name,
         i.code AS item_code,
         i.name AS item_name,
-        i.type AS item_type,
+        COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
         COALESCE(s.qty_on_hand, 0) AS quantity,
         COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level
     FROM items i
     JOIN warehouses w ON w.warehouse_id = :wid1
     LEFT JOIN stock s ON s.item_id = i.item_id AND s.warehouse_id = :wid2
-    WHERE i.status = 'active'
+    WHERE (LOWER(i.status) = 'active')
     ORDER BY i.type ASC, i.name ASC
 ");
 $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
@@ -41,9 +41,10 @@ $totalStock          = 0.0;
 $lowStockCount       = 0;
 
 foreach ($inventoryRows as $row) {
-    if (($row['item_type'] ?? '') === 'raw_material') {
+    $normType = strtolower(str_replace(' ', '_', (string)($row['item_type'] ?? '')));
+    if ($normType === 'raw_material') {
         $totalRawMaterials++;
-    } elseif (($row['item_type'] ?? '') === 'finished_good') {
+    } elseif ($normType === 'finished_good') {
         $totalFinishedGoods++;
     }
     $qty = (float)($row['quantity'] ?? 0);
@@ -113,7 +114,7 @@ $stmtRecent = $pdo->prepare("
         sm.created_at,
         i.code AS item_code,
         i.name AS item_name,
-        i.type AS item_type,
+        COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
         w.code AS warehouse_code,
         w.name AS warehouse_name
@@ -148,11 +149,11 @@ $stmtChart = $pdo->prepare("
     SELECT 
         DATE(sm.created_at) AS txn_date,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_in,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND', 'OUT') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_out
     FROM stock_movements sm

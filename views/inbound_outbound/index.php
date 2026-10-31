@@ -16,6 +16,7 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 require_once __DIR__ . '/../../helpers/StockService.php';
+require_once __DIR__ . '/../../helpers/OrderService.php';
 
 $successMessage = null;
 $errorMessage   = null;
@@ -43,73 +44,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             switch ($action) {
                 // -------------------------------------------------------------
-                // 1. Stock In (Inbound Receipt)
+                // Cancel Outbound Order (Releases reserved stock)
                 // -------------------------------------------------------------
-                case 'create_stock_in':
-                    $activeTab = 'inbound';
-                    $sourceType        = trim($_POST['source_type'] ?? 'PURCHASE_ORDER');
-                    $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
-                    $itemId            = (int)($_POST['item_id'] ?? 0);
-                    $rawQuantity       = $_POST['quantity'] ?? null;
-                    $remarks           = trim($_POST['remarks'] ?? '');
-                    $targetWhId        = (int)($currentWarehouseId ?: 1);
-
-                    if (!in_array($sourceType, StockService::VALID_STOCK_IN_SOURCES, true)) {
-                        throw new InvalidArgumentException("Invalid source_type '{$sourceType}'.");
-                    } elseif (empty($sourceReferenceNo)) {
-                        throw new InvalidArgumentException("Reference Number (PO # or Work Order #) is required.");
-                    } elseif (mb_strlen($sourceReferenceNo) > 100) {
-                        throw new InvalidArgumentException("Reference Number cannot exceed 100 characters.");
-                    } elseif ($itemId <= 0) {
-                        throw new InvalidArgumentException("Please select an item to receive.");
-                    }
-                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity received');
-
-                    $res = $stockService->recordStockIn(
-                        $targetWhId,
-                        $sourceType,
-                        $sourceReferenceNo,
-                        [['item_id' => $itemId, 'quantity' => $quantity]],
-                        $userId,
-                        $remarks ?: null,
-                        $currentUser
-                    );
-                    $successMessage = "Inbound stock received successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
-                    break;
-
-                // -------------------------------------------------------------
-                // 2. Stock Out (Outbound Dispatch)
-                // -------------------------------------------------------------
-                case 'create_stock_out':
+                case 'cancel_outbound_order':
                     $activeTab = 'outbound';
-                    $sourceType        = trim($_POST['source_type'] ?? 'SALES_DELIVERY');
-                    $sourceReferenceNo = trim($_POST['source_reference_no'] ?? '');
-                    $itemId            = (int)($_POST['item_id'] ?? 0);
-                    $rawQuantity       = $_POST['quantity'] ?? null;
-                    $remarks           = trim($_POST['remarks'] ?? '');
-                    $sourceWhId        = (int)($currentWarehouseId ?: 1);
-
-                    if (!in_array($sourceType, StockService::VALID_STOCK_OUT_SOURCES, true)) {
-                        throw new InvalidArgumentException("Invalid source_type '{$sourceType}'.");
-                    } elseif (empty($sourceReferenceNo)) {
-                        throw new InvalidArgumentException("Reference Number (Sales Order # or Material Request #) is required.");
-                    } elseif (mb_strlen($sourceReferenceNo) > 100) {
-                        throw new InvalidArgumentException("Reference Number cannot exceed 100 characters.");
-                    } elseif ($itemId <= 0) {
-                        throw new InvalidArgumentException("Please select an item to dispatch.");
+                    $orderId = (int)($_POST['outbound_order_id'] ?? 0);
+                    $reason  = trim($_POST['cancellation_reason'] ?? '');
+                    if ($orderId <= 0) {
+                        throw new InvalidArgumentException("Invalid Outbound Order ID.");
                     }
-                    $quantity = StockService::validatePositiveQuantity($rawQuantity, null, 'quantity dispatched');
-
-                    $res = $stockService->recordStockOut(
-                        $sourceWhId,
-                        $sourceType,
-                        $sourceReferenceNo,
-                        [['item_id' => $itemId, 'quantity' => $quantity]],
-                        $userId,
-                        $remarks ?: null,
-                        $currentUser
-                    );
-                    $successMessage = "Outbound stock dispatched successfully! Transaction reference: " . htmlspecialchars($res['transaction_number']);
+                    if (empty($reason)) {
+                        throw new InvalidArgumentException("Cancellation reason is required.");
+                    }
+                    $orderService = new OrderService($pdo);
+                    $res = $orderService->cancelOutboundOrder($orderId, $userId, $reason, $currentUser);
+                    $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " was cancelled successfully. Reserved stock has been released back to available inventory.";
                     break;
 
                 case 'cancel_stock_in':
@@ -1072,9 +1021,14 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
-                                    <button type="button" class="btn btn-primary btn-sm" onclick="openDispatchOrderModal(<?= (int)$pOut['outbound_order_id'] ?>)">
-                                        Dispatch Order &rarr;
-                                    </button>
+                                    <div style="display: inline-flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="openDispatchOrderModal(<?= (int)$pOut['outbound_order_id'] ?>)">
+                                            Dispatch Order &rarr;
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm" style="color: #B91C1C; border-color: #FCA5A5; height: 32px; padding: 0 10px; font-size: 12px;" onclick="openCancelOutboundOrderModal(<?= (int)$pOut['outbound_order_id'] ?>, '<?= htmlspecialchars($pOut['order_number'], ENT_QUOTES) ?>')">
+                                            Cancel
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -1394,164 +1348,37 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
     </div>
 </div>
 
-<!-- Modal: Record Stock In (Inbound Receipt) -->
-<div id="recordStockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recordStockInModalTitle" onclick="if(event.target === this) handleRecordBackdropClose('recordStockInModal', closeRecordStockInModal)">
-    <div class="modal-card" style="max-width: 540px;">
-        <form method="POST" action="index.php?tab=inbound">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_stock_in">
-            <input type="hidden" name="active_tab" value="inbound">
-
-            <div class="modal-header">
-                <div>
-                    <h3 id="recordStockInModalTitle" class="card-title">Record Stock In (Inbound Receipt)</h3>
-                    <p class="card-desc">Receive inventory into <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
-                </div>
-                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeRecordStockInModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Source Type -->
-                <div>
-                    <label for="stockInSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Inbound Source <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="source_type" id="stockInSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockInModalItems()">
-                        <option value="PURCHASE_ORDER">Procurement Purchase Order (Raw Materials)</option>
-                        <option value="PRODUCTION_RETURN">Production Batch Receipt (Finished Goods)</option>
-                    </select>
-                </div>
-
-                <!-- Source Reference Number -->
-                <div>
-                    <label for="stockInRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Reference Number (PO # / Work Order #) <span style="color: #DC2626;">*</span>
-                    </label>
-                    <input type="text" name="source_reference_no" id="stockInRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. PO-2026-001 or WO-2026-001" required>
-                </div>
-
-                <!-- Item Selection -->
-                <div>
-                    <label for="stockInItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Item to Receive <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_id" id="stockInItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleStockInItemChange(this)">
-                        <option value="">-- Select Item to Receive --</option>
-                        <?php foreach ($allItems as $it): ?>
-                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>">
-                                [<?= $it['item_type'] === 'finished_good' ? 'Finished Good' : 'Raw Material' ?>] <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> (<?= htmlspecialchars($it['unit']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Quantity Received -->
-                <div>
-                    <label for="stockInQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Quantity Received <span style="color: #DC2626;">*</span>
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="any" min="0.001" name="quantity" id="stockInQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
-                        <span id="stockInUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
-                    </div>
-                </div>
-
-                <!-- Remarks -->
-                <div>
-                    <label for="stockInRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Remarks / Receiving Notes
-                    </label>
-                    <textarea name="remarks" id="stockInRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="Optional supplier, delivery, or QC inspection notes..."></textarea>
-                </div>
-            </div>
-
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeRecordStockInModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Record Stock In</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Modal: Record Stock Out (Outbound Dispatch) -->
-<div id="recordStockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recordStockOutModalTitle" onclick="if(event.target === this) handleRecordBackdropClose('recordStockOutModal', closeRecordStockOutModal)">
-    <div class="modal-card" style="max-width: 540px;">
+<!-- Modal: Cancel Outbound Order (Releases Reservation) -->
+<div id="cancelOutboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelOutboundOrderModalTitle" onclick="if(event.target === this) closeCancelOutboundOrderModal()">
+    <div class="modal-card" style="max-width: 480px;">
         <form method="POST" action="index.php?tab=outbound">
             <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_stock_out">
+            <input type="hidden" name="action" value="cancel_outbound_order">
             <input type="hidden" name="active_tab" value="outbound">
+            <input type="hidden" name="outbound_order_id" id="cancelOutboundOrderId" value="">
 
             <div class="modal-header">
                 <div>
-                    <h3 id="recordStockOutModalTitle" class="card-title">Record Stock Out (Outbound Dispatch)</h3>
-                    <p class="card-desc">Dispatch inventory from <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> &mdash; <?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></p>
+                    <h3 id="cancelOutboundOrderModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Outbound Order</h3>
+                    <p class="card-desc" style="margin: 0;">Release reserved stock and cancel order</p>
                 </div>
-                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeRecordStockOutModal()">
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelOutboundOrderModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
-
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Destination / Source Type -->
-                <div>
-                    <label for="stockOutSourceType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Outbound Destination <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="source_type" id="stockOutSourceType" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="filterStockOutModalItems()">
-                        <option value="SALES_DELIVERY">Sales Delivery (Finished Goods)</option>
-                        <option value="MATERIAL_REQUEST">Production Material Request (Raw Materials)</option>
-                    </select>
+                <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #991B1B; line-height: 1.5;">
+                    Are you sure you want to cancel Outbound Order <strong id="cancelOutboundOrderRef" style="font-family: monospace;">—</strong>?<br>
+                    Any stock currently reserved for this order will be released immediately back to available warehouse inventory.
                 </div>
-
-                <!-- Reference Number -->
                 <div>
-                    <label for="stockOutRefNo" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Reference Number (Sales Order # / Material Request #) <span style="color: #DC2626;">*</span>
-                    </label>
-                    <input type="text" name="source_reference_no" id="stockOutRefNo" class="search-box" style="width: 100%; height: 40px; border-radius: 8px;" maxlength="100" placeholder="e.g. SO-2026-001 or MR-2026-001" required>
-                </div>
-
-                <!-- Item Selection -->
-                <div>
-                    <label for="stockOutItemSelect" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Item to Dispatch <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_id" id="stockOutItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleStockOutItemChange(this)">
-                        <option value="">-- Select Item with Available Stock --</option>
-                        <?php foreach ($availableItems as $it): ?>
-                            <option value="<?= (int)$it['item_id'] ?>" data-type="<?= htmlspecialchars($it['item_type']) ?>" data-unit="<?= htmlspecialchars($it['unit']) ?>" data-stock="<?= (float)$it['current_stock'] ?>">
-                                <?= htmlspecialchars($it['item_code']) ?> &mdash; <?= htmlspecialchars($it['item_name']) ?> [Stock: <?= formatQty((float)$it['current_stock']) ?> <?= htmlspecialchars($it['unit']) ?>]
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Quantity Dispatched -->
-                <div>
-                    <label for="stockOutQuantity" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Quantity to Dispatch <span style="color: #DC2626;">*</span>
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="any" min="0.001" name="quantity" id="stockOutQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
-                        <span id="stockOutUnitLabel" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
-                    </div>
-                    <small id="stockOutAvailHint" style="color: var(--gray); font-size: 11.5px; display: block; margin-top: 4px;">Select an item to view maximum available balance.</small>
-                </div>
-
-                <!-- Remarks -->
-                <div>
-                    <label for="stockOutRemarks" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Remarks / Dispatch Notes
-                    </label>
-                    <textarea name="remarks" id="stockOutRemarks" class="search-box" style="width: 100%; border-radius: 8px; height: 60px; padding: 8px 12px; resize: vertical;" placeholder="Optional customer delivery or production line notes..."></textarea>
+                    <label for="cancelOutboundOrderReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
+                    <textarea name="cancellation_reason" id="cancelOutboundOrderReason" class="search-box" style="width: 100%; border-radius: 6px; height: 70px; padding: 8px 12px; resize: vertical;" placeholder="Specify why this outbound order is being cancelled..." required></textarea>
                 </div>
             </div>
-
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeRecordStockOutModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary" <?= empty($availableItems) ? 'disabled' : '' ?>>Record Stock Out</button>
+                <button type="button" class="btn btn-secondary" onclick="closeCancelOutboundOrderModal()">Back</button>
+                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
             </div>
         </form>
     </div>
@@ -1734,151 +1561,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 </div>
 
 <script>
-// =============================================================================
-// RECORD STOCK IN & RECORD STOCK OUT MODAL CONTROLLERS
-// =============================================================================
-function handleRecordBackdropClose(modalId, closeFn) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-    const inputs = Array.from(modal.querySelectorAll('input[type="text"], input[type="number"], textarea'));
-    const hasUnsaved = inputs.some(el => el.value.trim() !== '');
-    if (hasUnsaved) return;
-    closeFn();
-}
-
-function openRecordStockInModal() {
-    filterStockInModalItems();
-    const modal = document.getElementById('recordStockInModal');
-    if (modal) {
-        modal.classList.add('open');
-        modal.style.display = 'flex';
-    }
-}
-
-function closeRecordStockInModal() {
-    const modal = document.getElementById('recordStockInModal');
-    if (modal) {
-        modal.classList.remove('open');
-        modal.style.display = 'none';
-    }
-}
-
-function filterStockInModalItems() {
-    const sourceSelect = document.getElementById('stockInSourceType');
-    const itemSelect = document.getElementById('stockInItemSelect');
-    if (!sourceSelect || !itemSelect) return;
-
-    const source = sourceSelect.value;
-    const targetType = (source === 'PRODUCTION_RETURN') ? 'finished_good' : 'raw_material';
-
-    let validCount = 0;
-    Array.from(itemSelect.options).forEach((opt, idx) => {
-        if (idx === 0) return;
-        const itemType = opt.getAttribute('data-type');
-        const matches = (itemType === targetType);
-        opt.hidden = !matches;
-        opt.disabled = !matches;
-        opt.style.display = matches ? '' : 'none';
-        if (matches) validCount++;
-    });
-
-    const selectedOpt = itemSelect.selectedOptions[0];
-    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
-        itemSelect.value = '';
-        handleStockInItemChange(itemSelect);
-    }
-
-    const defaultOpt = itemSelect.options[0];
-    if (defaultOpt) {
-        if (targetType === 'finished_good') {
-            defaultOpt.textContent = validCount > 0 ? '-- Select Finished Good to Receive --' : '-- No active finished goods available --';
-        } else {
-            defaultOpt.textContent = validCount > 0 ? '-- Select Raw Material to Receive --' : '-- No active raw materials available --';
-        }
-    }
-}
-
-function handleStockInItemChange(selectEl) {
-    const opt = selectEl.selectedOptions[0];
-    const unitLabel = document.getElementById('stockInUnitLabel');
-    if (opt && opt.value) {
-        unitLabel.textContent = opt.getAttribute('data-unit') || '—';
-    } else {
-        unitLabel.textContent = '—';
-    }
-}
-
-function openRecordStockOutModal() {
-    filterStockOutModalItems();
-    const modal = document.getElementById('recordStockOutModal');
-    if (modal) {
-        modal.classList.add('open');
-        modal.style.display = 'flex';
-    }
-}
-
-function closeRecordStockOutModal() {
-    const modal = document.getElementById('recordStockOutModal');
-    if (modal) {
-        modal.classList.remove('open');
-        modal.style.display = 'none';
-    }
-}
-
-function filterStockOutModalItems() {
-    const sourceSelect = document.getElementById('stockOutSourceType');
-    const itemSelect = document.getElementById('stockOutItemSelect');
-    if (!sourceSelect || !itemSelect) return;
-
-    const source = sourceSelect.value;
-    const targetType = (source === 'SALES_DELIVERY') ? 'finished_good' : 'raw_material';
-
-    let validCount = 0;
-    Array.from(itemSelect.options).forEach((opt, idx) => {
-        if (idx === 0) return;
-        const itemType = opt.getAttribute('data-type');
-        const matches = (itemType === targetType);
-        opt.hidden = !matches;
-        opt.disabled = !matches;
-        opt.style.display = matches ? '' : 'none';
-        if (matches) validCount++;
-    });
-
-    const selectedOpt = itemSelect.selectedOptions[0];
-    if (selectedOpt && (selectedOpt.disabled || selectedOpt.hidden)) {
-        itemSelect.value = '';
-        handleStockOutItemChange(itemSelect);
-    }
-
-    const defaultOpt = itemSelect.options[0];
-    if (defaultOpt) {
-        if (targetType === 'finished_good') {
-            defaultOpt.textContent = validCount > 0 ? '-- Select Finished Good to Dispatch --' : '-- No finished goods with available stock in warehouse --';
-        } else {
-            defaultOpt.textContent = validCount > 0 ? '-- Select Raw Material to Dispatch --' : '-- No raw materials with available stock in warehouse --';
-        }
-    }
-}
-
-function handleStockOutItemChange(selectEl) {
-    const opt = selectEl.selectedOptions[0];
-    const unitLabel = document.getElementById('stockOutUnitLabel');
-    const qtyInput = document.getElementById('stockOutQuantity');
-    const hint = document.getElementById('stockOutAvailHint');
-
-    if (opt && opt.value) {
-        const unit = opt.getAttribute('data-unit') || '';
-        const stock = parseFloat(opt.getAttribute('data-stock') || '0');
-        unitLabel.textContent = unit || '—';
-        qtyInput.max = stock;
-        hint.textContent = `Available balance: ${stock} ${unit}`;
-    } else {
-        unitLabel.textContent = '—';
-        qtyInput.removeAttribute('max');
-        hint.textContent = 'Select an item to view maximum available balance.';
-    }
-}
-
 // =============================================================================
 // TAB SWITCHING CONTROLLER
 // =============================================================================
@@ -2201,6 +1883,25 @@ function closeCancelStockOutModal() {
     }
 }
 
+function openCancelOutboundOrderModal(id, orderNo) {
+    document.getElementById('cancelOutboundOrderId').value = id;
+    document.getElementById('cancelOutboundOrderRef').textContent = orderNo;
+    document.getElementById('cancelOutboundOrderReason').value = '';
+    const modal = document.getElementById('cancelOutboundOrderModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeCancelOutboundOrderModal() {
+    const modal = document.getElementById('cancelOutboundOrderModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
 // =============================================================================
 // ERP DOCUMENT QUEUES: RECEIVING & FULFILLMENT CONTROLLERS
 // =============================================================================
@@ -2388,10 +2089,7 @@ function closeDispatchOrderModal() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    filterStockInModalItems();
-    filterStockOutModalItems();
-});
+// Document event listeners initialized
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
