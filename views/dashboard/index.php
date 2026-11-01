@@ -316,7 +316,7 @@ if (count($recentWarehouseStaff) < 3) {
     <!-- 5. Transfer Done -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label" data-label="Tranfer done">Transfer Done</span><!-- Tranfer done -->
+            <span class="stat-label" data-label="Transfer done">Transfer Done</span><!-- Transfer done -->
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #DBEAFE;">
                 <!-- Lucide ArrowLeftRight Icon -->
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

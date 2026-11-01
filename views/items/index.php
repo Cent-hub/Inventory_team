@@ -69,10 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         
                         // BR-01: Employees create items in 'pending' status; Super Admin can create directly in 'active' status
                         $initialStatus = $isSuperAdmin ? 'active' : 'pending';
+                        $dbType   = ($itemType === 'finished_good') ? 'Finished Good' : 'Raw Material';
+                        $dbUnit   = (strcasecmp($unit, 'bulk') === 0 || strcasecmp($unit, 'box') === 0) ? 'Bulk' : 'Pieces';
+                        $dbStatus = ($initialStatus === 'active') ? 'Active' : 'Inactive';
 
                         $stmtIns = $pdo->prepare("
                             INSERT INTO items (
-                                code, name, description, type, unit, reorder_level, status
+                                item_code, item_name, description, type, unit_of_measure, reorder_level, status
                             ) VALUES (
                                 ?, ?, ?, ?, ?, ?, ?
                             )
@@ -81,10 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $itemCode,
                             $itemName,
                             $description !== '' ? $description : null,
-                            $itemType,
-                            $unit,
+                            $dbType,
+                            $dbUnit,
                             round($reorderLevel, 3),
-                            $initialStatus
+                            $dbStatus
                         ]);
                         $newId = (int)$pdo->lastInsertId();
 
@@ -145,10 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                 if (!$itemRow) {
                     $errorMessage = "Catalog item not found.";
-                } elseif ($itemRow['status'] !== 'pending') {
+                } elseif (strtolower($itemRow['status'] ?? '') === 'active') {
                     $errorMessage = "Item '{$itemRow['code']}' is not pending approval (current status: {$itemRow['status']}).";
                 } else {
-                    $stmtAppr = $pdo->prepare("UPDATE items SET status = 'active' WHERE item_id = ?");
+                    $stmtAppr = $pdo->prepare("UPDATE items SET status = 'Active' WHERE id = ?");
                     $stmtAppr->execute([$itemId]);
 
                     // Seed warehouse stock snapshot rows for newly activated item
@@ -199,10 +202,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                 if (!$itemRow) {
                     $errorMessage = "Catalog item not found.";
-                } elseif ($itemRow['status'] !== 'pending') {
+                } elseif (strtolower($itemRow['status'] ?? '') === 'active') {
                     $errorMessage = "Item '{$itemRow['code']}' is not pending approval.";
                 } else {
-                    $stmtRej = $pdo->prepare("UPDATE items SET status = 'inactive' WHERE item_id = ?");
+                    $stmtRej = $pdo->prepare("UPDATE items SET status = 'Inactive' WHERE id = ?");
                     $stmtRej->execute([$itemId]);
 
                     require_once __DIR__ . '/../../helpers/AccountabilityService.php';
@@ -258,24 +261,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
             } else {
                 try {
-                    $stmtExist = $pdo->prepare("SELECT code AS item_code, type AS item_type, unit AS item_unit, reorder_level FROM items WHERE item_id = ?");
+                    $stmtExist = $pdo->prepare("SELECT code AS item_code, COALESCE(item_type, type) AS item_type, unit AS item_unit, reorder_level FROM items WHERE item_id = ?");
                     $stmtExist->execute([$itemId]);
                     $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
 
                     if (!$existingItem) {
                         $errorMessage = "Selected catalog item does not exist.";
                     } else {
+                        $existingNormalizedType = (stripos($existingItem['item_type'] ?? '', 'finish') !== false) ? 'finished_good' : 'raw_material';
                         $rawItemType = trim($_POST['item_type'] ?? '');
                         if ($rawItemType === 'finished_good') {
                             $itemType = 'finished_good';
                         } elseif ($rawItemType === 'raw_material') {
                             $itemType = 'raw_material';
                         } else {
-                            $itemType = $existingItem['item_type'] ?? 'raw_material';
+                            $itemType = $existingNormalizedType;
                         }
 
                         // Catalog Item Lock: Disallow mutating items.type if historical transactions or active stock exist for that SKU
-                        if ($itemType !== $existingItem['item_type']) {
+                        if ($itemType !== $existingNormalizedType) {
                             $stmtTxCheck = $pdo->prepare("
                                 SELECT 
                                     (SELECT COUNT(*) FROM stock_movements WHERE item_id = ?) +
@@ -291,23 +295,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         }
 
                         if (empty($errorMessage)) {
+                            $dbType   = ($itemType === 'finished_good') ? 'Finished Good' : 'Raw Material';
+                            $dbUnit   = (strcasecmp($unit, 'bulk') === 0 || strcasecmp($unit, 'box') === 0) ? 'Bulk' : 'Pieces';
+                            $dbStatus = (strtolower($itemStatus) === 'active') ? 'Active' : 'Inactive';
+
                             $stmtUpd = $pdo->prepare("
                                 UPDATE items
-                                SET name = ?,
+                                SET item_name = ?,
                                     description = ?,
                                     type = ?,
-                                    unit = ?,
+                                    unit_of_measure = ?,
                                     reorder_level = ?,
                                     status = ?
-                                WHERE item_id = ?
+                                WHERE id = ?
                             ");
                             $stmtUpd->execute([
                                 $itemName,
                                 $description !== '' ? $description : null,
-                                $itemType,
-                                $unit,
+                                $dbType,
+                                $dbUnit,
                                 round($reorderLevel, 3),
-                                $itemStatus,
+                                $dbStatus,
                                 $itemId
                             ]);
 
@@ -535,7 +543,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
-                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>" data-status="<?= htmlspecialchars($row['status'] ?? 'active') ?>">
+                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>" data-status="<?= htmlspecialchars(strtolower($row['status'] ?? 'active')) ?>">
                             <td style="font-family: monospace; color: var(--gray); font-weight: 600;">
                                 #<?= (int)$row['item_id'] ?>
                             </td>
@@ -566,9 +574,9 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                                 <?= formatQty($row['default_reorder_level']) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td class="text-center">
-                                <?php if (($row['status'] ?? 'active') === 'active'): ?>
+                                <?php if (strtolower($row['status'] ?? 'active') === 'active'): ?>
                                     <span class="badge status-completed">Active</span>
-                                <?php elseif (($row['status'] ?? '') === 'pending'): ?>
+                                <?php elseif (strtolower($row['status'] ?? '') === 'pending'): ?>
                                     <span class="badge" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D; font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                         Pending Approval
@@ -579,7 +587,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                             </td>
                             <?php if ($canManageItems): ?>
                                 <td class="text-center">
-                                    <?php if (($row['status'] ?? '') === 'pending'): ?>
+                                    <?php if (strtolower($row['status'] ?? '') === 'pending'): ?>
                                         <?php if ($isSuperAdmin): ?>
                                             <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: center;">
                                                 <form method="POST" action="index.php" style="display: inline; margin: 0;" onsubmit="return confirm('Approve catalog item \'<?= htmlspecialchars(addslashes($row['item_name'])) ?>\' into active inventory?');">
@@ -616,7 +624,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                                             'unit'                  => $row['unit'],
                                             'default_reorder_level' => (float)$row['default_reorder_level'],
                                             'description'           => (string)($row['description'] ?? ''),
-                                            'status'                => $row['status'] ?? 'active',
+                                            'status'                => strtolower($row['status'] ?? 'active'),
                                             'tx_count'              => (int)($row['tx_count'] ?? 0)
                                         ])) ?>)">Edit</button>
                                     <?php endif; ?>

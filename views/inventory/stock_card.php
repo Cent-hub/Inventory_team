@@ -3,8 +3,8 @@
  * View: Item Stock Card Ledger (Legacy Redirect Stub)
  * InventoryTeam — Liquor Business Inventory Management System
  * 
- * Automatically forwards browser navigation to the unified Stock Operations hub
- * (/views/stock_operations/index.php?tab=stock_card).
+ * @deprecated Consolidated into /views/stock_operations/index.php?tab=stock_card.
+ * Kept only as a permanent 301 redirect for legacy external bookmarks.
  */
 
 $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
@@ -15,6 +15,7 @@ $queryString = !empty($_SERVER['QUERY_STRING']) ? ('&' . $_SERVER['QUERY_STRING'
 $targetUrl = "{$projectRoot}/views/stock_operations/index.php?tab=stock_card{$queryString}";
 
 if (!headers_sent()) {
+    header('X-Deprecated-Route: Use /views/stock_operations/index.php?tab=stock_card');
     header("Location: {$targetUrl}", true, 301);
     exit;
 }

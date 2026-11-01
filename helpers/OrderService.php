@@ -178,6 +178,8 @@ class OrderService {
             ]);
             $orderId = (int)$this->pdo->lastInsertId();
 
+            $validatedItems = StockService::sortItemsById($validatedItems);
+
             $stmtInsItem = $this->pdo->prepare("
                 INSERT INTO inbound_order_items (
                     inbound_order_id, item_id, expected_quantity, received_quantity
@@ -369,6 +371,8 @@ class OrderService {
             ]);
             $orderId = (int)$this->pdo->lastInsertId();
 
+            $validatedItems = StockService::sortItemsById($validatedItems);
+
             $stmtInsItem = $this->pdo->prepare("
                 INSERT INTO outbound_order_items (
                     outbound_order_id, item_id, requested_quantity, dispatched_quantity
@@ -455,9 +459,9 @@ class OrderService {
             }
 
             // Fetch line items to release remaining reservations
-            $stmtItems = $this->pdo->prepare("SELECT * FROM outbound_order_items WHERE outbound_order_id = ?");
+            $stmtItems = $this->pdo->prepare("SELECT * FROM outbound_order_items WHERE outbound_order_id = ? ORDER BY item_id ASC");
             $stmtItems->execute([$orderId]);
-            $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+            $items = StockService::sortItemsById($stmtItems->fetchAll(PDO::FETCH_ASSOC));
 
             $stockService = new StockService($this->pdo);
             $released = [];

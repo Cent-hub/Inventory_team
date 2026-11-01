@@ -73,7 +73,7 @@ function enforceHttpsSecurity(): void {
 function resolveUserTeam(?string $team, ?string $email = ''): string {
     $cleanTeam = trim((string)$team);
     if ($cleanTeam !== '') {
-        if (strcasecmp($cleanTeam, 'administration') === 0) {
+        if (strcasecmp($cleanTeam, 'administration') === 0 || strcasecmp($cleanTeam, 'admin') === 0) {
             return 'Administration';
         }
         if (strcasecmp($cleanTeam, 'inventory') === 0) {

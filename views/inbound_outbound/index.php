@@ -528,12 +528,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     Document-driven receiving: Select an open PO, Production Batch, or Customer RMA return to verify and accept into stock
                 </p>
             </div>
-            <div>
-                <button type="button" class="btn btn-primary" onclick="openRecordStockInModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    <span>Manual Stock In</span>
-                </button>
-            </div>
         </div>
 
         <div class="table-responsive">
@@ -646,7 +640,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
                     <option value="PRODUCTION_RETURN">Production (Work Orders)</option>
                     <option value="CUSTOMER_RETURN">Customer (RMA Returns)</option>
-                    <option value="MANUAL">Internal / Direct Exception</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -942,12 +935,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     Document-driven fulfillment: Select an approved Sales Order, Material Requisition, or Return to Vendor (RTV) to pack and ship
                 </p>
             </div>
-            <div>
-                <button type="button" class="btn btn-primary" onclick="openRecordStockOutModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    <span>Manual Stock Out</span>
-                </button>
-            </div>
         </div>
 
         <div class="table-responsive">
@@ -1063,7 +1050,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
                     <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
                     <option value="SUPPLIER_RETURN">Supplier Returns (RTV)</option>
-                    <option value="MANUAL">Internal / Direct Exception</option>
                 </select>
 
                 <!-- Item Type Filter -->

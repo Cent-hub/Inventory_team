@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
+require_once __DIR__ . '/../../helpers/auth.php';
 
 $auth = new AuthController();
 if (!$auth->isAuthenticated()) {
@@ -80,20 +81,56 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                         $rawApiToken  = bin2hex(random_bytes(32));
                         $apiTokenHash = hash('sha256', $rawApiToken);
 
+                        $baseUsername = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', explode('@', $uEmail)[0] ?: $uName));
+                        if ($baseUsername === '') {
+                            $baseUsername = 'user';
+                        }
+                        $baseUsername = substr($baseUsername, 0, 42);
+                        $uUsername = $baseUsername;
+                        $uSuffix = 1;
+                        $stmtUnameChk = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
+                        while (true) {
+                            $stmtUnameChk->execute([$uUsername]);
+                            if ((int)$stmtUnameChk->fetchColumn() === 0) {
+                                break;
+                            }
+                            $uUsername = $baseUsername . $uSuffix;
+                            $uSuffix++;
+                        }
+
+                        $nameParts = preg_split('/\s+/', $uName, 2);
+                        $firstName = mb_substr($nameParts[0] ?? $uName, 0, 50);
+                        $lastName  = isset($nameParts[1]) ? mb_substr($nameParts[1], 0, 50) : '';
+
+                        $deptMap = [
+                            'administration' => 'Admin',
+                            'admin'          => 'Admin',
+                            'inventory'      => 'Inventory',
+                            'procurement'    => 'Procurement',
+                            'production'     => 'Production',
+                            'sales'          => 'Sales',
+                            'finance'        => 'Finance',
+                            'hr'             => 'HR',
+                        ];
+                        $dbDepartment = $deptMap[strtolower($uTeam)] ?? 'Inventory';
+                        $dbStatus     = (strtolower($uStatus) === 'active') ? 'Active' : 'Inactive';
+
                         $stmtIns = $pdo->prepare("
-                            INSERT INTO users (name, email, password, role, team, warehouse_id, employee_code, api_token, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO users (username, first_name, last_name, email, password, role, department, warehouse_id, employee_code, api_token, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmtIns->execute([
-                            $uName,
+                            $uUsername,
+                            $firstName,
+                            $lastName,
                             $uEmail,
                             $passwordHash,
                             $uRole,
-                            $uTeam ?: 'Inventory',
+                            $dbDepartment,
                             $uWarehouse,
                             $uEmpCode,
                             $apiTokenHash,
-                            $uStatus
+                            $dbStatus
                         ]);
                         $newUserId = (int)$pdo->lastInsertId();
 
@@ -194,21 +231,38 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
                     if ((int)$stmtChk->fetchColumn() > 0) {
                         $errorMessage = "Another account is already using email '{$uEmail}'.";
                     } else {
+                        $nameParts = preg_split('/\s+/', $uName, 2);
+                        $firstName = mb_substr($nameParts[0] ?? $uName, 0, 50);
+                        $lastName  = isset($nameParts[1]) ? mb_substr($nameParts[1], 0, 50) : '';
+
+                        $deptMap = [
+                            'administration' => 'Admin',
+                            'admin'          => 'Admin',
+                            'inventory'      => 'Inventory',
+                            'procurement'    => 'Procurement',
+                            'production'     => 'Production',
+                            'sales'          => 'Sales',
+                            'finance'        => 'Finance',
+                            'hr'             => 'HR',
+                        ];
+                        $dbDepartment = $deptMap[strtolower($uTeam)] ?? 'Inventory';
+                        $dbStatus     = (strtolower($uStatus) === 'active') ? 'Active' : 'Inactive';
+
                         if ($newPassword !== '') {
                             $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
                             $stmtUpd = $pdo->prepare("
                                 UPDATE users
-                                SET name = ?, email = ?, password = ?, role = ?, team = ?, warehouse_id = ?, employee_code = ?, status = ?
-                                WHERE user_id = ?
+                                SET first_name = ?, last_name = ?, email = ?, password = ?, role = ?, department = ?, warehouse_id = ?, employee_code = ?, status = ?
+                                WHERE id = ?
                             ");
-                            $stmtUpd->execute([$uName, $uEmail, $passwordHash, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uEmpCode, $uStatus, $targetUserId]);
+                            $stmtUpd->execute([$firstName, $lastName, $uEmail, $passwordHash, $uRole, $dbDepartment, $uWarehouse, $uEmpCode, $dbStatus, $targetUserId]);
                         } else {
                             $stmtUpd = $pdo->prepare("
                                 UPDATE users
-                                SET name = ?, email = ?, role = ?, team = ?, warehouse_id = ?, employee_code = ?, status = ?
-                                WHERE user_id = ?
+                                SET first_name = ?, last_name = ?, email = ?, role = ?, department = ?, warehouse_id = ?, employee_code = ?, status = ?
+                                WHERE id = ?
                             ");
-                            $stmtUpd->execute([$uName, $uEmail, $uRole, $uTeam ?: 'Inventory', $uWarehouse, $uEmpCode, $uStatus, $targetUserId]);
+                            $stmtUpd->execute([$firstName, $lastName, $uEmail, $uRole, $dbDepartment, $uWarehouse, $uEmpCode, $dbStatus, $targetUserId]);
                         }
 
                         require_once __DIR__ . '/../../helpers/AccountabilityService.php';
@@ -297,7 +351,7 @@ if ($isSuperAdmin) {
     // Metrics
     $totalUsers = count($users);
     foreach ($users as $u) {
-        if (($u['status'] ?? '') === 'active') $activeCount++;
+        if (strtolower($u['status'] ?? '') === 'active') $activeCount++;
         if (in_array($u['role'] ?? '', ['admin', 'super_admin'])) $adminCount++;
     }
 
@@ -647,7 +701,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </span>
                             </td>
                             <td>
-                                <?php if (($u['status'] ?? '') === 'active'): ?>
+                                <?php if (strtolower($u['status'] ?? '') === 'active'): ?>
                                     <span class="badge badge-teal">Active</span>
                                 <?php else: ?>
                                     <span class="badge badge-danger"><?= htmlspecialchars(ucfirst($u['status'] ?? 'Inactive')) ?></span>
@@ -680,10 +734,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                         'name'         => $u['name'],
                                         'email'        => $u['email'],
                                         'role'         => $u['role'] ?? 'admin',
-                                        'team'         => $u['team'] ?? 'Inventory',
+                                        'team'         => $team,
                                         'warehouse_id' => $u['warehouse_id'] ? (int)$u['warehouse_id'] : '',
                                         'employee_code' => $u['employee_code'] ?? '',
-                                        'status'       => $u['status'] ?? 'active',
+                                        'status'       => strtolower($u['status'] ?? 'active'),
                                         'is_self'      => $isCurrent
                                     ])) ?>)">
                                         <span>Edit</span>

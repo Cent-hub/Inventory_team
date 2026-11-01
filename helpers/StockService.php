@@ -18,8 +18,8 @@ class StockService {
         'pack', 'packs',
         'can', 'cans'
     ];
-    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'CUSTOMER_RETURN', 'PRODUCTION_RETURN', 'MANUAL'];
-    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'SUPPLIER_RETURN', 'MANUAL'];
+    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'CUSTOMER_RETURN', 'PRODUCTION_RETURN'];
+    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'SUPPLIER_RETURN'];
 
     private PDO $pdo;
 
@@ -279,14 +279,6 @@ class StockService {
                         "Customer Return violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Customer returns only apply to finished goods."
                     );
                 }
-                if ($sourceType === 'MANUAL') {
-                    if (!in_array($itemInfo['item_type'], ['raw_material', 'finished_good'], true)) {
-                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' has an invalid classification for manual entry.");
-                    }
-                    if (isset($entry['item_type']) && $entry['item_type'] !== '' && $entry['item_type'] !== $itemInfo['item_type']) {
-                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' classification mismatch: expected '{$entry['item_type']}', found '{$itemInfo['item_type']}'.");
-                    }
-                }
 
                 // Construct remarks string containing tracking info
                 $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "");
@@ -479,14 +471,6 @@ class StockService {
                     throw new InvalidArgumentException(
                         "Supplier Return violation: Item '{$itemInfo['item_code']}' is a finished good. Supplier returns only apply to raw materials."
                     );
-                }
-                if ($sourceType === 'MANUAL') {
-                    if (!in_array($itemInfo['item_type'], ['raw_material', 'finished_good'], true)) {
-                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' has an invalid classification for manual entry.");
-                    }
-                    if (isset($entry['item_type']) && $entry['item_type'] !== '' && $entry['item_type'] !== $itemInfo['item_type']) {
-                        throw new InvalidArgumentException("Item '{$itemInfo['item_code']}' classification mismatch: expected '{$entry['item_type']}', found '{$itemInfo['item_type']}'.");
-                    }
                 }
 
                 // Check current stock balance (F-14: unreserved stock check)
@@ -2901,7 +2885,7 @@ class StockService {
             $stmtItem = $this->pdo->prepare("SELECT code AS item_code, name AS item_name, unit, status FROM items WHERE item_id = ?");
             $stmtItem->execute([$itemId]);
             $item = $stmtItem->fetch(PDO::FETCH_ASSOC);
-            if (!$item || $item['status'] !== 'active') {
+            if (!$item || strtolower($item['status'] ?? '') !== 'active') {
                 throw new InvalidArgumentException("Item ID {$itemId} is invalid or inactive.");
             }
 
