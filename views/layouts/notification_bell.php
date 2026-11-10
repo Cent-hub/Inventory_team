@@ -108,7 +108,7 @@ foreach ($notificationList as $notifItem) {
                 <span style="position: absolute; left: 10px; color: var(--gold, #E0A96D); pointer-events: none; font-size: 11px; font-weight: 700;">WH:</span>
                 <select name="warehouse_id" aria-label="Switch active facility" class="select-filter" style="height: 34px; font-size: 12px; padding: 0 12px 0 36px; border-radius: 20px; font-weight: 600; background: rgba(255, 255, 255, 0.12); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer;" onchange="this.form.submit()">
                     <?php foreach ($headerWarehouses as $hw): ?>
-                        <option value="<?= (int)$hw['warehouse_id'] ?>" style="background: #14213D; color: #FFFFFF;" <?= ((int)$hw['warehouse_id'] === (int)($currentWarehouseId ?? 1)) ? 'selected' : '' ?>>
+                        <option value="<?= (int)$hw['warehouse_id'] ?>" style="background: #2b0e0e; color: #FFFFFF;" <?= ((int)$hw['warehouse_id'] === (int)($currentWarehouseId ?? 1)) ? 'selected' : '' ?>>
                             <?= htmlspecialchars($hw['warehouse_code'] . ' · ' . $hw['warehouse_name']) ?>
                         </option>
                     <?php endforeach; ?>

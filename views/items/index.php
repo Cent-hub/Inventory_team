@@ -53,10 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } else {
 
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
-            if ($reorderLevel < 0 || $reorderLevel > 99999999.9999) {
-                $errorMessage = "Default reorder level must be between 0 and 99,999,999.9999.";
-            } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
-                $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
+            if ($reorderLevel < 0 || $reorderLevel > 99999999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999.";
+            } elseif (floor($reorderLevel) != $reorderLevel) {
+                $errorMessage = "Default reorder level must be a whole number (no decimals).";
             } else {
                 try {
                     // Check uniqueness of item code
@@ -255,10 +255,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Default reorder level must be a valid number.";
         } else {
             $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
-            if ($reorderLevel < 0 || $reorderLevel > 99999999.9999) {
-                $errorMessage = "Default reorder level must be between 0 and 99,999,999.9999.";
-            } elseif (abs($reorderLevel - round($reorderLevel, 3)) > 0.000001) {
-                $errorMessage = "Default reorder level cannot have more than 3 decimal places.";
+            if ($reorderLevel < 0 || $reorderLevel > 99999999) {
+                $errorMessage = "Default reorder level must be between 0 and 99,999,999.";
+            } elseif (floor($reorderLevel) != $reorderLevel) {
+                $errorMessage = "Default reorder level must be a whole number (no decimals).";
             } else {
                 try {
                     $stmtExist = $pdo->prepare("SELECT code AS item_code, COALESCE(item_type, type) AS item_type, unit AS item_unit, reorder_level FROM items WHERE item_id = ?");
@@ -571,7 +571,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                                 <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td class="text-center" style="font-family: monospace; font-weight: 600;">
-                                <?= formatQty($row['default_reorder_level']) ?> <?= htmlspecialchars($row['unit']) ?>
+                                <?= formatQty($row['default_reorder_level'], 0) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td class="text-center">
                                 <?php if (strtolower($row['status'] ?? 'active') === 'active'): ?>
@@ -622,7 +622,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                                             'item_name'             => $row['item_name'],
                                             'item_type'             => $row['item_type'],
                                             'unit'                  => $row['unit'],
-                                            'default_reorder_level' => (float)$row['default_reorder_level'],
+                                            'default_reorder_level' => (int)round((float)$row['default_reorder_level']),
                                             'description'           => (string)($row['description'] ?? ''),
                                             'status'                => strtolower($row['status'] ?? 'active'),
                                             'tx_count'              => (int)($row['tx_count'] ?? 0)
@@ -705,7 +705,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                         <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Default Reorder Threshold <span style="color: #DC2626;">*</span>
                         </label>
-                        <input type="number" step="0.01" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" required>
+                        <input type="number" step="1" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" onkeydown="if(event.key==='.'||event.key===',')event.preventDefault();" oninput="this.value=this.value.replace(/[^0-9]/g,'');" required>
                     </div>
                 </div>
 
@@ -788,7 +788,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                         <label for="editReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                             Reorder Threshold <span style="color: #DC2626;">*</span>
                         </label>
-                        <input type="number" step="0.01" min="0" name="default_reorder_level" id="editReorder" class="search-box" style="width: 100%; padding-left: 12px;" required>
+                        <input type="number" step="1" min="0" name="default_reorder_level" id="editReorder" class="search-box" style="width: 100%; padding-left: 12px;" onkeydown="if(event.key==='.'||event.key===',')event.preventDefault();" oninput="this.value=this.value.replace(/[^0-9]/g,'');" required>
                     </div>
                     <div>
                         <label for="editStatus" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
@@ -839,7 +839,7 @@ function openEditItemModal(item) {
         lockNoteElem.style.display = isLocked ? 'block' : 'none';
     }
     document.getElementById('editUnit').value = item.unit;
-    document.getElementById('editReorder').value = item.default_reorder_level;
+    document.getElementById('editReorder').value = Math.round(Number(item.default_reorder_level) || 0);
     document.getElementById('editStatus').value = item.status || 'active';
     document.getElementById('editDesc').value = item.description || '';
     document.getElementById('editItemModal').classList.add('open');

@@ -196,9 +196,9 @@
     color: #ffffff;
 }
 
-.settings-squircle.teal   { background: #1F7A6C; }
-.settings-squircle.navy   { background: #14213D; }
-.settings-squircle.bronze { background: #C69255; }
+.settings-squircle.teal   { background: var(--maroon-mid, #7a2a28); }
+.settings-squircle.navy   { background: var(--maroon-deep, #2b0e0e); }
+.settings-squircle.bronze { background: var(--amber, #E88C2E); }
 .settings-squircle.amber  { background: #D97706; }
 .settings-squircle.green  { background: #15803D; }
 .settings-squircle.blue   { background: #2563EB; }

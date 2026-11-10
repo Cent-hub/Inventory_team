@@ -95,10 +95,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --panel-ink: #14213D;
-            --accent: #1F7A6C;
-            --accent-hover: #186358;
-            --page-bg: #F5F6F8;
+            --maroon-deep: #2b0e0e; --maroon-card: #3d1414; --maroon-dark: #5a1f1e; --maroon-mid: #7a2a28; --amber: #E88C2E; --amber-bright: #ffa54a; --off-white: #f0e6e6; --panel-ink: var(--maroon-deep);
+            --accent: var(--maroon-mid);
+            --accent-hover: var(--maroon-dark);
+            --page-bg: var(--off-white);
             --border: #E3E7EF;
             --gray: #6B7280;
             --error: #C7402E;

@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/AccountabilityService.php';
+require_once __DIR__ . '/ExternalApiService.php';
 
 class StockService {
     public const MAX_DECIMAL_QUANTITY = 99999999.9999;
@@ -710,6 +711,9 @@ class StockService {
 
                 $this->pdo->commit();
 
+                // Outgoing B2B Integration: Notify partner team
+                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $stockInRes['transaction_number'], 'damaged');
+
                 return [
                     'success'            => true,
                     'order_number'       => $order['order_number'],
@@ -733,6 +737,9 @@ class StockService {
                 );
 
                 $this->pdo->commit();
+
+                // Outgoing B2B Integration: Notify partner team
+                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $stockInRes['transaction_number'], 'salable');
 
                 return [
                     'success'            => true,
@@ -855,6 +862,9 @@ class StockService {
             if ($isRootTxn) {
                 $this->pdo->commit();
             }
+
+            // Outgoing B2B Integration: Notify partner team
+            ExternalApiService::notifyOutboundDispatch($order, $itemsToDispatch, $stockOutRes['transaction_number']);
 
             return [
                 'success'            => true,

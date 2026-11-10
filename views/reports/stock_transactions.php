@@ -468,9 +468,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Product / Item</th>
                         <th>Classification</th>
                         <th>Movement Type</th>
-                        <th style="text-align: right;">In (+)</th>
-                        <th style="text-align: right;">Out (-)</th>
-                        <th style="text-align: right;">Balance After</th>
+                        <th class="text-center" style="text-align: center;">In (+)</th>
+                        <th class="text-center" style="text-align: center;">Out (-)</th>
+                        <th class="text-center" style="text-align: center;">Balance After</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -499,14 +499,14 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                     </span>
                                 </td>
                                 <td><span class="badge <?= $pillClass ?>"><?= htmlspecialchars(str_replace('_', ' ', $row['movement_type'])) ?></span></td>
-                                <td style="text-align: right; font-weight: 700; color: #15803D;">
-                                    <?= (float)$row['quantity_in'] > 0 ? '+' . formatQty((float)$row['quantity_in']) : '—' ?>
+                                <td class="text-center" style="text-align: center; font-weight: 700; color: #15803D;">
+                                    <?= (float)$row['quantity_in'] > 0 ? formatQty((float)$row['quantity_in'], 0) : '—' ?>
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: #B91C1C;">
-                                    <?= (float)$row['quantity_out'] > 0 ? '-' . formatQty((float)$row['quantity_out']) : '—' ?>
+                                <td class="text-center" style="text-align: center; font-weight: 700; color: #B91C1C;">
+                                    <?= (float)$row['quantity_out'] > 0 ? formatQty((float)$row['quantity_out'], 0) : '—' ?>
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: var(--panel-ink);">
-                                    <?= formatQty((float)$row['balance_after']) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                <td class="text-center" style="text-align: center; font-weight: 700; color: var(--panel-ink);">
+                                    <?= formatQty((float)$row['balance_after'], 0) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -537,8 +537,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Source Type</th>
                         <th>Date Received</th>
                         <th>Processed By</th>
-                        <th style="text-align: right;">Item Lines</th>
-                        <th style="text-align: right;">Total Quantity</th>
+                        <th class="text-center" style="text-align: center;">Item Lines</th>
+                        <th class="text-center" style="text-align: center;">Total Quantity</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -556,8 +556,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
-                                <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #15803D;' ?>">+<?= formatQty((float)$row['total_qty']) ?></td>
+                                <td class="text-center" style="text-align: center; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
+                                <td class="text-center" style="text-align: center; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #15803D;' ?>"><?= formatQty((float)$row['total_qty'], 0) ?></td>
                                 <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -588,8 +588,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Source Type</th>
                         <th>Date Dispatched</th>
                         <th>Issued By</th>
-                        <th style="text-align: right;">Item Lines</th>
-                        <th style="text-align: right;">Total Quantity</th>
+                        <th class="text-center" style="text-align: center;">Item Lines</th>
+                        <th class="text-center" style="text-align: center;">Total Quantity</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -607,8 +607,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
-                                <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
-                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #B91C1C;' ?>">-<?= formatQty((float)$row['total_qty']) ?></td>
+                                <td class="text-center" style="text-align: center; font-size: 12px;"><?= (int)$row['total_items'] ?> Lines</td>
+                                <td class="text-center" style="text-align: center; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #B91C1C;' ?>"><?= formatQty((float)$row['total_qty'], 0) ?></td>
                                 <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -639,8 +639,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Origin Facility</th>
                         <th>Destination Facility</th>
                         <th>Processed By</th>
-                        <th style="text-align: right;">Line Items</th>
-                        <th style="text-align: right;">Total Quantity</th>
+                        <th class="text-center" style="text-align: center;">Line Items</th>
+                        <th class="text-center" style="text-align: center;">Total Quantity</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -658,8 +658,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['from_code']) ?>"><?= htmlspecialchars($row['from_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['from_name']) ?></span></td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['to_code']) ?>"><?= htmlspecialchars($row['to_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['to_name']) ?></span></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
-                                <td style="text-align: right; font-size: 12px;"><?= (int)$row['total_items'] ?></td>
-                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #1D4ED8;' ?>"><?= formatQty((float)$row['total_qty']) ?></td>
+                                <td class="text-center" style="text-align: center; font-size: 12px;"><?= (int)$row['total_items'] ?></td>
+                                <td class="text-center" style="text-align: center; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: #1D4ED8;' ?>"><?= formatQty((float)$row['total_qty'], 0) ?></td>
                                 <td><span class="badge <?= $stClass ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
                             </tr>
                         <?php endforeach; ?>
@@ -689,9 +689,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         <th>Adjustment Date</th>
                         <th>Item Affected</th>
                         <th>Logged By</th>
-                        <th style="text-align: right;">Previous Qty</th>
-                        <th style="text-align: right;">Adjusted Qty</th>
-                        <th style="text-align: right;">Variance Delta</th>
+                        <th class="text-center" style="text-align: center;">Previous Qty</th>
+                        <th class="text-center" style="text-align: center;">Adjusted Qty</th>
+                        <th class="text-center" style="text-align: center;">Variance Delta</th>
                         <th>Reason</th>
                         <th>Status</th>
                     </tr>
@@ -714,10 +714,10 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                                     <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
                                 </td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
-                                <td style="text-align: right; color: var(--gray);"><?= formatQty((float)$row['previous_quantity']) ?></td>
-                                <td style="text-align: right; font-weight: 600; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: var(--panel-ink);' ?>"><?= formatQty((float)$row['adjusted_quantity']) ?></td>
-                                <td style="text-align: right; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: ' . ($diff >= 0 ? '#15803D' : '#B91C1C') . ';' ?>">
-                                    <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
+                                <td class="text-center" style="text-align: center; color: var(--gray);"><?= formatQty((float)$row['previous_quantity'], 0) ?></td>
+                                <td class="text-center" style="text-align: center; font-weight: 600; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: var(--panel-ink);' ?>"><?= formatQty((float)$row['adjusted_quantity'], 0) ?></td>
+                                <td class="text-center" style="text-align: center; font-weight: 700; <?= $isCancelled ? 'color: var(--gray); text-decoration: line-through;' : 'color: ' . ($diff >= 0 ? '#15803D' : '#B91C1C') . ';' ?>">
+                                    <?= formatQty(abs($diff), 0) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($row['unit']) ?></small>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 200px;" title="<?= htmlspecialchars($row['reason']) ?>">
                                     <?= htmlspecialchars($row['reason'] ?: 'Cycle count adjustment') ?>

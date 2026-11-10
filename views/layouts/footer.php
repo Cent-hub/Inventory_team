@@ -1079,26 +1079,14 @@ window.dismissFlashAlert = dismissFlashAlert;
 
 // Auto-initialize pagination & sorting on all data tables, plus global modal Escape & Focus Trap
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-dismiss all Throwable / Error & Flash Alert banners after 5 seconds
+    // Auto-dismiss all Throwable / Error & Flash Alert banners after 4 seconds
     function attachAlertAutoDismiss(alert) {
         if (!alert || alert.dataset.autoDismissAttached) return;
         alert.dataset.autoDismissAttached = 'true';
 
-        let timer = setTimeout(() => {
+        setTimeout(() => {
             dismissFlashAlert(alert);
-        }, 5000);
-
-        // Pause countdown if user hovers to read the message; resume when mouse leaves
-        alert.addEventListener('mouseenter', () => {
-            if (timer) clearTimeout(timer);
-        });
-        alert.addEventListener('mouseleave', () => {
-            if (alert.dataset.dismissing !== 'true') {
-                timer = setTimeout(() => {
-                    dismissFlashAlert(alert);
-                }, 2000);
-            }
-        });
+        }, 4000);
     }
 
     // F-28: Restrict auto-dismiss strictly to explicit .flash-alert banners not marked data-persistent.

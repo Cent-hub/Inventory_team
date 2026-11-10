@@ -1366,7 +1366,7 @@ if ($selectedItemId > 0) {
 
     <!-- Selected Item Profile Banner -->
     <?php if ($selectedItem): ?>
-    <div class="card" style="background: linear-gradient(135deg, #14213D 0%, #1c2e54 100%); color: #ffffff; border: none; margin-bottom: 24px;">
+    <div class="card" style="background: linear-gradient(135deg, var(--maroon-deep) 0%, var(--maroon-card) 55%, var(--maroon-dark) 100%); color: #ffffff; border: none; margin-bottom: 24px;">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
@@ -1387,7 +1387,7 @@ if ($selectedItemId > 0) {
 
             <!-- Current Stock Big Badge -->
             <div style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: var(--radius-lg); padding: 14px 22px; text-align: right;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #5EEAD4;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--amber-bright);">
                     Current Balance on Hand
                 </div>
                 <div style="font-family: var(--font-display); font-size: 28px; font-weight: 800; color: #ffffff;">
