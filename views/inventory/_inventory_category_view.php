@@ -31,7 +31,11 @@ $stmt = $pdo->prepare("
         w.warehouse_id,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
-        COALESCE(s.qty_on_hand, 0.000) AS current_stock,
+        CASE 
+            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand
+            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
+            ELSE COALESCE(s.qty_on_hand, 0.000)
+        END AS current_stock,
         latest_mov.latest_date,
         latest_mov.source_reference_no AS latest_reference,
         latest_mov.latest_qty
@@ -41,18 +45,19 @@ $stmt = $pdo->prepare("
     LEFT JOIN (
         SELECT 
             sm.item_id,
-            sm.warehouse_id,
             DATE(sm.created_at) AS latest_date,
-            COALESCE(sm.remarks, CONCAT(:ref_prefix, sm.movement_id)) AS source_reference_no,
-            sm.quantity AS latest_qty
+            COALESCE(NULLIF(sm.reference_no, ''), sm.remarks, CONCAT(:ref_prefix, sm.movement_id)) AS source_reference_no,
+            sm.quantity AS latest_qty,
+            sm.balance_after
         FROM stock_movements sm
         INNER JOIN (
-            SELECT item_id, warehouse_id, MAX(movement_id) AS max_m_id
+            SELECT item_id, MAX(movement_id) AS max_m_id
             FROM stock_movements
-            WHERE movement_type IN ('STOCK_IN', 'IN') AND warehouse_id = :wid2
-            GROUP BY item_id, warehouse_id
+            WHERE movement_type IN ('STOCK_IN', 'IN')
+              AND (warehouse_id = :wid2 OR :wid3 = 1)
+            GROUP BY item_id
         ) latest_m ON sm.movement_id = latest_m.max_m_id
-    ) latest_mov ON latest_mov.item_id = i.item_id AND latest_mov.warehouse_id = w.warehouse_id
+    ) latest_mov ON latest_mov.item_id = i.item_id
     WHERE (i.type = :item_type OR i.type = :item_type_title) AND (LOWER(i.status) = 'active')
     ORDER BY i.name ASC, w.code ASC
 ");
@@ -62,6 +67,7 @@ $stmt->execute([
     ':wid1'             => $currentWarehouseId,
     ':ref_prefix'       => $refPrefix,
     ':wid2'             => $currentWarehouseId,
+    ':wid3'             => $currentWarehouseId,
     ':item_type'        => $itemType,
     ':item_type_title'  => $titleType
 ]);

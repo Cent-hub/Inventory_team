@@ -25,13 +25,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
     <div class="sidebar-brand">
         <a href="<?= BASE_URL ?>views/dashboard/index.php" class="brand-link" title="InventoryTeam — Liquor Business Inventory Management System">
             <div class="logo-mark" aria-hidden="true">
-                <!-- Lucide Package Icon -->
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m7.5 4.27 9 5.15"/>
-                    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                    <path d="m3.3 7 8.7 5 8.7-5"/>
-                    <path d="M12 22V12"/>
-                </svg>
+                <img src="<?= BASE_URL ?>assets/images/logo.png" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 50%;">
             </div>
             <div class="brand-text-wrap">
                 <span class="brand-name">Inventory<span>Team</span></span>
@@ -196,7 +190,7 @@ $isSettingsActive = ($activeGroup === 'settings' || ($activePage === 'users' && 
                 <span class="user-role"><?= htmlspecialchars(str_replace('_', ' ', $currentUser['role'] ?? 'admin')) ?></span>
             </div>
         </div>
-        <form action="<?= BASE_URL ?>api/auth/logout.php" method="POST" style="margin: 0; padding: 0; display: inline;">
+        <form action="<?= BASE_URL ?>auth/logout.php" method="POST" style="margin: 0; padding: 0; display: inline;">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
             <button type="submit" class="btn-sidebar-logout" title="Sign out" aria-label="Sign out" data-tooltip="Sign out">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

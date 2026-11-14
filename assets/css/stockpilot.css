@@ -98,7 +98,7 @@
         }
 
         .sidebar-brand {
-            padding: 18px 16px 18px 20px;
+            padding: 14px 12px 14px 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -106,14 +106,14 @@
             background: rgba(0, 0, 0, 0.14);
             flex-shrink: 0;
             position: relative;
-            min-height: 72px;
-            gap: 10px;
+            min-height: 76px;
+            gap: 8px;
         }
 
         .brand-link {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             text-decoration: none;
             color: inherit;
             min-width: 0;
@@ -139,7 +139,7 @@
             transition: color 0.15s ease, transform 0.15s ease;
             flex-shrink: 0;
             padding: 0;
-            margin-left: auto;
+            margin-left: 6px;
             opacity: 1;
             pointer-events: auto;
             box-shadow: none;
@@ -170,15 +170,14 @@
         }
 
         .logo-mark {
-            width: 38px;
-            height: 38px;
-            background: linear-gradient(135deg, var(--amber-bright) 0%, var(--amber) 100%);
-            border-radius: var(--radius-md);
+            width: 56px;
+            height: 56px;
+            background: transparent;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--maroon-deep);
-            box-shadow: 0 4px 12px rgba(232, 140, 46, 0.35);
+            overflow: hidden;
             flex-shrink: 0;
         }
 
@@ -186,14 +185,16 @@
             display: flex;
             flex-direction: column;
             line-height: 1.15;
+            min-width: 0;
         }
 
         .brand-name {
             font-family: var(--font-display);
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 800;
             letter-spacing: -0.3px;
             color: var(--off-white);
+            white-space: nowrap;
         }
 
         .brand-name span {
@@ -2029,9 +2030,9 @@ th.sortable-th.sort-desc::after {
             /* Toggle Button in Collapsed Mode: Overlays logo and shows up when cursor hovers */
             body.sidebar-collapsed .logo-mark {
                 border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                box-shadow: 0 4px 12px rgba(232, 140, 46, 0.4);
+                width: 54px;
+                height: 54px;
+                box-shadow: none;
                 transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             }
 

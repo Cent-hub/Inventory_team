@@ -242,7 +242,7 @@ function handleSettingsOtpStep1() {
     }
 
     const baseUrl = getSettingsBaseUrl();
-    fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ action: 'send_code', email: emailVal })
@@ -279,7 +279,7 @@ function handleSettingsOtpResend() {
     if (btnResend) btnResend.textContent = 'Sending...';
 
     const baseUrl = getSettingsBaseUrl();
-    fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ action: 'send_code', email: settingsResetEmail })
@@ -318,7 +318,7 @@ function handleSettingsOtpStep2() {
     }
 
     const baseUrl = getSettingsBaseUrl();
-    fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
@@ -379,7 +379,7 @@ function handleSettingsOtpStep3() {
     }
 
     const baseUrl = getSettingsBaseUrl();
-    fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
@@ -465,7 +465,7 @@ function handleSettingsDirectPasswordChange() {
 
     const baseUrl = getSettingsBaseUrl();
     const csrfToken = getSettingsCsrfToken();
-    fetch(`${baseUrl}api/auth/password_reset_otp.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json', 
@@ -526,7 +526,7 @@ function handleSimulateSupportSend() {
 
     const baseUrl = getSettingsBaseUrl();
     const csrfToken = getSettingsCsrfToken();
-    fetch(`${baseUrl}api/settings/preferences.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -598,7 +598,7 @@ function toggleNotificationFeedback(checkbox, prefKey, label) {
 
     const baseUrl = getSettingsBaseUrl();
     const csrfToken = getSettingsCsrfToken();
-    fetch(`${baseUrl}api/settings/preferences.php`, {
+    fetch(`${baseUrl}auth/login.php`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

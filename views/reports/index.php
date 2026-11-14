@@ -56,7 +56,7 @@ $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
 // Active Tab for Unified Inventory Reports (Default: raw_materials)
 $activeTab = 'raw_materials';
-if (in_array($requestedType, ['raw_materials', 'finished_goods', 'current_balance'], true)) {
+if (in_array($requestedType, ['raw_materials', 'finished_goods', 'current_balance', 'bad_products'], true)) {
     $activeTab = $requestedType;
 }
 
@@ -79,7 +79,11 @@ $sql = "
         END AS category_name,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
-        COALESCE(s.qty_on_hand, 0) AS current_quantity
+        CASE 
+            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand 
+            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
+            ELSE COALESCE(s.qty_on_hand, 0) 
+        END AS current_quantity
     FROM items i
     JOIN warehouses w ON w.warehouse_id = ?
     LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = w.warehouse_id
@@ -101,6 +105,45 @@ $allInventoryData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $rawMaterialsData   = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['raw_material', 'Raw Material'], true)));
 $finishedGoodsData  = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['finished_good', 'Finished Good'], true)));
 $currentBalanceData = $allInventoryData;
+
+// Bad Products Report Data (Damaged Customer Returns & Defective Write-Offs — excluded from salable stock)
+$sqlBad = "
+    SELECT 
+        bp.bad_product_id,
+        CONCAT('BP-', LPAD(bp.bad_product_id, 6, '0')) AS bad_product_number,
+        bp.quantity,
+        bp.reason,
+        bp.status,
+        bp.reported_at,
+        bp.confirmed_at,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit,
+        CASE 
+            WHEN bp.reason LIKE '%Customer Return%' OR bp.reason LIKE '%RMA%' THEN 'Customer Return (RMA)'
+            ELSE 'Warehouse Defect Write-Off'
+        END AS source_origin,
+        COALESCE(u.name, 'Warehouse Operator') AS reported_by_name,
+        COALESCE(cu.name, '—') AS confirmed_by_name
+    FROM bad_products bp
+    JOIN items i ON bp.item_id = i.item_id
+    LEFT JOIN users u ON bp.reported_by = u.user_id
+    LEFT JOIN users cu ON bp.confirmed_by = cu.user_id
+    WHERE bp.warehouse_id = ?
+      AND bp.status != 'cancelled'
+";
+$paramsBad = [$currentWarehouseId];
+if ($search !== '') {
+    $sqlBad .= " AND (i.name LIKE ? OR i.code LIKE ? OR bp.reason LIKE ?)";
+    $paramsBad[] = "%$search%";
+    $paramsBad[] = "%$search%";
+    $paramsBad[] = "%$search%";
+}
+$sqlBad .= " ORDER BY bp.bad_product_id DESC";
+$stmtBad = $pdo->prepare($sqlBad);
+$stmtBad->execute($paramsBad);
+$badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!-- Page Header -->
@@ -122,7 +165,7 @@ $currentBalanceData = $allInventoryData;
         <div>
             <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">InventoryTeam Inventory Management System</h2>
             <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">
-                <?= htmlspecialchars($activeTab === 'finished_goods' ? 'Finished Goods Stock Report' : ($activeTab === 'current_balance' ? 'Current Inventory Balance' : 'Raw Materials Stock Report')) ?>
+                <?= htmlspecialchars($activeTab === 'finished_goods' ? 'Finished Goods Stock Report' : ($activeTab === 'current_balance' ? 'Current Inventory Balance' : ($activeTab === 'bad_products' ? 'Bad Products & Damaged Returns Report' : 'Raw Materials Stock Report'))) ?>
             </h3>
         </div>
         <div style="text-align: right; font-size: 11px; color: var(--gray);">
@@ -174,6 +217,16 @@ $currentBalanceData = $allInventoryData;
             <span>Current Balance</span>
             <span class="tab-badge-count"><?= count($currentBalanceData) ?></span>
         </button>
+
+        <button type="button" id="tab-btn-bad_products" class="stock-tab-btn <?= $activeTab === 'bad_products' ? 'active' : '' ?>" onclick="switchReportTab('bad_products')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>Bad Products</span>
+            <span class="tab-badge-count"><?= count($badProductsData) ?></span>
+        </button>
     </div>
 </div>
 
@@ -192,6 +245,15 @@ $currentBalanceData = $allInventoryData;
             </span>
             <input type="text" name="search" class="search-box" aria-label="Search report items" placeholder="Search item code, description, category..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveReportTable()">
         </div>
+
+        <!-- Health Status Filter -->
+        <select id="reportHealthFilter" class="select-filter" aria-label="Filter by health status" onchange="filterActiveReportTable()">
+            <option value="">All Statuses</option>
+            <option value="optimal">Optimal</option>
+            <option value="low_stock">Low Stock</option>
+            <option value="out_of_stock">Out of Stock</option>
+        </select>
+
         <!-- Buttons -->
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="resetInventoryReportFilters()" title="Reset Filters">
@@ -249,8 +311,9 @@ $currentBalanceData = $allInventoryData;
                             $qty = (float)$row['current_quantity'];
                             $reorder = (float)$row['default_reorder_level'];
                             $isLow = $reorder > 0 && $qty <= $reorder;
+                            $healthStatus = ($qty == 0) ? 'out_of_stock' : ($isLow ? 'low_stock' : 'optimal');
                         ?>
-                            <tr>
+                            <tr data-health="<?= $healthStatus ?>">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['item_code']) ?></td>
                                 <td><strong><?= htmlspecialchars($row['item_name']) ?></strong></td>
                                 <td style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['category_name'] ?? 'General') ?></td>
@@ -311,8 +374,9 @@ $currentBalanceData = $allInventoryData;
                             $qty = (float)$row['current_quantity'];
                             $reorder = (float)$row['default_reorder_level'];
                             $isLow = $reorder > 0 && $qty <= $reorder;
+                            $healthStatus = ($qty == 0) ? 'out_of_stock' : ($isLow ? 'low_stock' : 'optimal');
                         ?>
-                            <tr>
+                            <tr data-health="<?= $healthStatus ?>">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['item_code']) ?></td>
                                 <td><strong><?= htmlspecialchars($row['item_name']) ?></strong></td>
                                 <td style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['category_name'] ?? 'General') ?></td>
@@ -373,13 +437,14 @@ $currentBalanceData = $allInventoryData;
                             $qty = (float)$row['current_quantity'];
                             $reorder = (float)$row['default_reorder_level'];
                             $isLow = $reorder > 0 && $qty <= $reorder;
+                            $healthStatus = ($qty == 0) ? 'out_of_stock' : ($isLow ? 'low_stock' : 'optimal');
                         ?>
-                            <tr>
+                            <tr data-health="<?= $healthStatus ?>">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['item_code']) ?></td>
                                 <td><strong><?= htmlspecialchars($row['item_name']) ?></strong></td>
                                 <td style="color: var(--gray); font-size: 12px;"><?= htmlspecialchars($row['category_name'] ?? 'General') ?></td>
                                 <td>
-                                    <span class="badge-type <?= $row['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
+                                    <span class="badge-type <?= in_array($row['item_type'], ['finished_good', 'Finished Good'], true) ? 'type-fg' : 'type-raw' ?>">
                                         <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                     </span>
                                 </td>
@@ -405,20 +470,99 @@ $currentBalanceData = $allInventoryData;
     </div>
 </div>
 
+<!-- ##################################################################### -->
+<!-- SECTION 4: BAD PRODUCTS & DAMAGED RETURNS REPORT                      -->
+<!-- ##################################################################### -->
+<div id="pane-bad_products" class="stock-op-pane" style="display: <?= $activeTab === 'bad_products' ? 'block' : 'none' ?>;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h2 class="card-title">Bad Products &amp; Damaged Returns Report</h2>
+                <p class="card-desc">Non-salable items from verified damaged customer returns (RMA) and warehouse defect write-offs (excluded from salable Finished Goods) &middot; Generated on <?= date('M d, Y H:i') ?></p>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id="reportTable_bad_products">
+                <thead>
+                    <tr>
+                        <th>Report Ref #</th>
+                        <th>Item Code &amp; Description</th>
+                        <th>Classification</th>
+                        <th>Source / Origin</th>
+                        <th>Defect Reason / QA Notes</th>
+                        <th>Verified / Reported By</th>
+                        <th>Date Logged</th>
+                        <th class="text-center">Bad Quantity (Non-Salable)</th>
+                        <th class="text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($badProductsData)): ?>
+                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products or damaged returns recorded for this warehouse.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($badProductsData as $bp): 
+                            $isFg = in_array($bp['item_type'], ['finished_good', 'Finished Good'], true);
+                            $isRma = str_contains($bp['source_origin'], 'Customer Return');
+                        ?>
+                            <tr data-health="out_of_stock">
+                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($bp['bad_product_number']) ?></td>
+                                <td>
+                                    <strong><?= htmlspecialchars($bp['item_name']) ?></strong>
+                                    <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($bp['item_code']) ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge-type <?= $isFg ? 'type-fg' : 'type-raw' ?>">
+                                        <?= $isFg ? 'Finished Good' : 'Raw Material' ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php if ($isRma): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (RMA)</span>
+                                    <?php else: ?>
+                                        <span class="badge status-alert">Warehouse Write-Off</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="font-size: 12px; color: var(--gray); max-width: 240px;" title="<?= htmlspecialchars($bp['reason']) ?>">
+                                    <?= htmlspecialchars($bp['reason']) ?>
+                                </td>
+                                <td style="font-size: 12px;"><?= htmlspecialchars($bp['reported_by_name']) ?></td>
+                                <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y H:i', strtotime($bp['reported_at'])) ?></td>
+                                <td class="text-center" style="font-weight: 700; font-size: 14px; color: #B91C1C;">
+                                    <?= formatQty((float)$bp['quantity']) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
+                                </td>
+                                <td class="text-center">
+                                    <?php if ($bp['status'] === 'confirmed'): ?>
+                                        <span class="badge status-approved" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Confirmed Bad Product</span>
+                                    <?php elseif ($bp['status'] === 'disposed'): ?>
+                                        <span class="badge status-completed" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">Disposed</span>
+                                    <?php else: ?>
+                                        <span class="badge status-pending">Pending QC</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <script>
 // =============================================================================
-// UNIFIED INVENTORY REPORTS CONTROLLER (Raw Materials | Finished Goods | Balance)
+// UNIFIED INVENTORY REPORTS CONTROLLER (Raw Materials | Finished Goods | Balance | Bad Products)
 // =============================================================================
 let currentActiveTab = '<?= $activeTab ?>';
 
 const reportTitles = {
     'raw_materials': 'Raw Materials Stock Report',
     'finished_goods': 'Finished Goods Stock Report',
-    'current_balance': 'Current Inventory Balance'
+    'current_balance': 'Current Inventory Balance',
+    'bad_products': 'Bad Products & Damaged Returns Report'
 };
 
 function switchReportTab(tabName) {
-    const validTabs = ['raw_materials', 'finished_goods', 'current_balance'];
+    const validTabs = ['raw_materials', 'finished_goods', 'current_balance', 'bad_products'];
     if (!validTabs.includes(tabName)) tabName = 'raw_materials';
     currentActiveTab = tabName;
 
@@ -476,31 +620,73 @@ window.addEventListener('popstate', function() {
     switchReportTab(tab);
 });
 
-// Instant live search across the active report table
+// Instant live search and health status filter across all report tables
 function filterActiveReportTable() {
     const input = document.getElementById('reportSearchInput');
-    if (!input) return;
-    const term = input.value.toLowerCase().trim();
+    const healthSelect = document.getElementById('reportHealthFilter');
+    const term = input ? input.value.toLowerCase().trim() : '';
+    const healthFilter = healthSelect ? healthSelect.value : '';
 
-    const tableId = 'reportTable_' + currentActiveTab;
-    const table = document.getElementById(tableId);
-    if (!table) return;
+    const tabNames = ['raw_materials', 'finished_goods', 'current_balance', 'bad_products'];
+    tabNames.forEach(tab => {
+        const table = document.getElementById('reportTable_' + tab);
+        if (!table) return;
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
 
-    const rows = table.querySelectorAll('tbody tr');
-    rows.forEach(row => {
-        if (row.classList.contains('no-filter') || row.querySelector('td[colspan]')) return;
-        const text = row.textContent.toLowerCase();
-        row.dataset.filteredOut = text.includes(term) ? 'false' : 'true';
+        let matchCount = 0;
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (row.classList.contains('empty-filter-row')) return;
+            if (row.classList.contains('no-filter') || row.querySelector('td[colspan]')) return;
+
+            const text = row.textContent.toLowerCase();
+            let rowHealth = row.getAttribute('data-health') || '';
+            if (!rowHealth) {
+                if (row.querySelector('.status-alert')) rowHealth = 'out_of_stock';
+                else if (row.querySelector('.status-pending')) rowHealth = 'low_stock';
+                else rowHealth = 'optimal';
+            }
+
+            const matchesText = !term || text.includes(term);
+            const matchesHealth = !healthFilter || rowHealth === healthFilter;
+            const isMatch = matchesText && matchesHealth;
+
+            if (isMatch) {
+                delete row.dataset.filteredOut;
+                row.style.display = '';
+                matchCount++;
+            } else {
+                row.dataset.filteredOut = 'true';
+                row.style.display = 'none';
+            }
+        });
+
+        let emptyRow = tbody.querySelector('tr.empty-filter-row');
+        const hasRealDataRows = Array.from(rows).some(r => !r.classList.contains('empty-filter-row') && !r.querySelector('td[colspan]'));
+        if (hasRealDataRows && matchCount === 0) {
+            if (!emptyRow) {
+                emptyRow = document.createElement('tr');
+                emptyRow.className = 'empty-filter-row no-paginate';
+                emptyRow.innerHTML = '<td colspan="7" style="text-align: center; color: var(--gray); padding: 36px;">No inventory records found matching the selected filter criteria.</td>';
+                tbody.appendChild(emptyRow);
+            }
+            emptyRow.style.display = '';
+        } else if (emptyRow) {
+            emptyRow.style.display = 'none';
+        }
+
+        if (typeof table.paginationUpdate === 'function') {
+            table.paginationUpdate(true);
+        }
     });
-
-    if (typeof table.paginationUpdate === 'function') {
-        table.paginationUpdate(true);
-    }
 }
 
 function resetInventoryReportFilters() {
     const input = document.getElementById('reportSearchInput');
+    const healthSelect = document.getElementById('reportHealthFilter');
     if (input) input.value = '';
+    if (healthSelect) healthSelect.value = '';
     filterActiveReportTable();
 }
 

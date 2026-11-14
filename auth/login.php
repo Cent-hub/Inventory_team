@@ -8,13 +8,7 @@ require_once __DIR__ . '/../controllers/AuthController.php';
 
 $auth = new AuthController();
 
-// If already authenticated, redirect straight to dashboard
-if ($auth->isAuthenticated()) {
-    header('Location: ' . $auth->getDashboardRedirectUrl());
-    exit;
-}
-
-// Compute clean BASE_URL for redirects and APIs
+// Compute clean BASE_URL for redirects
 $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
 $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
 $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
@@ -23,11 +17,268 @@ if (!defined('BASE_URL')) {
     define('BASE_URL', $projectRoot . '/');
 }
 
-// Handle JSON POST submission (sent by async fetch)
+// Handle JSON POST submission (sent by async fetch for Login, OTP Reset, Support & Settings Modals)
 $rawInput = file_get_contents('php://input');
 if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false) {
     $input = json_decode($rawInput, true);
     if (is_array($input)) {
+        header('Content-Type: application/json; charset=UTF-8');
+        $action = trim((string)($input['action'] ?? ''));
+
+        if ($action !== '') {
+            require_once __DIR__ . '/../config/database.php';
+            require_once __DIR__ . '/../helpers/rate_limiter.php';
+            require_once __DIR__ . '/../helpers/csrf.php';
+            require_once __DIR__ . '/../helpers/AccountabilityService.php';
+
+            $email = trim(filter_var($input['email'] ?? '', FILTER_SANITIZE_EMAIL));
+
+            switch ($action) {
+                case 'send_code':
+                    checkRateLimit('auth/password_reset_otp', 10, 300);
+                    $result = $auth->requestPasswordReset($email);
+                    if (!$result['success']) {
+                        http_response_code(422);
+                    }
+                    echo json_encode($result);
+                    exit;
+
+                case 'verify_code':
+                    checkRateLimit('auth/password_reset_otp', 10, 300);
+                    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+                    $verifyLimitKey = 'auth_verify_' . hash('sha256', $clientIp . '_' . strtolower($email));
+                    checkRateLimit($verifyLimitKey, 5, 300);
+
+                    $code   = trim((string)($input['code'] ?? ''));
+                    $result = $auth->verifyPasswordResetCode($code, $email);
+                    if (!$result['success']) {
+                        http_response_code(400);
+                    }
+                    echo json_encode($result);
+                    exit;
+
+                case 'reset_password':
+                    checkRateLimit('auth/password_reset_otp', 10, 300);
+                    $resetToken      = trim((string)($input['reset_token'] ?? ''));
+                    $password        = (string)($input['password'] ?? '');
+                    $confirmPassword = (string)($input['confirm_password'] ?? '');
+
+                    $result = $auth->completePasswordReset($resetToken, $password, $confirmPassword, $email);
+                    if (!$result['success']) {
+                        http_response_code(422);
+                    }
+                    echo json_encode($result);
+                    exit;
+
+                case 'change_password':
+                    if (!$auth->isAuthenticated()) {
+                        http_response_code(401);
+                        echo json_encode(['success' => false, 'message' => 'You must be logged in to change your password.']);
+                        exit;
+                    }
+                    $submittedCsrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($input['csrf_token'] ?? null);
+                    if (!validateCsrfToken($submittedCsrf)) {
+                        http_response_code(403);
+                        echo json_encode(['success' => false, 'message' => 'CSRF token mismatch. Please refresh the page and try again.']);
+                        exit;
+                    }
+                    $currentUser     = $auth->getCurrentUser();
+                    $userId          = (int)($currentUser['id'] ?? 0);
+                    $currentPassword = (string)($input['current_password'] ?? '');
+                    $newPassword     = (string)($input['new_password'] ?? '');
+                    $confirmPassword = (string)($input['confirm_password'] ?? '');
+
+                    $result = $auth->changePassword($userId, $currentPassword, $newPassword, $confirmPassword);
+                    if (!$result['success']) {
+                        http_response_code(422);
+                    }
+                    echo json_encode($result);
+                    exit;
+
+                case 'login_support':
+                    checkRateLimit('auth/login_support', 5, 600);
+                    $category = trim((string)($input['category'] ?? 'general'));
+                    $subject  = trim((string)($input['subject'] ?? ''));
+                    $message  = trim((string)($input['message'] ?? ''));
+
+                    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        http_response_code(422);
+                        echo json_encode(['success' => false, 'message' => 'Please provide a valid email address.']);
+                        exit;
+                    }
+                    if ($subject === '' || $message === '') {
+                        http_response_code(422);
+                        echo json_encode(['success' => false, 'message' => 'Subject and message body are both required.']);
+                        exit;
+                    }
+                    $subject = mb_substr($subject, 0, 150);
+                    $message = mb_substr($message, 0, 1000);
+                    $refNo = 'SUP-' . date('Ymd-His') . '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+
+                    try {
+                        AccountabilityService::log([
+                            'user_id'          => null,
+                            'user_name'        => 'Login Guest (' . $email . ')',
+                            'team'             => 'Administration',
+                            'action_type'      => 'SUPPORT_INQUIRY',
+                            'channel'          => 'UI',
+                            'warehouse_id'     => 1,
+                            'reference_number' => $refNo,
+                            'notes'            => "[Login Support - {$category}] Subject: {$subject} — {$message}"
+                        ]);
+                    } catch (Throwable $e) {
+                        http_response_code(500);
+                        echo json_encode(['success' => false, 'message' => 'Failed to record support inquiry. Please try again later.']);
+                        exit;
+                    }
+                    echo json_encode([
+                        'success' => true,
+                        'message' => "Your support inquiry ({$refNo}) has been dispatched directly to the Super Admin."
+                    ]);
+                    exit;
+
+                case 'save_preference':
+                case 'submit_support':
+                    if (!$auth->isAuthenticated()) {
+                        http_response_code(401);
+                        echo json_encode(['success' => false, 'message' => 'Authentication required.']);
+                        exit;
+                    }
+                    $submittedCsrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($input['csrf_token'] ?? null);
+                    if (!validateCsrfToken($submittedCsrf)) {
+                        http_response_code(403);
+                        echo json_encode(['success' => false, 'message' => 'Security validation failed: Invalid or expired CSRF token.']);
+                        exit;
+                    }
+                    $currentUser = $auth->getCurrentUser();
+                    $userId      = (int)($currentUser['id'] ?? 1);
+                    $warehouseId = (int)($_SESSION['warehouse_id'] ?? ($currentUser['warehouse_id'] ?? 1));
+                    if ($warehouseId <= 0) {
+                        $warehouseId = 1;
+                    }
+
+                    if ($action === 'save_preference') {
+                        $allowedKeys = [
+                            'inbound_receipts'    => 'Inbound Receipts Notifications',
+                            'outbound_dispatches' => 'Outbound Dispatches Notifications',
+                            'daily_digest'        => 'Daily Stock Ledger Digest',
+                            'two_factor_auth'     => 'Two-Factor Authentication (2FA)',
+                            'notif_sound'         => 'Notification Sound Alerts',
+                            'toast_alerts'        => 'Floating Toast Notifications',
+                            'sound_focus_only'    => 'Mute Sound in Background Tabs'
+                        ];
+                        $key     = trim((string)($input['key'] ?? ''));
+                        $enabled = !empty($input['enabled']);
+                        if (!isset($allowedKeys[$key])) {
+                            http_response_code(422);
+                            echo json_encode(['success' => false, 'message' => 'Invalid preference key.']);
+                            exit;
+                        }
+                        $pdo = Database::getConnection();
+                        $dbPrefs = [];
+                        try {
+                            $stmtPref = $pdo->prepare("SELECT preferences_json FROM user_preferences WHERE user_id = ?");
+                            $stmtPref->execute([$userId]);
+                            $rawPrefs = $stmtPref->fetchColumn();
+                            if ($rawPrefs) {
+                                $dbPrefs = json_decode($rawPrefs, true) ?: [];
+                            }
+                        } catch (Throwable $e) {
+                            $dbPrefs = [];
+                        }
+                        if (!isset($_SESSION['user_preferences']) || !is_array($_SESSION['user_preferences'])) {
+                            $_SESSION['user_preferences'] = $dbPrefs;
+                        }
+                        $_SESSION['user_preferences'][$key] = $enabled;
+                        $dbPrefs[$key] = $enabled;
+                        try {
+                            $stmtSavePref = $pdo->prepare("
+                                INSERT INTO user_preferences (user_id, preferences_json, updated_at)
+                                VALUES (?, ?, NOW())
+                                ON DUPLICATE KEY UPDATE preferences_json = VALUES(preferences_json), updated_at = NOW()
+                            ");
+                            $stmtSavePref->execute([$userId, json_encode($dbPrefs, JSON_UNESCAPED_UNICODE)]);
+                        } catch (Throwable $e) {
+                            error_log("Failed to persist user preferences: " . $e->getMessage());
+                        }
+                        $label = $allowedKeys[$key];
+                        $stateText = $enabled ? 'Enabled' : 'Disabled';
+                        if ($key === 'two_factor_auth') {
+                            try {
+                                AccountabilityService::log([
+                                    'user_id'          => $userId,
+                                    'team'             => 'Administration',
+                                    'action_type'      => 'USER_UPDATED',
+                                    'channel'          => 'UI',
+                                    'warehouse_id'     => $warehouseId,
+                                    'reference_number' => 'SEC-2FA',
+                                    'notes'            => "{$label} preference set to {$stateText}"
+                                ]);
+                            } catch (Throwable $e) {}
+                        }
+                        echo json_encode([
+                            'success' => true,
+                            'key'     => $key,
+                            'enabled' => $enabled,
+                            'message' => "{$label}: {$stateText} and saved."
+                        ]);
+                        exit;
+                    }
+
+                    // submit_support
+                    $subject  = trim((string)($input['subject'] ?? ''));
+                    $category = trim((string)($input['category'] ?? 'general'));
+                    $message  = trim((string)($input['message'] ?? ''));
+                    if ($subject === '' || $message === '') {
+                        http_response_code(422);
+                        echo json_encode(['success' => false, 'message' => 'Please enter both a subject and a message.']);
+                        exit;
+                    }
+                    $subject = mb_substr($subject, 0, 150);
+                    $message = mb_substr($message, 0, 1000);
+                    $categoryMap = [
+                        'discrepancy' => 'Stock Discrepancy',
+                        'requisition' => 'Procurement Requisition',
+                        'transfer'    => 'Inter-Warehouse Transfer',
+                        'access'      => 'Permissions & Access',
+                        'general'     => 'General Inquiry'
+                    ];
+                    $categoryLabel = $categoryMap[$category] ?? 'General Inquiry';
+                    $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
+                    $refNo = ($isSuperAdmin ? 'MSG-' : 'SUP-') . date('Ymd-His');
+                    $notePrefix = $isSuperAdmin ? "Super Admin Message: {$categoryLabel}" : $categoryLabel;
+                    try {
+                        AccountabilityService::log([
+                            'user_id'          => $userId,
+                            'team'             => 'Administration',
+                            'action_type'      => 'SUPPORT_INQUIRY',
+                            'channel'          => 'UI',
+                            'warehouse_id'     => $warehouseId,
+                            'reference_number' => $refNo,
+                            'notes'            => "[{$notePrefix}] {$subject} — {$message}"
+                        ]);
+                    } catch (Throwable $e) {
+                        http_response_code(500);
+                        echo json_encode(['success' => false, 'message' => 'Failed to record support inquiry in database.']);
+                        exit;
+                    }
+                    $successMsg = $isSuperAdmin 
+                        ? "Broadcast message {$refNo} posted to all team notifications." 
+                        : "Support ticket {$refNo} has been logged and sent to the Super Admin.";
+                    echo json_encode([
+                        'success'          => true,
+                        'reference_number' => $refNo,
+                        'message'          => $successMsg
+                    ]);
+                    exit;
+
+                default:
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'message' => 'Unknown action requested.']);
+                    exit;
+            }
+        }
+
         $emailVal    = trim($input['email'] ?? ($input['username'] ?? ''));
         $passwordVal = $input['password'] ?? '';
         $remember    = !empty($input['remember']);
@@ -44,10 +295,15 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
                 http_response_code(401);
             }
         }
-        header('Content-Type: application/json; charset=UTF-8');
         echo json_encode($result);
         exit;
     }
+}
+
+// If already authenticated, redirect straight to dashboard
+if ($auth->isAuthenticated()) {
+    header('Location: ' . $auth->getDashboardRedirectUrl());
+    exit;
 }
 
 // Handle classic HTTP POST submission (fallback / no-JS)
@@ -90,6 +346,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login — InventoryTeam</title>
+    <link rel="icon" type="image/png" href="<?= BASE_URL ?>assets/images/logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -176,24 +433,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Brand Logo Row */
         .logo-row {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 22px;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 16px;
         }
         .logo-mark {
-            width: 28px;
-            height: 28px;
-            border-radius: 8px;
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
             flex-shrink: 0;
-            background: var(--accent);
+            background: transparent;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #fff;
+            overflow: hidden;
         }
         .logo-text {
             font-family: var(--font-display);
-            font-size: 19px;
+            font-size: 21px;
             font-weight: 700;
             color: var(--panel-ink);
         }
@@ -208,55 +467,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             letter-spacing: 0.12em;
             color: var(--panel-ink);
             margin-bottom: 22px;
-            text-transform: uppercase;
-        }
-
-        /* Google Button */
-        .google-btn {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 12px 0;
-            border-radius: 14px;
-            border: 1.5px solid var(--border);
-            background: #fff;
-            font-family: var(--font-body);
-            font-size: 14.5px;
-            font-weight: 600;
-            color: var(--panel-ink);
-            cursor: pointer;
-            transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
-        }
-        .google-btn:hover {
-            border-color: #C7D0E0;
-            box-shadow: 0 2px 8px rgba(20, 33, 80, 0.08);
-        }
-        .google-btn:active {
-            transform: scale(0.99);
-        }
-
-        /* Divider */
-        .divider {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            width: 100%;
-            margin: 22px 0;
-        }
-        .divider::before, .divider::after {
-            content: "";
-            flex: 1;
-            height: 1px;
-            background: var(--border);
-        }
-        .divider span {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            color: var(--gray);
-            white-space: nowrap;
             text-transform: uppercase;
         }
 
@@ -525,34 +735,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <!-- Brand Logo Row -->
                     <div class="logo-row">
                         <span class="logo-mark" aria-hidden="true">
-                            <!-- Lucide Package Icon -->
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="m7.5 4.27 9 5.15"/>
-                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                                <path d="m3.3 7 8.7 5 8.7-5"/>
-                                <path d="M12 22V12"/>
-                            </svg>
+                            <img src="<?= BASE_URL ?>assets/images/logo.png" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; display: block;">
                         </span>
                         <span class="logo-text">Inventory<span>Team</span></span>
                     </div>
 
                     <!-- Login Title -->
                     <h2 class="login-title">LOGIN</h2>
-
-                    <!-- Google Sign-in Button (Visual Roadmap Placeholder) -->
-                    <button type="button" id="btn-google-login" class="google-btn">
-                        <!-- Google 4-Color Icon -->
-                        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
-                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
-                            <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.038l3.007-2.332z" />
-                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z" />
-                        </svg>
-                        Continue with Google
-                    </button>
-
-                    <!-- Divider -->
-                    <div class="divider"><span>OR SIGN IN WITH EMAIL</span></div>
 
                     <!-- Pre-rendered Flash / Status Alerts with Auto-Dismiss -->
                     <?php if (isset($_GET['logged_out'])): ?>
@@ -1015,13 +1204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            const res = await fetch('<?= BASE_URL ?>api/auth/login_support.php', {
+            const res = await fetch('<?= BASE_URL ?>auth/login.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ email, category, subject, message })
+                body: JSON.stringify({ action: 'login_support', email, category, subject, message })
             });
             const data = await res.json();
 
@@ -1067,7 +1256,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const eyeIcon = document.getElementById('eye-icon');
         const eyeOffIcon = document.getElementById('eye-off-icon');
         const rememberMeCheckbox = document.getElementById('remember_me');
-        const googleBtn = document.getElementById('btn-google-login');
         const errorEmail = document.getElementById('error-email');
         const errorPassword = document.getElementById('error-password');
 
@@ -1126,13 +1314,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             toggleBtn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
             passwordInput.focus();
         });
-
-        // Informative notification for Google button
-        if (googleBtn) {
-            googleBtn.addEventListener('click', function () {
-                showAlert('info', 'Google Sign-In is not configured yet. Please use your email address below.');
-            });
-        }
 
         // Helper to display alert banners (danger, success, info)
         function showAlert(type, message, persist = false) {
@@ -1522,7 +1703,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clearOtpAlert();
                 btnResendCode.textContent = 'Sending...';
 
-                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>auth/login.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ action: 'send_code', email: currentResetEmail })
@@ -1623,7 +1804,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textSend) textSend.textContent = 'Sending Code...';
                 }
 
-                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>auth/login.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ action: 'send_code', email: emailVal })
@@ -1678,7 +1859,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textVerify) textVerify.textContent = 'Verifying...';
                 }
 
-                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>auth/login.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({
@@ -1745,7 +1926,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (textSave) textSave.textContent = 'Saving Password...';
                 }
 
-                fetch('<?= BASE_URL ?>api/auth/password_reset_otp.php', {
+                fetch('<?= BASE_URL ?>auth/login.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({

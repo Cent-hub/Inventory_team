@@ -61,17 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " was cancelled successfully. Reserved stock has been released back to available inventory.";
                     break;
 
-                case 'cancel_stock_in':
-                    $activeTab = 'inbound';
-                    $stockInId = (int)($_POST['stock_in_id'] ?? 0);
-                    $reason    = trim($_POST['cancellation_reason'] ?? '');
-                    if ($stockInId <= 0) {
-                        throw new InvalidArgumentException("Invalid Stock In transaction ID.");
-                    }
-                    $res = $stockService->cancelStockIn($stockInId, $reason, $userId, $currentUser);
-                    $successMessage = "Inbound receipt " . htmlspecialchars($res['transaction_number']) . " has been cancelled and reversed from inventory.";
-                    break;
-
                 case 'cancel_stock_out':
                     $activeTab  = 'outbound';
                     $stockOutId = (int)($_POST['stock_out_id'] ?? 0);
@@ -145,11 +134,13 @@ $stmtIn = $pdo->prepare("
         sm.movement_id AS stock_in_id,
         CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type = 'finished_good' THEN 'PRODUCTION_RETURN'
+            WHEN sm.source_type = 'CUSTOMER_RETURN' OR sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
+            WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RETURN'
             WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
             ELSE 'PURCHASE_ORDER'
         END AS source_type,
         COALESCE(
+            NULLIF(sm.reference_no, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
@@ -168,7 +159,7 @@ $stmtIn = $pdo->prepare("
         COALESCE(u.name, 'Warehouse Operator') AS operator_name,
         1 AS total_item_count,
         sm.quantity AS total_quantity,
-        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sm.quantity, 2))), ' ', i.unit, ')') AS item_breakdown,
+        CONCAT(i.name, ' (', ROUND(sm.quantity, 0), ' ', i.unit, ')') AS item_breakdown,
         i.code AS item_code,
         i.name AS item_name,
         i.type AS item_type,
@@ -180,9 +171,12 @@ $stmtIn = $pdo->prepare("
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
         AND (rev.movement_type = 'CANCELLED_INBOUND' OR (rev.movement_type = 'STOCK_OUT' AND rev.remarks LIKE 'Cancelled Stock IN %'))
     WHERE sm.warehouse_id = :wid 
-      AND sm.movement_type = 'STOCK_IN'
-      AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
-      AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
+      AND sm.movement_type IN ('STOCK_IN', 'IN')
+      AND (sm.remarks IS NULL OR (
+          sm.remarks NOT LIKE 'Cancelled Stock OUT %'
+          AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
+          AND sm.remarks NOT LIKE 'Customer RMA Inbound (%'
+      ))
     ORDER BY sm.movement_id DESC
 ");
 $stmtIn->execute([':wid' => $currentWarehouseId]);
@@ -219,10 +213,11 @@ $stmtOut = $pdo->prepare("
         sm.movement_id AS stock_out_id,
         CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type = 'raw_material' THEN 'MATERIAL_REQUEST'
+            WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
             ELSE 'SALES_DELIVERY'
         END AS source_type,
         COALESCE(
+            NULLIF(sm.reference_no, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
@@ -241,7 +236,7 @@ $stmtOut = $pdo->prepare("
         COALESCE(u.name, 'Warehouse Operator') AS operator_name,
         1 AS total_item_count,
         sm.quantity AS total_quantity,
-        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(sm.quantity, 2))), ' ', i.unit, ')') AS item_breakdown,
+        CONCAT(i.name, ' (', ROUND(sm.quantity, 0), ' ', i.unit, ')') AS item_breakdown,
         i.code AS item_code,
         i.name AS item_name,
         i.type AS item_type,
@@ -253,8 +248,8 @@ $stmtOut = $pdo->prepare("
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
         AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR (rev.movement_type = 'STOCK_IN' AND rev.remarks LIKE 'Cancelled Stock OUT %'))
     WHERE sm.warehouse_id = :wid 
-      AND sm.movement_type = 'STOCK_OUT'
-      AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
+      AND sm.movement_type IN ('STOCK_OUT', 'OUT')
+      AND (sm.remarks IS NULL OR sm.remarks NOT LIKE 'Cancelled Stock IN %')
     ORDER BY sm.movement_id DESC
 ");
 $stmtOut->execute([':wid' => $currentWarehouseId]);
@@ -380,7 +375,15 @@ foreach ($stmtOutLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
 
 $pendingInboundCount  = count($pendingInboundOrders);
 $pendingOutboundCount = count($pendingOutboundOrders);
-$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN'));
+$stmtDamagedRma = $pdo->prepare("
+    SELECT COUNT(*) FROM bad_products 
+    WHERE warehouse_id = :wid 
+      AND status != 'cancelled' 
+      AND (reason LIKE '%Customer Return%' OR reason LIKE '%RMA%')
+");
+$stmtDamagedRma->execute([':wid' => $currentWarehouseId]);
+$damagedRmaCount = (int)$stmtDamagedRma->fetchColumn();
+$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN')) + $damagedRmaCount;
 $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SUPPLIER_RETURN'));
 ?>
 
@@ -685,11 +688,11 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 
                             // Derive item classification
                             $itemType = 'raw_material';
-                            if ($row['source_type'] === 'PRODUCTION_RETURN') {
+                            if ($row['source_type'] === 'PRODUCTION_RETURN' || $row['source_type'] === 'CUSTOMER_RETURN') {
                                 $itemType = 'finished_good';
                             } elseif (!empty($lines)) {
                                 $types = array_unique(array_column($lines, 'item_type'));
-                                $itemType = count($types) === 1 ? $types[0] : 'mixed';
+                                $itemType = count($types) === 1 ? strtolower(str_replace(' ', '_', $types[0])) : 'mixed';
                             }
                         ?>
                             <tr data-source="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
@@ -704,6 +707,10 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge-source-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
                                             Production
+                                        </span>
+                                    <?php elseif ($row['source_type'] === 'CUSTOMER_RETURN'): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">
+                                            Customer RMA
                                         </span>
                                     <?php else: ?>
                                         <span class="badge-source-manual">
@@ -776,11 +783,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                 <!-- Action -->
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                                        <?php if ($row['status'] === 'completed'): ?>
-                                            <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick="openCancelStockInModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                                Cancel
-                                            </button>
-                                        <?php endif; ?>
                                         <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
                                             View Details
                                         </button>
@@ -1186,11 +1188,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                 <!-- Action -->
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-                                        <?php if ($row['status'] === 'completed'): ?>
-                                            <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick="openCancelStockOutModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
-                                                Cancel
-                                            </button>
-                                        <?php endif; ?>
                                         <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
                                             View Details
                                         </button>
@@ -1261,41 +1258,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeOutDetailModal()">Close</button>
         </div>
-    </div>
-</div>
-
-<!-- Modal: Cancel Stock In (Inbound Receipt) -->
-<div id="cancelStockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelStockInModalTitle" onclick="if(event.target === this) closeCancelStockInModal()">
-    <div class="modal-card" style="max-width: 460px;">
-        <form method="POST" action="index.php?tab=inbound">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="cancel_stock_in">
-            <input type="hidden" name="active_tab" value="inbound">
-            <input type="hidden" name="stock_in_id" id="cancelStockInId" value="">
-
-            <div class="modal-header">
-                <div>
-                    <h3 id="cancelStockInModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Inbound Receipt</h3>
-                    <p class="card-desc" style="margin: 0;">Reverse Stock In and deduct received quantity from inventory</p>
-                </div>
-                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelStockInModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
-                <p style="font-size: 13.5px; margin: 0; color: var(--panel-ink);">
-                    Are you sure you want to cancel inbound receipt <strong id="cancelStockInRef" style="font-family: monospace;">—</strong>?
-                </p>
-                <div>
-                    <label for="cancelStockInReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Cancellation Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="cancellation_reason" id="cancelStockInReason" class="search-box" style="width: 100%; border-radius: 6px; height: 60px; padding: 8px 12px;" placeholder="Reason for cancelling this inbound receipt..." required></textarea>
-                </div>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeCancelStockInModal()">Close</button>
-                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Cancellation</button>
-            </div>
-        </form>
     </div>
 </div>
 
@@ -1831,25 +1793,6 @@ function resetStockOutFilters() {
     filterStockOutTable();
 }
 
-function openCancelStockInModal(id, txnNo) {
-    document.getElementById('cancelStockInId').value = id;
-    document.getElementById('cancelStockInRef').textContent = txnNo;
-    document.getElementById('cancelStockInReason').value = '';
-    const modal = document.getElementById('cancelStockInModal');
-    if (modal) {
-        modal.classList.add('open');
-        modal.style.display = 'flex';
-    }
-}
-
-function closeCancelStockInModal() {
-    const modal = document.getElementById('cancelStockInModal');
-    if (modal) {
-        modal.classList.remove('open');
-        modal.style.display = 'none';
-    }
-}
-
 function openCancelStockOutModal(id, txnNo) {
     document.getElementById('cancelStockOutId').value = id;
     document.getElementById('cancelStockOutRef').textContent = txnNo;
@@ -1953,7 +1896,7 @@ function openReceiveOrderModal(id) {
     } else {
         lines.forEach(l => {
             const tr = document.createElement('tr');
-            const rem = parseFloat(l.remaining_quantity);
+            const rem = Math.round(parseFloat(l.remaining_quantity) || 0);
             tr.innerHTML = `
                 <td style="padding: 8px 10px;">
                     <div style="font-weight: 700; color: var(--panel-ink);">${escapeHtml(l.item_name)}</div>
@@ -1963,7 +1906,7 @@ function openReceiveOrderModal(id) {
                 <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.received_quantity)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #15803D;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px;">
-                    <input type="number" step="any" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="${rem}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                    <input type="number" step="1" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="${rem}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -2035,8 +1978,8 @@ function openDispatchOrderModal(id) {
     } else {
         lines.forEach(l => {
             const tr = document.createElement('tr');
-            const rem = parseFloat(l.remaining_quantity);
-            const avail = parseFloat(l.available_stock || 0);
+            const rem = Math.round(parseFloat(l.remaining_quantity) || 0);
+            const avail = Math.round(parseFloat(l.available_stock || 0));
             const maxDispatch = Math.min(rem, avail);
             const isShort = avail < rem;
 
@@ -2053,7 +1996,7 @@ function openDispatchOrderModal(id) {
                 <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.requested_quantity)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #B91C1C;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px;">
-                    <input type="number" step="any" min="0" max="${rem}" name="dispatched_quantity[${l.item_id}]" value="${maxDispatch}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                    <input type="number" step="1" min="0" max="${rem}" name="dispatched_quantity[${l.item_id}]" value="${maxDispatch}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
                 </td>
             `;
             tbody.appendChild(tr);

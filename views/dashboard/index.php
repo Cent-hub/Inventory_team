@@ -21,7 +21,11 @@ $stmtInventory = $pdo->prepare("
         i.name AS item_name,
         COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
-        COALESCE(s.qty_on_hand, 0) AS quantity,
+        CASE 
+            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand 
+            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
+            ELSE COALESCE(s.qty_on_hand, 0) 
+        END AS quantity,
         COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level
     FROM items i
     JOIN warehouses w ON w.warehouse_id = :wid1
@@ -91,11 +95,13 @@ $stmtRP = $pdo->prepare("
           sm.source_type IN ('CUSTOMER_RETURN', 'SUPPLIER_RETURN')
           OR sm.remarks LIKE '[CUSTOMER_RETURN:%'
           OR sm.remarks LIKE '[SUPPLIER_RETURN:%'
+          OR sm.remarks LIKE '%Damaged Customer Return%'
           OR sm.remarks REGEXP '^(RMA|RTV)-'
           OR sm.remarks LIKE '%[RMA%'
           OR sm.remarks LIKE '%[RTV%'
       )
-      AND sm.movement_type IN ('STOCK_IN', 'STOCK_OUT')
+      AND sm.movement_type IN ('STOCK_IN', 'STOCK_OUT', 'BAD_PRODUCT_DISCARD')
+      AND (sm.remarks IS NULL OR sm.remarks NOT LIKE 'Customer RMA Inbound (%')
 ");
 $stmtRP->execute([':wid' => $currentWarehouseId]);
 $rpRow = $stmtRP->fetch(PDO::FETCH_ASSOC);
@@ -663,7 +669,7 @@ if (count($recentWarehouseStaff) < 3) {
                                 <strong><?= htmlspecialchars($row['item_name']) ?></strong>
                             </td>
                             <td class="text-center">
-                                <span class="badge-type <?= $row['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
+                                <span class="badge-type <?= in_array(strtolower(str_replace(' ', '_', (string)$row['item_type'])), ['finished_good', 'finished good']) ? 'type-fg' : 'type-raw' ?>">
                                     <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                 </span>
                             </td>

@@ -341,7 +341,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                         </td>
                         <td style="text-align: right;">
                             <?php if ((float)$log['quantity'] != 0): ?>
-                                <span style="font-weight: 700; font-size: 15px; color: var(--panel-ink);"><?= (float)$log['quantity'] > 0 ? '+' : '' ?><?= rtrim(rtrim(number_format((float)$log['quantity'], 4), '0'), '.') ?></span>
+                                <span style="font-weight: 700; font-size: 15px; color: var(--panel-ink);"><?= (float)$log['quantity'] > 0 ? '+' : '' ?><?= formatQty((float)$log['quantity']) ?></span>
                                 <span style="color: var(--gray); font-weight: 500; font-size: 12.5px;"><?= htmlspecialchars($log['unit'] ?? '') ?></span>
                             <?php else: ?>
                                 <span style="color: var(--gray); font-size: 13px;">—</span>

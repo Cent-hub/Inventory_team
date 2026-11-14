@@ -62,6 +62,7 @@ $tabMap = [
     'stock_transfers'  => 'transfers',
     'adjustments'      => 'adjustments',
     'stock_adjustments'=> 'adjustments',
+    'bad_products'     => 'bad_products',
 ];
 
 $requestedTab = $_GET['tab'] ?? $_GET['type'] ?? 'movements';
@@ -103,7 +104,7 @@ $sqlM = "
         sm.movement_type,
         COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
         CASE WHEN sm.signed_delta > 0 THEN sm.signed_delta ELSE 0 END AS quantity_in,
-        CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) ELSE 0 END AS quantity_out,
+        CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) WHEN sm.movement_type = 'BAD_PRODUCT_DISCARD' THEN sm.quantity ELSE 0 END AS quantity_out,
         sm.balance_after,
         sm.created_at,
         i.code AS item_code,
@@ -137,10 +138,15 @@ $sqlIn = "
         sm.movement_id AS stock_in_id,
         CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type IN ('finished_good', 'Finished Good') THEN 'PRODUCTION_RETURN'
+            WHEN sm.source_type = 'CUSTOMER_RETURN' OR sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
+            WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RETURN'
             ELSE 'PURCHASE_ORDER'
         END AS source_type,
-        COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
+        COALESCE(
+            NULLIF(sm.reference_no, ''),
+            NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
+            CONCAT('REF-', sm.movement_id)
+        ) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
         CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
@@ -159,8 +165,11 @@ $sqlIn = "
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type IN ('STOCK_IN', 'IN')
-      AND sm.remarks NOT LIKE 'Cancelled Stock OUT %'
-      AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
+      AND (sm.remarks IS NULL OR (
+          sm.remarks NOT LIKE 'Cancelled Stock OUT %'
+          AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
+          AND sm.remarks NOT LIKE 'Customer RMA Inbound (%'
+      ))
 ";
 $paramsIn = [$startDate, $endDate, $currentWarehouseId];
 if ($search !== '') {
@@ -181,10 +190,14 @@ $sqlOut = "
         sm.movement_id AS stock_out_id,
         CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
         CASE 
-            WHEN i.type IN ('raw_material', 'Raw Material') THEN 'MATERIAL_REQUEST'
+            WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
             ELSE 'SALES_DELIVERY'
         END AS source_type,
-        COALESCE(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''), CONCAT('REF-', sm.movement_id)) AS source_reference_no,
+        COALESCE(
+            NULLIF(sm.reference_no, ''),
+            NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
+            CONCAT('REF-', sm.movement_id)
+        ) AS source_reference_no,
         DATE(sm.created_at) AS transaction_date,
         CASE WHEN rev.movement_id IS NOT NULL THEN 'cancelled' ELSE 'completed' END AS status,
         sm.remarks,
@@ -291,6 +304,45 @@ if ($limitVal > 0) $sqlAdj .= " LIMIT " . (int)$limitVal;
 $stmtAdj = $pdo->prepare($sqlAdj);
 $stmtAdj->execute($paramsAdj);
 $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
+
+// 6. Bad Products & Damaged Returns Ledger
+$sqlBp = "
+    SELECT 
+        bp.bad_product_id,
+        CONCAT('BP-', LPAD(bp.bad_product_id, 6, '0')) AS transaction_number,
+        DATE(bp.reported_at) AS reported_date,
+        bp.reported_at,
+        bp.quantity,
+        bp.reason,
+        bp.status,
+        CASE 
+            WHEN bp.reason LIKE '%Customer Return%' OR bp.reason LIKE '%RMA%' THEN 'Customer Return (RMA)'
+            ELSE 'Warehouse Write-Off'
+        END AS source_origin,
+        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
+        i.code AS item_code,
+        i.name AS item_name,
+        i.type AS item_type,
+        i.unit
+    FROM bad_products bp
+    JOIN items i ON bp.item_id = i.item_id
+    LEFT JOIN users u ON bp.reported_by = u.user_id
+    WHERE DATE(bp.reported_at) BETWEEN ? AND ?
+      AND bp.warehouse_id = ?
+      AND bp.status != 'cancelled'
+";
+$paramsBp = [$startDate, $endDate, $currentWarehouseId];
+if ($search !== '') {
+    $sqlBp .= " AND (i.name LIKE ? OR i.code LIKE ? OR bp.reason LIKE ?)";
+    $paramsBp[] = "%$search%";
+    $paramsBp[] = "%$search%";
+    $paramsBp[] = "%$search%";
+}
+$sqlBp .= " ORDER BY bp.reported_at DESC, bp.bad_product_id DESC";
+if ($limitVal > 0) $sqlBp .= " LIMIT " . (int)$limitVal;
+$stmtBp = $pdo->prepare($sqlBp);
+$stmtBp->execute($paramsBp);
+$badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!-- Page Header -->
@@ -377,6 +429,16 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
             <span>Adjustments</span>
             <span class="tab-badge-count"><?= count($adjustmentData) ?></span>
         </button>
+
+        <button type="button" id="tab-btn-bad_products" class="stock-tab-btn <?= $activeTab === 'bad_products' ? 'active' : '' ?>" onclick="switchTransactionTab('bad_products')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>Bad Products</span>
+            <span class="tab-badge-count"><?= count($badProductsLedgerData) ?></span>
+        </button>
     </div>
 </div>
 
@@ -398,9 +460,9 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
         <!-- Date Presets (FIX-020) -->
         <div style="display: flex; gap: 4px; align-items: center;">
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=today<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'today' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">Today</a>
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=this_month<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= ($datePreset === 'this_month' || (empty($datePreset) && empty($rawStartDate) && empty($rawEndDate))) ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">This Month</a>
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=all_time<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" class="btn btn-secondary" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'all_time' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">All Time</a>
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=today<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="today" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'today' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">Today</a>
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=this_month<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="this_month" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= ($datePreset === 'this_month' || (empty($datePreset) && empty($rawStartDate) && empty($rawEndDate))) ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">This Month</a>
+            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=all_time<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="all_time" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'all_time' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">All Time</a>
         </div>
 
         <!-- Date Range -->
@@ -488,13 +550,13 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                         ?>
                             <tr>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y H:i', strtotime($row['created_at'])) ?></td>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($row['reference_number'] ?: '—') ?></td>
+                                <td style="font-weight: 600; color: var(--panel-ink);"><?= htmlspecialchars($row['reference_number'] ?: '—') ?></td>
                                 <td>
                                     <strong><?= htmlspecialchars($row['item_name']) ?></strong>
-                                    <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
+                                    <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
                                 </td>
                                 <td>
-                                    <span class="badge-type <?= $row['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
+                                    <span class="badge-type <?= in_array($row['item_type'], ['finished_good', 'Finished Good'], true) ? 'type-fg' : 'type-raw' ?>">
                                         <?= htmlspecialchars(str_replace('_', ' ', $row['item_type'])) ?>
                                     </span>
                                 </td>
@@ -551,8 +613,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
                         ?>
                             <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
-                                <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
+                                <td style="font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                                <td style="color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
@@ -602,8 +664,8 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
                         ?>
                             <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
-                                <td style="font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
+                                <td style="font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                                <td style="color: var(--panel-ink);"><?= htmlspecialchars($row['source_reference_no'] ?: '—') ?></td>
                                 <td><span class="badge" style="background: var(--gray-light);"><?= htmlspecialchars(str_replace('_', ' ', $row['source_type'])) ?></span></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transaction_date'])) ?></td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
@@ -653,7 +715,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             $stClass = ($row['status'] === 'completed') ? 'status-completed' : (($row['status'] === 'pending') ? 'status-pending' : 'status-cancelled');
                         ?>
                             <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                                <td style="font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['transfer_date'])) ?></td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['from_code']) ?>"><?= htmlspecialchars($row['from_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['from_name']) ?></span></td>
                                 <td><span class="badge-wh <?= getWarehouseBadgeClass($row['to_code']) ?>"><?= htmlspecialchars($row['to_code']) ?></span> <span style="font-size: 12px; color: var(--gray);"><?= htmlspecialchars($row['to_name']) ?></span></td>
@@ -707,11 +769,11 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                             $adjStClass = in_array($adjStatus, ['approved', 'completed'], true) ? 'status-completed' : (($adjStatus === 'pending') ? 'status-pending' : 'status-cancelled');
                         ?>
                             <tr style="<?= $isCancelled ? 'opacity: 0.72;' : '' ?>">
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
+                                <td style="font-weight: 700; color: var(--panel-ink); <?= $isCancelled ? 'text-decoration: line-through;' : '' ?>"><?= htmlspecialchars($row['transaction_number']) ?></td>
                                 <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y', strtotime($row['adjustment_date'])) ?></td>
                                 <td>
                                     <strong><?= htmlspecialchars($row['item_name']) ?></strong>
-                                    <div style="font-family: monospace; font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
+                                    <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($row['item_code']) ?></div>
                                 </td>
                                 <td style="font-size: 12.5px;"><?= htmlspecialchars($row['operator_name'] ?? 'System') ?></td>
                                 <td class="text-center" style="text-align: center; color: var(--gray);"><?= formatQty((float)$row['previous_quantity'], 0) ?></td>
@@ -732,9 +794,87 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
+<!-- ######################################################################### -->
+<!-- SECTION 6: BAD PRODUCTS & DAMAGED RETURNS LEDGER                          -->
+<!-- ######################################################################### -->
+<div id="pane-bad_products" class="stock-op-pane" style="display: <?= $activeTab === 'bad_products' ? 'block' : 'none' ?>;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h2 class="card-title">Bad Products &amp; Damaged Returns Ledger</h2>
+                <p class="card-desc">Audited ledger of verified damaged customer returns (RMA) and warehouse defect write-offs excluded from salable inventory &middot; Generated on <?= date('M d, Y H:i') ?></p>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id="table-bad_products">
+                <thead>
+                    <tr>
+                        <th>Report Ref #</th>
+                        <th>Date Logged</th>
+                        <th>Item Affected</th>
+                        <th>Classification</th>
+                        <th>Origin / Source</th>
+                        <th>Reason / QA Inspection Notes</th>
+                        <th>Logged By</th>
+                        <th class="text-center" style="text-align: center;">Bad Quantity</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($badProductsLedgerData)): ?>
+                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products or damaged returns recorded in this date range.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($badProductsLedgerData as $bp): 
+                            $isFg = in_array($bp['item_type'], ['finished_good', 'Finished Good'], true);
+                            $isRma = str_contains($bp['source_origin'], 'Customer Return');
+                        ?>
+                            <tr>
+                                <td style="font-weight: 700; font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($bp['transaction_number']) ?></td>
+                                <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y H:i', strtotime($bp['reported_at'])) ?></td>
+                                <td>
+                                    <strong><?= htmlspecialchars($bp['item_name']) ?></strong>
+                                    <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($bp['item_code']) ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge-type <?= $isFg ? 'type-fg' : 'type-raw' ?>">
+                                        <?= $isFg ? 'Finished Good' : 'Raw Material' ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php if ($isRma): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (RMA)</span>
+                                    <?php else: ?>
+                                        <span class="badge status-alert">Warehouse Write-Off</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="font-size: 12px; color: var(--gray); max-width: 220px;" title="<?= htmlspecialchars($bp['reason']) ?>">
+                                    <?= htmlspecialchars($bp['reason']) ?>
+                                </td>
+                                <td style="font-size: 12.5px;"><?= htmlspecialchars($bp['operator_name']) ?></td>
+                                <td class="text-center" style="text-align: center; font-weight: 700; color: #B91C1C;">
+                                    <?= formatQty((float)$bp['quantity'], 0) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
+                                </td>
+                                <td>
+                                    <?php if ($bp['status'] === 'confirmed'): ?>
+                                        <span class="badge status-completed" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Confirmed Defect</span>
+                                    <?php elseif ($bp['status'] === 'disposed'): ?>
+                                        <span class="badge status-completed">Disposed</span>
+                                    <?php else: ?>
+                                        <span class="badge status-pending">Pending QC</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <script>
 // =============================================================================
-// TRANSACTION REPORTS TAB SWITCHER (Movements | Inbound | Outbound | Transfers | Adjustments)
+// TRANSACTION REPORTS TAB SWITCHER (Movements | Inbound | Outbound | Transfers | Adjustments | Bad Products)
 // =============================================================================
 let currentActiveTab = '<?= $activeTab ?>';
 
@@ -743,11 +883,12 @@ const reportTitles = {
     'inbound': 'Inbound Stock Receipts',
     'outbound': 'Outbound Stock Dispatches',
     'transfers': 'Inter-Branch Stock Transfers',
-    'adjustments': 'Stock Adjustments & Variances'
+    'adjustments': 'Stock Adjustments & Variances',
+    'bad_products': 'Bad Products & Damaged Returns Ledger'
 };
 
 function switchTransactionTab(tabName) {
-    const validTabs = ['movements', 'inbound', 'outbound', 'transfers', 'adjustments'];
+    const validTabs = ['movements', 'inbound', 'outbound', 'transfers', 'adjustments', 'bad_products'];
     if (!validTabs.includes(tabName)) tabName = 'movements';
     currentActiveTab = tabName;
 
@@ -771,11 +912,21 @@ function switchTransactionTab(tabName) {
         }
     });
 
-    // Update Form hidden input and reset button
+    // Update Form hidden input, reset button, and date preset links
     const filterInput = document.getElementById('filterTabInput');
     if (filterInput) filterInput.value = tabName;
     const resetBtn = document.getElementById('resetFilterBtn');
-    if (resetBtn) resetBtn.href = 'stock_transactions.php?tab=' + tabName;
+    if (resetBtn) resetBtn.href = 'stock_transactions.php?tab=' + encodeURIComponent(tabName);
+    document.querySelectorAll('.date-preset-link').forEach(link => {
+        const preset = link.getAttribute('data-preset') || '';
+        const searchInput = document.getElementById('reportSearchInput');
+        const searchVal = searchInput ? searchInput.value.trim() : '';
+        let newHref = 'stock_transactions.php?tab=' + encodeURIComponent(tabName) + '&preset=' + encodeURIComponent(preset);
+        if (searchVal !== '') {
+            newHref += '&search=' + encodeURIComponent(searchVal);
+        }
+        link.href = newHref;
+    });
 
     // Update printable document subtitle
     const printDocTitle = document.getElementById('printDocTitle');

@@ -26,20 +26,20 @@
     }
 
     /**
-     * Formats a quantity value, removing trailing .00 or trailing zeros.
+     * Formats a quantity value as a whole integer without decimals.
      * Matches the server-side formatQty() helper in header.php.
      * @param {*} val
-     * @param {number} [decimals=2]
+     * @param {number} [decimals=0]
      * @returns {string}
      */
-    function formatQty(val, decimals = 2) {
+    function formatQty(val, decimals = 0) {
         if (val === null || val === undefined || val === '') return '0';
         const cleaned = typeof val === 'string' ? val.replace(/,/g, '').trim() : val;
         const num = parseFloat(cleaned);
         if (isNaN(num)) return '0';
-        return num.toLocaleString('en-US', {
+        return Math.round(num).toLocaleString('en-US', {
             minimumFractionDigits: 0,
-            maximumFractionDigits: decimals
+            maximumFractionDigits: 0
         });
     }
 

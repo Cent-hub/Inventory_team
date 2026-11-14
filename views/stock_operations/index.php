@@ -314,7 +314,7 @@ $stmtRecv = $pdo->prepare("
         i.code AS first_item_code,
         i.type AS first_item_type,
         i.unit AS first_unit,
-        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(st.quantity, 2))), ' ', i.unit, ')') AS items_summary,
+        CONCAT(i.name, ' (', ROUND(st.quantity, 0), ' ', i.unit, ')') AS items_summary,
         st.item_id
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
@@ -351,7 +351,7 @@ $stmtSent = $pdo->prepare("
         i.code AS first_item_code,
         i.type AS first_item_type,
         i.unit AS first_unit,
-        CONCAT(i.name, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM ROUND(st.quantity, 2))), ' ', i.unit, ')') AS items_summary,
+        CONCAT(i.name, ' (', ROUND(st.quantity, 0), ' ', i.unit, ')') AS items_summary,
         st.item_id
     FROM stock_transfers st
     JOIN warehouses sw ON st.source_warehouse_id = sw.warehouse_id
@@ -1442,7 +1442,7 @@ if ($selectedItemId > 0) {
                                 <td style="font-size: 12.5px; white-space: nowrap; color: var(--gray);">
                                     <?= date('M d, Y H:i', strtotime($m['created_at'])) ?>
                                 </td>
-                                <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
+                                <td style="font-weight: 600; color: var(--panel-ink);">
                                     <?= htmlspecialchars($m['reference_number']) ?>
                                 </td>
                                 <td>
@@ -1601,7 +1601,7 @@ if ($selectedItemId > 0) {
                     <select name="item_id" id="transferItemSelect" class="select-filter" style="width: 100%; height: 40px; border-radius: 8px;" required onchange="handleTransferItemChange(this)">
                         <option value="">-- Select Item with Available Stock --</option>
                         <?php foreach ($transferAvailableItems as $item): ?>
-                            <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
+                            <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (int)round((float)$item['current_stock']) ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
                                 <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [Stock: <?= formatQty((float)$item['current_stock']) ?> <?= htmlspecialchars($item['unit']) ?>]
                             </option>
                         <?php endforeach; ?>
@@ -1616,7 +1616,7 @@ if ($selectedItemId > 0) {
                         Transfer Quantity <span style="color: #DC2626;">*</span>
                     </label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.0001" min="0.001" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
+                        <input type="number" step="1" min="1" name="quantity" id="transferQuantity" class="search-box" style="flex: 1; height: 40px; border-radius: 8px;" placeholder="0" required>
                         <span id="unitIndicator" style="font-size: 13px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <div id="availStockHint" style="font-size: 11.5px; color: var(--gray); margin-top: 4px;">Select an item to view maximum transferable balance.</div>
@@ -1730,7 +1730,7 @@ if ($selectedItemId > 0) {
                     <select name="item_id" id="adjItemSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 8px;" required onchange="handleAdjItemChange(this)">
                         <option value="">-- Select Item to Adjust --</option>
                         <?php foreach ($adjAvailableItems as $item): ?>
-                            <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
+                            <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (int)round((float)$item['current_stock']) ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
                                 <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [System Stock: <?= formatQty((float)$item['current_stock']) ?> <?= htmlspecialchars($item['unit']) ?>]
                             </option>
                         <?php endforeach; ?>
@@ -1755,7 +1755,7 @@ if ($selectedItemId > 0) {
                     </div>
                     <div>
                         <label id="adjCountLabel" for="adjInputQty" style="font-size: 12px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Actual Physical Count <span style="color: #DC2626;">*</span></label>
-                        <input type="number" step="0.0001" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" placeholder="0" required oninput="calcAdjDiff()">
+                        <input type="number" step="1" min="0" id="adjInputQty" class="search-box" style="width: 100%; height: 38px; border-radius: 8px;" placeholder="0" required oninput="calcAdjDiff()">
                         <input type="hidden" name="adjusted_quantity" id="adjPhysicalCount" value="0">
                     </div>
                 </div>
@@ -1810,7 +1810,7 @@ if ($selectedItemId > 0) {
                         <option value="">-- Select Damaged Item --</option>
                         <?php foreach ($adjAvailableItems as $item): ?>
                             <?php if ((float)$item['current_stock'] > 0): ?>
-                                <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (float)$item['current_stock'] ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
+                                <option value="<?= (int)$item['item_id'] ?>" data-stock="<?= (int)round((float)$item['current_stock']) ?>" data-unit="<?= htmlspecialchars($item['unit']) ?>">
                                     <?= htmlspecialchars($item['item_code']) ?> &mdash; <?= htmlspecialchars($item['item_name']) ?> [Available: <?= formatQty((float)$item['current_stock']) ?> <?= htmlspecialchars($item['unit']) ?>]
                                 </option>
                             <?php endif; ?>
@@ -1833,7 +1833,7 @@ if ($selectedItemId > 0) {
                 <div>
                     <label for="badQuantity" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Quantity to Write Off <span style="color: #DC2626;">*</span></label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" step="0.0001" min="0.001" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 8px;" placeholder="0" required>
+                        <input type="number" step="1" min="1" name="quantity" id="badQuantity" class="search-box" style="flex: 1; height: 38px; border-radius: 8px;" placeholder="0" required>
                         <span id="badUnitIndicator" style="font-size: 12.5px; font-weight: 600; color: var(--gray); min-width: 40px;">—</span>
                     </div>
                     <small id="badStockHint" style="color: var(--gray); font-size: 11.5px; display: block; margin-top: 3px;">Select an item to view maximum write-off balance.</small>
@@ -2235,7 +2235,7 @@ function openConfirmReceiptModal(trf) {
     document.getElementById('confirmTrfItem').textContent = itemName;
     
     const unit = trf.first_unit || '';
-    document.getElementById('confirmTrfQty').textContent = '+' + Number(parseFloat(trf.total_quantity).toFixed(2)) + ' ' + unit;
+    document.getElementById('confirmTrfQty').textContent = '+' + formatQty(trf.total_quantity) + ' ' + unit;
 
     document.getElementById('confirmReceiptModal').style.display = 'flex';
 }
@@ -2329,12 +2329,12 @@ function handleTransferItemChange(selectElem) {
     const qtyInput = document.getElementById('transferQuantity');
 
     if (selectedOption && selectedOption.dataset.stock) {
-        const maxStock = parseFloat(selectedOption.dataset.stock);
+        const maxStock = Math.round(parseFloat(selectedOption.dataset.stock) || 0);
         const unit = selectedOption.dataset.unit || '';
         unitSpan.textContent = unit;
-        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>: <strong>${Number(maxStock.toFixed(2))} ${escapeHtml(unit)}</strong>`;
+        hintDiv.innerHTML = `Available in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>: <strong>${formatQty(maxStock)} ${escapeHtml(unit)}</strong>`;
         qtyInput.max = maxStock;
-        qtyInput.placeholder = `Max ${Number(maxStock.toFixed(2))}`;
+        qtyInput.placeholder = `Max ${formatQty(maxStock)}`;
     } else {
         unitSpan.textContent = '—';
         hintDiv.textContent = 'Select an item to view maximum transferable balance.';
@@ -2365,11 +2365,11 @@ function handleAdjModeChange() {
     const mode = modeSelect.value;
     if (mode === 'add') {
         label.innerHTML = 'Quantity to Add (+) <span style="color: #DC2626;">*</span>';
-        input.min = '0.01';
+        input.min = '1';
         input.placeholder = 'Enter surplus quantity';
     } else if (mode === 'deduct') {
         label.innerHTML = 'Quantity to Deduct (-) <span style="color: #DC2626;">*</span>';
-        input.min = '0.01';
+        input.min = '1';
         input.placeholder = 'Enter shortage quantity';
     } else {
         label.innerHTML = 'Actual Physical Count <span style="color: #DC2626;">*</span>';
@@ -2388,10 +2388,10 @@ function handleAdjItemChange(select) {
         document.getElementById('adjDiffContainer').style.display = 'none';
         return;
     }
-    currentSelectedStock = parseFloat(option.getAttribute('data-stock')) || 0;
+    currentSelectedStock = Math.round(parseFloat(option.getAttribute('data-stock')) || 0);
     currentSelectedUnit  = option.getAttribute('data-unit') || '';
 
-    document.getElementById('adjPrevStock').textContent = Number(currentSelectedStock.toFixed(2)) + ' ' + currentSelectedUnit;
+    document.getElementById('adjPrevStock').textContent = formatQty(currentSelectedStock) + ' ' + currentSelectedUnit;
     calcAdjDiff();
 }
 
@@ -2409,7 +2409,7 @@ function calcAdjDiff() {
         return;
     }
 
-    const rawQty = parseFloat(inputVal);
+    const rawQty = Math.round(parseFloat(inputVal) || 0);
     const mode = modeSelect ? modeSelect.value : 'physical';
     let physical = rawQty;
     if (mode === 'add') {
@@ -2419,22 +2419,22 @@ function calcAdjDiff() {
     }
 
     if (hiddenPhysicalEl) {
-        hiddenPhysicalEl.value = Number(physical.toFixed(2));
+        hiddenPhysicalEl.value = Math.round(physical);
     }
 
     const diff = physical - currentSelectedStock;
     container.style.display = 'block';
 
     if (diff > 0) {
-        valElem.textContent = '+' + Number(diff.toFixed(2)) + ' ' + currentSelectedUnit;
+        valElem.textContent = '+' + formatQty(diff) + ' ' + currentSelectedUnit;
         valElem.style.color = '#15803D';
-        descElem.textContent = 'Surplus: New balance will be ' + Number(physical.toFixed(2)) + ' ' + currentSelectedUnit + ' upon approval.';
+        descElem.textContent = 'Surplus: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + ' upon approval.';
     } else if (diff < 0) {
-        valElem.textContent = Number(diff.toFixed(2)) + ' ' + currentSelectedUnit;
+        valElem.textContent = '-' + formatQty(Math.abs(diff)) + ' ' + currentSelectedUnit;
         valElem.style.color = '#B91C1C';
-        descElem.textContent = 'Shortage / Loss: New balance will be ' + Number(physical.toFixed(2)) + ' ' + currentSelectedUnit + ' upon approval.';
+        descElem.textContent = 'Shortage / Loss: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + ' upon approval.';
     } else {
-        valElem.textContent = '0.00 ' + currentSelectedUnit;
+        valElem.textContent = '0 ' + currentSelectedUnit;
         valElem.style.color = '#475569';
         descElem.textContent = 'No variance: Physical count exactly matches recorded inventory balance.';
     }
@@ -2460,10 +2460,10 @@ function handleBadItemChange(select) {
         return;
     }
 
-    const stock = parseFloat(option.getAttribute('data-stock')) || 0;
+    const stock = Math.round(parseFloat(option.getAttribute('data-stock')) || 0);
     const unit = option.getAttribute('data-unit') || '';
     unitInd.textContent = unit;
-    hint.textContent = 'Maximum transferable/deductible stock: ' + Number(stock.toFixed(2)) + ' ' + unit;
+    hint.textContent = 'Maximum transferable/deductible stock: ' + formatQty(stock) + ' ' + unit;
     qtyInput.max = stock;
 }
 
@@ -2473,9 +2473,9 @@ function openApproveModal(row) {
     document.getElementById('approveTrfRef').textContent = row.transaction_number;
     document.getElementById('approveItemName').textContent = row.item_name || 'Item';
     
-    const diff = parseFloat(row.difference) || 0;
+    const diff = Math.round(parseFloat(row.difference) || 0);
     const unit = row.unit || '';
-    document.getElementById('approveDiff').textContent = (diff >= 0 ? '+' : '') + Number(diff.toFixed(2)) + ' ' + unit;
+    document.getElementById('approveDiff').textContent = (diff >= 0 ? '+' : '-') + formatQty(Math.abs(diff)) + ' ' + unit;
     document.getElementById('approveDiff').style.color = (diff >= 0) ? '#15803D' : '#B91C1C';
 
     document.getElementById('confirmApproveModal').style.display = 'flex';
@@ -2518,7 +2518,7 @@ function openDisposeBadModal(row) {
     if (!row) return;
     document.getElementById('disposeBadId').value = row.bad_product_id;
     document.getElementById('disposeBadRef').textContent = row.bad_product_number;
-    document.getElementById('disposeBadItem').textContent = (row.item_name || '') + ' (' + (row.quantity || '') + ' ' + (row.unit || '') + ')';
+    document.getElementById('disposeBadItem').textContent = (row.item_name || '') + ' (' + formatQty(row.quantity) + ' ' + (row.unit || '') + ')';
     document.getElementById('disposeBadModal').style.display = 'flex';
 }
 function closeDisposeBadModal() {
@@ -2555,13 +2555,13 @@ function openAdjDetailModal(row) {
     document.getElementById('modalAdjItemName').textContent = row.item_name || '—';
     document.getElementById('modalAdjItemCode').textContent = row.item_code || '';
 
-    const diff = parseFloat(row.difference) || 0;
+    const diff = Math.round(parseFloat(row.difference) || 0);
     const unit = row.unit || '';
-    document.getElementById('modalAdjDiff').textContent = (diff >= 0 ? '+' : '') + Number(diff.toFixed(2)) + ' ' + unit;
+    document.getElementById('modalAdjDiff').textContent = (diff >= 0 ? '+' : '-') + formatQty(Math.abs(diff)) + ' ' + unit;
     document.getElementById('modalAdjDiff').style.color = (diff >= 0) ? '#15803D' : '#B91C1C';
 
-    document.getElementById('modalAdjPrev').textContent = Number((parseFloat(row.previous_quantity) || 0).toFixed(2)) + ' ' + unit;
-    document.getElementById('modalAdjCount').textContent = Number((parseFloat(row.adjusted_quantity) || 0).toFixed(2)) + ' ' + unit;
+    document.getElementById('modalAdjPrev').textContent = formatQty(row.previous_quantity) + ' ' + unit;
+    document.getElementById('modalAdjCount').textContent = formatQty(row.adjusted_quantity) + ' ' + unit;
 
     document.getElementById('modalAdjReason').textContent = row.reason || 'No notes provided';
 

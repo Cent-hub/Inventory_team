@@ -142,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $errorMessage = "Invalid item ID.";
         } else {
             try {
-                $stmtItem = $pdo->prepare("SELECT item_id, code, name, type, unit, reorder_level, status FROM items WHERE item_id = ?");
+                $stmtItem = $pdo->prepare("SELECT item_id, code, name, type, unit, reorder_level, current_stock, status FROM items WHERE item_id = ?");
                 $stmtItem->execute([$itemId]);
                 $itemRow = $stmtItem->fetch(PDO::FETCH_ASSOC);
 
@@ -151,8 +151,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 } elseif (strtolower($itemRow['status'] ?? '') === 'active') {
                     $errorMessage = "Item '{$itemRow['code']}' is not pending approval (current status: {$itemRow['status']}).";
                 } else {
+                    $initialStockQty = max(0.0, (float)($itemRow['current_stock'] ?? 0));
+                    $seedWarehouseId = $currentWarehouseId ?: 1;
+
                     $stmtAppr = $pdo->prepare("UPDATE items SET status = 'Active' WHERE id = ?");
                     $stmtAppr->execute([$itemId]);
+
+                    // Preserve any initial quantity set by Procurement in the primary warehouse before seeding remaining warehouses
+                    $stmtSeedPrimary = $pdo->prepare("
+                        INSERT INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                        VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE qty_on_hand = GREATEST(qty_on_hand, VALUES(qty_on_hand))
+                    ");
+                    $stmtSeedPrimary->execute([$itemId, $seedWarehouseId, $initialStockQty, (float)$itemRow['reorder_level']]);
 
                     // Seed warehouse stock snapshot rows for newly activated item
                     $stmtSeedInv = $pdo->prepare("
@@ -261,7 +272,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $errorMessage = "Default reorder level must be a whole number (no decimals).";
             } else {
                 try {
-                    $stmtExist = $pdo->prepare("SELECT code AS item_code, COALESCE(item_type, type) AS item_type, unit AS item_unit, reorder_level FROM items WHERE item_id = ?");
+                    $stmtExist = $pdo->prepare("SELECT code AS item_code, COALESCE(item_type, type) AS item_type, unit AS item_unit, reorder_level, current_stock FROM items WHERE item_id = ?");
                     $stmtExist->execute([$itemId]);
                     $existingItem = $stmtExist->fetch(PDO::FETCH_ASSOC);
 
@@ -327,6 +338,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             WHERE item_id = ?
                         ");
                         $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
+
+                        // Preserve any existing current_stock in the primary warehouse before seeding missing warehouse rows
+                        $existingStockQty = max(0.0, (float)($existingItem['current_stock'] ?? 0));
+                        $seedWarehouseId  = $currentWarehouseId ?: 1;
+                        $stmtSeedPrimary  = $pdo->prepare("
+                            INSERT INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                            VALUES (?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE qty_on_hand = GREATEST(qty_on_hand, VALUES(qty_on_hand))
+                        ");
+                        $stmtSeedPrimary->execute([$itemId, $seedWarehouseId, $existingStockQty, round($reorderLevel, 3)]);
 
                         // Ensure all active warehouses have a stock row for this item
                         $stmtSeedMissing = $pdo->prepare("

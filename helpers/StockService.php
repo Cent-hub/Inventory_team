@@ -683,36 +683,90 @@ class StockService {
             $stmtUpdOrder->execute([$newStatus, $orderId]);
 
             // Post to inventory ledger within the same active transaction
-            if ($order['source_type'] === 'CUSTOMER_RETURN' && $condition === 'damaged') {
-                // First record inbound receipt to document the customer return into the ledger
-                $stockInRes = $this->recordStockIn(
-                    (int)$order['warehouse_id'],
-                    'CUSTOMER_RETURN',
-                    $order['order_number'],
-                    $itemsToStock,
-                    $userId,
-                    "Customer RMA Inbound ({$order['order_number']})" . ($remarks ? ": {$remarks}" : ""),
-                    $currentUser
-                );
+            if ($condition === 'damaged') {
+                // Do NOT add damaged returns/shipments into salable stock (stock.qty_on_hand / items.current_stock).
+                // Route directly to bad_products and log BAD_PRODUCT_DISCARD with 0 delta to salable stock.
+                $stmtBal = $this->pdo->prepare("SELECT COALESCE(qty_on_hand, 0.0000) FROM stock WHERE item_id = ? AND warehouse_id = ?");
+                $stmtBp = $this->pdo->prepare("
+                    INSERT INTO bad_products (
+                        item_id, warehouse_id, quantity, reason, status, reported_by, confirmed_by, reported_at, confirmed_at
+                    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, NOW(), NOW())
+                ");
+                $stmtMov = $this->pdo->prepare("
+                    INSERT INTO stock_movements (
+                        item_id, warehouse_id, movement_type, quantity, quantity_delta, balance_after,
+                        source_type, reference_type, reference_id, reference_no, reference_number, remarks, created_by, created_at
+                    ) VALUES (?, ?, 'BAD_PRODUCT_DISCARD', ?, 0.0000, ?, ?, 'BAD_PRODUCT', ?, ?, ?, ?, ?, NOW())
+                ");
 
-                // Then write off the defective items to Bad Products Discard
                 $results = [];
+                $firstBpNumber = null;
+                $isCustReturn = ($order['source_type'] === 'CUSTOMER_RETURN');
+                $reasonPrefix = $isCustReturn
+                    ? "Damaged Customer Return ({$order['order_number']})"
+                    : "Damaged Inbound ({$order['order_number']})";
+
                 foreach ($itemsToStock as $its) {
-                    $results[] = $this->recordBadProduct(
+                    $itemId = (int)$its['item_id'];
+                    $qty = (float)$its['quantity'];
+                    $bpReason = mb_substr($reasonPrefix . ($remarks ? ": {$remarks}" : ""), 0, 255);
+
+                    $stmtBal->execute([$itemId, (int)$order['warehouse_id']]);
+                    $currentSalableBal = (float)($stmtBal->fetchColumn() ?: 0.0000);
+
+                    $stmtBp->execute([
+                        $itemId,
                         (int)$order['warehouse_id'],
-                        $its['item_id'],
-                        'damaged',
-                        (float)$its['quantity'],
-                        "Damaged Customer Return ({$order['order_number']})" . ($remarks ? ": {$remarks}" : ""),
+                        $qty,
+                        $bpReason,
                         $userId,
-                        $currentUser
-                    );
+                        $userId
+                    ]);
+                    $badProductId = (int)$this->pdo->lastInsertId();
+                    $bpNumber = 'BP-' . str_pad((string)$badProductId, 6, '0', STR_PAD_LEFT);
+                    if ($firstBpNumber === null) {
+                        $firstBpNumber = $bpNumber;
+                    }
+
+                    $movRemarks = "[{$order['source_type']}: {$order['order_number']}] Verified Bad Product on Return ({$bpNumber})" . ($remarks ? ": {$remarks}" : "");
+                    $stmtMov->execute([
+                        $itemId,
+                        (int)$order['warehouse_id'],
+                        $qty,
+                        $currentSalableBal,
+                        $order['source_type'],
+                        $badProductId,
+                        $order['order_number'],
+                        $bpNumber,
+                        $movRemarks,
+                        $userId
+                    ]);
+
+                    AccountabilityService::log([
+                        'user_id'          => $userId,
+                        'team'             => $isCustReturn ? 'Sales' : 'Inventory',
+                        'action_type'      => 'BAD_PRODUCT',
+                        'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
+                        'item_id'          => $itemId,
+                        'quantity'         => $qty,
+                        'warehouse_id'     => (int)$order['warehouse_id'],
+                        'reference_number' => $bpNumber,
+                        'notes'            => $movRemarks
+                    ]);
+
+                    $results[] = [
+                        'bad_product_id'     => $badProductId,
+                        'bad_product_number' => $bpNumber,
+                        'item_id'            => $itemId,
+                        'quantity'           => $qty,
+                        'status'             => 'confirmed'
+                    ];
                 }
 
                 $this->pdo->commit();
 
                 // Outgoing B2B Integration: Notify partner team
-                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $stockInRes['transaction_number'], 'damaged');
+                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $firstBpNumber ?? $order['order_number'], 'damaged');
 
                 return [
                     'success'            => true,
@@ -720,7 +774,7 @@ class StockService {
                     'new_status'         => $newStatus,
                     'condition'          => 'damaged',
                     'routed_to'          => 'bad_products',
-                    'transaction_number' => $stockInRes['transaction_number'],
+                    'transaction_number' => $firstBpNumber ?? $order['order_number'],
                     'items_received'     => $itemsToStock,
                     'bad_product_ids'    => array_column($results, 'bad_product_id')
                 ];
@@ -858,6 +912,27 @@ class StockService {
                 $currentUser,
                 true
             );
+
+            // Sync with Sales Team's native `orders` and `order_items` tables when dispatching a Sales Order
+            if ($order['source_type'] === 'SALES_DELIVERY') {
+                $stmtSalesOrder = $this->pdo->prepare("SELECT id FROM orders WHERE order_number = ? LIMIT 1");
+                $stmtSalesOrder->execute([$order['order_number']]);
+                $salesOrderId = (int)($stmtSalesOrder->fetchColumn() ?: 0);
+                if ($salesOrderId > 0) {
+                    $stmtUpdSalesItem = $this->pdo->prepare("
+                        UPDATE order_items 
+                        SET quantity_fulfilled = LEAST(quantity, quantity_fulfilled + ?) 
+                        WHERE order_id = ? AND item_id = ?
+                    ");
+                    foreach ($itemsToDispatch as $itd) {
+                        $stmtUpdSalesItem->execute([(float)$itd['quantity'], $salesOrderId, (int)$itd['item_id']]);
+                    }
+                    if ($allCompleted) {
+                        $stmtUpdSalesOrd = $this->pdo->prepare("UPDATE orders SET fulfillment_status = 'Completed', updated_at = NOW() WHERE id = ?");
+                        $stmtUpdSalesOrd->execute([$salesOrderId]);
+                    }
+                }
+            }
 
             if ($isRootTxn) {
                 $this->pdo->commit();

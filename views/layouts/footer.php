@@ -670,7 +670,7 @@ function showNotificationToast(alert) {
     }, 6000);
 }
 
-// Background Polling Engine for Real-Time Header Notifications
+// Header Notifications (rendered server-side on page load)
 let lastKnownNotifId = '';
 let notifPollInterval = null;
 
@@ -679,61 +679,7 @@ function initNotificationPolling() {
     if (firstItem) {
         lastKnownNotifId = firstItem.getAttribute('data-notif-id') || '';
     }
-
-    // Run periodic poll every 25 seconds
     if (notifPollInterval) clearInterval(notifPollInterval);
-    notifPollInterval = setInterval(pollNotifications, 25000);
-}
-
-function pollNotifications() {
-    // Skip if page is running in background or minimized
-    if (document.hidden || document.visibilityState === 'hidden') {
-        return;
-    }
-
-    const pollUrl = (typeof APP_BASE_URL !== 'undefined' ? APP_BASE_URL : '') + 'api/inventory/notifications_poll.php' +
-        '?last_known_id=' + encodeURIComponent(lastKnownNotifId);
-
-    fetch(pollUrl, { credentials: 'same-origin' })
-        .then(function(res) {
-            if (!res.ok) throw new Error('Poll failed: ' + res.status);
-            return res.json();
-        })
-        .then(function(data) {
-            if (!data || !data.success) return;
-
-            // Sync unread badge count
-            updateNotificationBadgeDisplay(data.unread_count);
-
-            // Sync tab counts
-            const tabUnread = document.getElementById('tabCountUnread');
-            if (tabUnread && typeof data.unread_count !== 'undefined') tabUnread.textContent = data.unread_count;
-
-            const tabAll = document.getElementById('tabCountAll');
-            if (tabAll && typeof data.total_count !== 'undefined') tabAll.textContent = data.total_count;
-
-            const tabStock = document.getElementById('tabCountStock');
-            if (tabStock && typeof data.total_stock_count !== 'undefined') tabStock.textContent = data.total_stock_count;
-
-            const tabMsg = document.getElementById('tabCountMessages');
-            if (tabMsg && typeof data.total_message_count !== 'undefined') tabMsg.textContent = data.total_message_count;
-
-            // Sync Dashboard KPI cards live if present on page
-            if (data.kpi) {
-                updateDashboardKpi(data.kpi);
-            }
-
-            // If brand-new alert arrived, display floating toast alert
-            if (data.has_new_alert && data.new_alert) {
-                showNotificationToast(data.new_alert);
-                lastKnownNotifId = data.latest_id || data.new_alert.id;
-            } else if (data.latest_id) {
-                lastKnownNotifId = data.latest_id;
-            }
-        })
-        .catch(function() {
-            // Silently absorb polling network hiccups
-        });
 }
 
 // Sync notifications on DOM load
