@@ -88,6 +88,12 @@ function resolveUserTeam(?string $team, ?string $email = ''): string {
         if (strcasecmp($cleanTeam, 'sales') === 0) {
             return 'Sales';
         }
+        if (strcasecmp($cleanTeam, 'hr') === 0) {
+            return 'HR';
+        }
+        if (strcasecmp($cleanTeam, 'finance') === 0) {
+            return 'Finance';
+        }
     }
     $emailLower = strtolower(trim((string)$email));
     if (str_contains($emailLower, 'procure')) {

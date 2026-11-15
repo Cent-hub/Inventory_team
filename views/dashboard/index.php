@@ -181,52 +181,31 @@ foreach ($chartDbRows as $row) {
 $totalWeekIn = array_sum(array_column($chartDays, 'inbound'));
 $totalWeekOut = array_sum(array_column($chartDays, 'outbound'));
 
-// --- Recent Warehouse Staff Activity (Warehouse-Scoped) ---
+// --- Recent Warehouse Staff Activity (Warehouse-Scoped, Inventory Team Only) ---
 $stmtWhStaff = $pdo->prepare("
     SELECT 
         al.log_id,
         al.user_id,
-        COALESCE(u.name, 'Warehouse Staff') AS user_name,
+        COALESCE(u.name, u.username, 'Warehouse Staff') AS user_name,
         COALESCE(u.email, '') AS user_email,
         COALESCE(u.role, 'admin') AS user_role,
-        COALESCE(u.team, al.team, 'Inventory') AS user_team,
+        'Inventory' AS user_team,
         al.action AS action_type,
         al.created_at,
         al.details,
         al.warehouse_id
     FROM accountability_logs al
-    LEFT JOIN users u ON u.user_id = al.user_id
+    INNER JOIN users u ON u.user_id = al.user_id
     WHERE al.warehouse_id = :wid
+      AND LOWER(COALESCE(u.team, '')) = 'inventory'
+      AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin'))
+      AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')
       AND al.action IN ('USER_LOGIN', 'STOCK_IN', 'STOCK_OUT', 'TRANSFER_INITIATED', 'TRANSFER_RECEIVED', 'ADJUSTMENT_REQUESTED', 'BAD_PRODUCT', 'USER_CREATED')
-    ORDER BY al.created_at DESC
+    ORDER BY al.created_at DESC, al.log_id DESC
     LIMIT 5
 ");
 $stmtWhStaff->execute([':wid' => $currentWarehouseId]);
 $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
-
-if (count($recentWarehouseStaff) < 3) {
-    $existingIds = array_filter(array_column($recentWarehouseStaff, 'user_id'));
-    $excludeSql = !empty($existingIds) ? 'AND user_id NOT IN (' . implode(',', array_map('intval', $existingIds)) . ')' : '';
-    $stmtFallback = $pdo->prepare("
-        SELECT 
-            user_id,
-            name AS user_name,
-            email AS user_email,
-            role AS user_role,
-            team AS user_team,
-            'ASSIGNED' AS action_type,
-            COALESCE(updated_at, created_at) AS created_at,
-            '' AS details,
-            warehouse_id
-        FROM users
-        WHERE warehouse_id = :wid AND status = 'active' {$excludeSql}
-        ORDER BY updated_at DESC
-        LIMIT 5
-    ");
-    $stmtFallback->execute([':wid' => $currentWarehouseId]);
-    $fallbackStaff = $stmtFallback->fetchAll(PDO::FETCH_ASSOC);
-    $recentWarehouseStaff = array_merge($recentWarehouseStaff, $fallbackStaff);
-}
 ?>
 
 <!-- Page Header -->

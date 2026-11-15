@@ -117,9 +117,9 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
     </div>
 </div>
 
-<!-- Accountability KPI Metrics Grid -->
+<!-- Accountability KPI Metrics Grid (Inventory Team Only) -->
 <div class="stats-grid" style="margin-bottom: 24px;">
-    <!-- Metric 1: Total Events -->
+    <!-- Metric 1: Total Inventory Events -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Audit Trail Events</span>
@@ -132,14 +132,14 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </div>
         </div>
         <div class="stat-value"><?= number_format($kpis['total_events']) ?></div>
-        <div class="stat-meta">Cross-department operations logged</div>
+        <div class="stat-meta">Inventory team operations logged</div>
     </div>
 
-    <!-- Metric 2: Procurement -->
+    <!-- Metric 2: Stock In & Out Operations -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Procurement Operations</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="background: #FEF3C7; color: #92400E;">
+            <span class="stat-label">Stock In &amp; Out</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="background: #DCFCE7; color: #15803D;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -147,42 +147,42 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 </svg>
             </div>
         </div>
-        <div class="stat-value" style="color: #92400E;"><?= number_format($kpis['procurement_ops']) ?></div>
-        <div class="stat-meta">Inbound stock requests dispatched</div>
+        <div class="stat-value" style="color: #15803D;"><?= number_format($kpis['stock_in_out']) ?></div>
+        <div class="stat-meta">Inbound receipts &amp; outbound dispatches</div>
     </div>
 
-    <!-- Metric 3: Production -->
-    <div class="stat-card">
+    <!-- Metric 3: Transfers & Adjustments -->
+    <div class="stat-card stat-gold">
         <div class="stat-header">
-            <span class="stat-label">Production Floor</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="background: #F3E8FF; color: #6B21A8;">
+            <span class="stat-label">Transfers &amp; Adjustments</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="background: #FEF3C7; color: #92400E;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="16 16 12 12 8 16"/>
-                    <line x1="12" y1="12" x2="12" y2="21"/>
-                    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                    <polyline points="17 1 21 5 17 9"/>
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <polyline points="7 23 3 19 7 15"/>
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value" style="color: #6B21A8;"><?= number_format($kpis['production_ops']) ?></div>
-        <div class="stat-meta">Raw issues &amp; finished goods stock ins</div>
+        <div class="stat-value" style="color: #92400E;"><?= number_format($kpis['transfers_adjustments']) ?></div>
+        <div class="stat-meta">Facility transfers, counts &amp; bad stock</div>
     </div>
 
-    <!-- Metric 4: Sales & Inventory -->
+    <!-- Metric 4: Staff Sign-Ins & Admin -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Sales &amp; Controllers</span>
+            <span class="stat-label">Staff Sign-Ins &amp; Admin</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="background: #E0F2FE; color: #0369A1;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="m4.93 4.93 4.24 4.24"/>
-                    <path d="m14.83 9.17 4.24-4.24"/>
-                    <path d="m14.83 14.83 4.24 4.24"/>
-                    <path d="m9.17 14.83-4.24 4.24"/>
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value" style="color: #0369A1;"><?= number_format($kpis['sales_ops'] + $kpis['inventory_ops']) ?></div>
-        <div class="stat-meta">Dispatches, counts &amp; facility transfers</div>
+        <div class="stat-value" style="color: #0369A1;"><?= number_format($kpis['staff_logins']) ?></div>
+        <div class="stat-meta">Warehouse logins &amp; catalog updates</div>
     </div>
 </div>
 
@@ -204,18 +204,8 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="fullLogSearch" class="search-box" aria-label="Filter accountability audit log" placeholder="Filter user, item, team, or warehouse..." oninput="filterFullLogTable()">
+                <input type="text" id="fullLogSearch" class="search-box" aria-label="Filter accountability audit log" placeholder="Filter user, item, or warehouse..." oninput="filterFullLogTable()">
             </div>
-
-            <!-- Team Filter -->
-            <select id="fullLogTeamFilter" class="select-filter" aria-label="Filter by team" onchange="filterFullLogTable()">
-                <option value="all">All Teams</option>
-                <option value="Procurement">Procurement</option>
-                <option value="Production">Production</option>
-                <option value="Sales">Sales</option>
-                <option value="Inventory">Inventory</option>
-                <option value="Administration">Administration</option>
-            </select>
 
             <!-- Action Type Filter -->
             <select id="fullLogActionFilter" class="select-filter" aria-label="Filter by action type" onchange="filterFullLogTable()">

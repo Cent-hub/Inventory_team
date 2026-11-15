@@ -184,9 +184,9 @@ class AccountabilityService {
                 al.log_id,
                 al.created_at,
                 al.user_id,
-                COALESCE(u.name, 'System Service') AS user_name,
+                COALESCE(u.name, u.username, 'Warehouse Staff') AS user_name,
                 COALESCE(u.role, 'admin') AS user_role,
-                al.team,
+                'Inventory' AS team,
                 al.action AS action_type,
                 al.action,
                 al.item_id,
@@ -199,10 +199,12 @@ class AccountabilityService {
                 w.code AS warehouse_code,
                 w.name AS warehouse_name
             FROM accountability_logs al
-            LEFT JOIN users u ON al.user_id = u.user_id
+            INNER JOIN users u ON al.user_id = u.user_id
             LEFT JOIN items i ON al.item_id = i.item_id
             LEFT JOIN warehouses w ON al.warehouse_id = w.warehouse_id
-            WHERE 1=1
+            WHERE LOWER(COALESCE(u.team, '')) = 'inventory'
+              AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin'))
+              AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')
         ";
         $params = [];
 
@@ -328,26 +330,27 @@ class AccountabilityService {
     }
 
     /**
-     * Compute live KPI counts for the warehouse
+     * Compute live KPI counts for the warehouse (Inventory Team users only)
      */
     public static function getKpis(int $warehouseId): array {
         $pdo = self::getPdo();
 
-        $where = "1=1";
+        $where = "LOWER(COALESCE(u.team, '')) = 'inventory' AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin')) AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')";
         $params = [];
         if ($warehouseId > 0) {
-            $where = "warehouse_id = ?";
+            $where .= " AND al.warehouse_id = ?";
             $params = [$warehouseId];
         }
 
         $sql = "
             SELECT 
                 COUNT(*) AS total_events,
-                SUM(CASE WHEN team = 'Procurement' THEN 1 ELSE 0 END) AS procurement_ops,
-                SUM(CASE WHEN team = 'Production' THEN 1 ELSE 0 END) AS production_ops,
-                SUM(CASE WHEN team = 'Sales' THEN 1 ELSE 0 END) AS sales_ops,
-                SUM(CASE WHEN team = 'Inventory' THEN 1 ELSE 0 END) AS inventory_ops
-            FROM accountability_logs
+                SUM(CASE WHEN al.action IN ('STOCK_IN', 'STOCK_IN_CANCEL', 'STOCK_OUT', 'STOCK_OUT_CANCEL') THEN 1 ELSE 0 END) AS stock_in_out,
+                SUM(CASE WHEN al.action LIKE 'TRANSFER%' OR al.action LIKE 'ADJUSTMENT%' OR al.action LIKE 'BAD_PRODUCT%' THEN 1 ELSE 0 END) AS transfers_adjustments,
+                SUM(CASE WHEN al.action IN ('USER_LOGIN', 'ITEM_CREATED', 'ITEM_UPDATED', 'STATUS_TOGGLED', 'USER_CREATED', 'USER_UPDATED', 'USER_STATUS_TOGGLED', 'SUPPORT_INQUIRY') THEN 1 ELSE 0 END) AS staff_logins,
+                COUNT(*) AS inventory_ops
+            FROM accountability_logs al
+            INNER JOIN users u ON al.user_id = u.user_id
             WHERE {$where}
         ";
 
@@ -356,11 +359,11 @@ class AccountabilityService {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return [
-            'total_events'    => (int)($row['total_events'] ?? 0),
-            'procurement_ops' => (int)($row['procurement_ops'] ?? 0),
-            'production_ops'  => (int)($row['production_ops'] ?? 0),
-            'sales_ops'       => (int)($row['sales_ops'] ?? 0),
-            'inventory_ops'   => (int)($row['inventory_ops'] ?? 0)
+            'total_events'          => (int)($row['total_events'] ?? 0),
+            'stock_in_out'          => (int)($row['stock_in_out'] ?? 0),
+            'transfers_adjustments' => (int)($row['transfers_adjustments'] ?? 0),
+            'staff_logins'          => (int)($row['staff_logins'] ?? 0),
+            'inventory_ops'         => (int)($row['inventory_ops'] ?? 0)
         ];
     }
 

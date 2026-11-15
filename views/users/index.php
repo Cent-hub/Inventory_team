@@ -323,7 +323,8 @@ if ($isSuperAdmin) {
             u.updated_at
         FROM users u
         LEFT JOIN warehouses w ON u.warehouse_id = w.warehouse_id
-        WHERE 1=1
+        WHERE LOWER(COALESCE(u.team, '')) = 'inventory'
+          AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin'))
     ";
     $params = [];
 

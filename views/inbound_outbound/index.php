@@ -79,14 +79,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $activeTab = 'inbound';
                     $orderId = (int)($_POST['inbound_order_id'] ?? 0);
                     $receivedQtys = $_POST['received_quantity'] ?? [];
+                    $damagedQtys  = $_POST['damaged_quantity'] ?? [];
                     $condition = trim($_POST['item_condition'] ?? 'salable');
                     $remarks = trim($_POST['remarks'] ?? '');
                     if ($orderId <= 0) {
                         throw new InvalidArgumentException("Invalid inbound order ID.");
                     }
-                    $res = $stockService->receiveInboundOrder($orderId, $receivedQtys, $userId, $remarks ?: null, $currentUser, $condition);
-                    $successMessage = "Inbound order " . htmlspecialchars($res['order_number']) . " received successfully! " . 
-                        ($res['condition'] === 'damaged' ? "Damaged items were routed to Bad Products Discard." : "Transaction ref: " . htmlspecialchars($res['transaction_number']));
+                    if ($condition === 'mixed') {
+                        $stmtRem = $pdo->prepare("SELECT item_id, (expected_quantity - received_quantity) AS remaining FROM inbound_order_items WHERE inbound_order_id = ?");
+                        $stmtRem->execute([$orderId]);
+                        $remainingMap = [];
+                        foreach ($stmtRem->fetchAll(PDO::FETCH_ASSOC) as $rRow) {
+                            $remainingMap[(int)$rRow['item_id']] = (float)$rRow['remaining'];
+                        }
+
+                        $salableToPost = [];
+                        $damagedToPost = [];
+                        $hasSalable = false;
+                        $hasDamaged = false;
+
+                        foreach ($remainingMap as $itemId => $remQty) {
+                            $sQty = max(0.0, (float)($receivedQtys[$itemId] ?? 0));
+                            $dQty = max(0.0, (float)($damagedQtys[$itemId] ?? 0));
+                            if (($sQty + $dQty) > ($remQty + 0.0001)) {
+                                throw new InvalidArgumentException("Combined salable ({$sQty}) and damaged ({$dQty}) quantity exceeds remaining expected quantity ({$remQty}) for item ID {$itemId}.");
+                            }
+                            if ($sQty > 0) {
+                                $salableToPost[$itemId] = $sQty;
+                                $hasSalable = true;
+                            }
+                            if ($dQty > 0) {
+                                $damagedToPost[$itemId] = $dQty;
+                                $hasDamaged = true;
+                            }
+                        }
+
+                        if (!$hasSalable && !$hasDamaged) {
+                            throw new InvalidArgumentException("Please enter at least one salable or damaged quantity to receive.");
+                        }
+
+                        $parts = [];
+                        $orderNumber = '';
+                        if ($hasSalable) {
+                            $resSalable = $stockService->receiveInboundOrder($orderId, $salableToPost, $userId, $remarks ?: null, $currentUser, 'salable');
+                            $orderNumber = $resSalable['order_number'];
+                            $parts[] = "Salable stock received (Ref: " . htmlspecialchars($resSalable['transaction_number']) . ")";
+                        }
+                        if ($hasDamaged) {
+                            $resDamaged = $stockService->receiveInboundOrder($orderId, $damagedToPost, $userId, $remarks ?: null, $currentUser, 'damaged');
+                            $orderNumber = $resDamaged['order_number'];
+                            $parts[] = "Damaged items routed to Bad Products Discard (Ref: " . htmlspecialchars($resDamaged['transaction_number']) . ")";
+                        }
+                        $successMessage = "Inbound order " . htmlspecialchars($orderNumber) . " processed: " . implode('; ', $parts) . ".";
+                    } else {
+                        $res = $stockService->receiveInboundOrder($orderId, $receivedQtys, $userId, $remarks ?: null, $currentUser, $condition);
+                        $successMessage = "Inbound order " . htmlspecialchars($res['order_number']) . " received successfully! " . 
+                            ($res['condition'] === 'damaged' ? "Damaged items were routed to Bad Products Discard." : "Transaction ref: " . htmlspecialchars($res['transaction_number']));
+                    }
                     break;
 
                 // -------------------------------------------------------------
@@ -1382,6 +1431,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <select name="item_condition" id="receiveCondition" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px; font-size: 13px;" onchange="handleReceiveConditionChange(this)">
                         <option value="salable">Passed Inspection / Salable &mdash; Receive into Available Stock (Stock In)</option>
                         <option value="damaged">Damaged / Defective / Expired &mdash; Route directly to Bad Products Discard</option>
+                        <option value="mixed">Mixed Inspection &mdash; Split Salable (Stock In) &amp; Damaged (Bad Products)</option>
                     </select>
                     <small id="recConditionHint" style="display: block; margin-top: 4px; font-size: 11.5px; color: #15803D;">
                         Salable items will increase current inventory balance.
@@ -1401,7 +1451,8 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                     <th style="text-align: right;">Expected</th>
                                     <th style="text-align: right;">Received</th>
                                     <th style="text-align: right;">Remaining</th>
-                                    <th style="width: 140px; text-align: right;">Receive Qty</th>
+                                    <th id="receiveQtyHeaderCol" style="width: 130px; text-align: right;">Receive Qty</th>
+                                    <th id="receiveDamagedHeaderCol" style="width: 120px; text-align: right; display: none; color: #B91C1C;">Damaged Qty</th>
                                 </tr>
                             </thead>
                             <tbody id="receiveOrderLinesTbody">
@@ -1892,7 +1943,7 @@ function openReceiveOrderModal(id) {
     tbody.innerHTML = '';
     const lines = inLinesData[id] || [];
     if (lines.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--gray); padding: 16px;">No line items pending receipt.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--gray); padding: 16px;">No line items pending receipt.</td></tr>';
     } else {
         lines.forEach(l => {
             const tr = document.createElement('tr');
@@ -1906,12 +1957,16 @@ function openReceiveOrderModal(id) {
                 <td style="text-align: right; padding: 8px 10px; color: var(--gray);">${formatQty(l.received_quantity)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #15803D;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
                 <td style="text-align: right; padding: 8px 10px;">
-                    <input type="number" step="1" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="${rem}" class="search-box" style="width: 110px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                    <input type="number" step="1" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="${rem}" class="search-box rec-salable-input" data-rem="${rem}" oninput="syncMixedQtyBounds(this, 'salable')" style="width: 100px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;" required>
+                </td>
+                <td class="rec-damaged-col" style="text-align: right; padding: 8px 10px; display: none;">
+                    <input type="number" step="1" min="0" max="${rem}" name="damaged_quantity[${l.item_id}]" value="0" class="search-box rec-damaged-input" data-rem="${rem}" oninput="syncMixedQtyBounds(this, 'damaged')" style="width: 100px; height: 34px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px; border-color: #FCA5A5; color: #B91C1C;">
                 </td>
             `;
             tbody.appendChild(tr);
         });
     }
+    handleReceiveConditionChange(condSelect);
 
     const modal = document.getElementById('receiveOrderModal');
     if (modal) {
@@ -1928,15 +1983,53 @@ function closeReceiveOrderModal() {
     }
 }
 
+function syncMixedQtyBounds(inputEl, changedType) {
+    const cond = document.getElementById('receiveCondition')?.value;
+    if (cond !== 'mixed') return;
+    const tr = inputEl.closest('tr');
+    if (!tr) return;
+    const salInput = tr.querySelector('.rec-salable-input');
+    const dmgInput = tr.querySelector('.rec-damaged-input');
+    const rem = parseInt(inputEl.dataset.rem || '0', 10);
+    let val = Math.max(0, Math.min(rem, parseInt(inputEl.value || '0', 10) || 0));
+    inputEl.value = val;
+    if (changedType === 'damaged' && salInput) {
+        salInput.value = Math.max(0, rem - val);
+    } else if (changedType === 'salable' && dmgInput) {
+        const dmgVal = Math.max(0, parseInt(dmgInput.value || '0', 10) || 0);
+        if (val + dmgVal > rem) {
+            dmgInput.value = Math.max(0, rem - val);
+        }
+    }
+}
+
 function handleReceiveConditionChange(selectEl) {
     const hint = document.getElementById('recConditionHint');
     const submitBtn = document.getElementById('btnConfirmReceive');
-    if (selectEl.value === 'damaged') {
+    const qtyHeader = document.getElementById('receiveQtyHeaderCol');
+    const dmgHeader = document.getElementById('receiveDamagedHeaderCol');
+    const dmgCols   = document.querySelectorAll('.rec-damaged-col');
+
+    if (selectEl.value === 'mixed') {
+        if (qtyHeader) qtyHeader.textContent = 'Salable Qty';
+        if (dmgHeader) dmgHeader.style.display = '';
+        dmgCols.forEach(td => { td.style.display = ''; });
+        hint.textContent = 'Split returned items between Salable (Stock In) and Damaged (Bad Products Discard) in one submission.';
+        submitBtn.textContent = 'Confirm Mixed Inspection & Receive';
+        submitBtn.style.background = '#6D28D9';
+        submitBtn.style.borderColor = '#6D28D9';
+    } else if (selectEl.value === 'damaged') {
+        if (qtyHeader) qtyHeader.textContent = 'Receive Qty';
+        if (dmgHeader) dmgHeader.style.display = 'none';
+        dmgCols.forEach(td => { td.style.display = 'none'; });
         hint.textContent = 'Damaged returns will NOT enter active stock. They will be logged directly into Bad Products Discard.';
         submitBtn.textContent = 'Confirm Damaged Discard (Bad Products)';
         submitBtn.style.background = '#B91C1C';
         submitBtn.style.borderColor = '#B91C1C';
     } else {
+        if (qtyHeader) qtyHeader.textContent = 'Receive Qty';
+        if (dmgHeader) dmgHeader.style.display = 'none';
+        dmgCols.forEach(td => { td.style.display = 'none'; });
         hint.textContent = 'Salable items will increase current inventory balance.';
         submitBtn.textContent = 'Confirm & Receive Shipment';
         submitBtn.style.background = '#15803D';

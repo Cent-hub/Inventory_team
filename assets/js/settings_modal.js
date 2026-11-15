@@ -60,8 +60,6 @@ function switchSettingsView(sectionId) {
         'password':        { id: 'view-settings-password',        title: 'Change Password',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
         'forgot_password': { id: 'view-settings-forgot-password', title: 'Reset Password',      showBack: true,  wide: false, backTo: 'password', backLabel: 'Change Password' },
         'notifications':   { id: 'view-settings-notifications',   title: 'Notifications',       showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
-        'security':        { id: 'view-settings-security',        title: 'Security',            showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
-        'backup':          { id: 'view-settings-backup',          title: 'Backup & Export',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
         'contact_support': { id: 'view-settings-contact-support', title: 'Contact Support',     showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' },
         'accountability':  { id: 'view-settings-accountability',  title: 'Accountability Log',  showBack: true,  wide: false, backTo: 'main',     backLabel: 'Settings' }
     };
