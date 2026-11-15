@@ -79,11 +79,7 @@ $sql = "
         END AS category_name,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
-        CASE 
-            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand 
-            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
-            ELSE COALESCE(s.qty_on_hand, 0) 
-        END AS current_quantity
+        COALESCE(s.qty_on_hand, 0) AS current_quantity
     FROM items i
     JOIN warehouses w ON w.warehouse_id = ?
     LEFT JOIN stock s ON i.item_id = s.item_id AND s.warehouse_id = w.warehouse_id

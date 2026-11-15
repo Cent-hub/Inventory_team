@@ -182,14 +182,18 @@ $stmtIn = $pdo->prepare("
     SELECT 
         sm.movement_id AS stock_in_id,
         CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
-        CASE 
-            WHEN sm.source_type = 'CUSTOMER_RETURN' OR sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
-            WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RETURN'
-            WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
-            ELSE 'PURCHASE_ORDER'
-        END AS source_type,
+        COALESCE(
+            NULLIF(sm.source_type, ''),
+            CASE 
+                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
+                WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
+                WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
+                ELSE 'PURCHASE_ORDER'
+            END
+        ) AS source_type,
         COALESCE(
             NULLIF(sm.reference_no, ''),
+            NULLIF(sm.reference_number, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
@@ -247,7 +251,7 @@ foreach ($stockIns as $row) {
 // KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
 $totalStockInTxns    = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed'));
 $procurementInbounds = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'PURCHASE_ORDER'));
-$productionInbounds  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'PRODUCTION_RETURN'));
+$productionInbounds  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && in_array($r['source_type'] ?? '', ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)));
 
 // =============================================================================
 // DATA QUERIES: SECTION 2 (OUTBOUND / STOCK OUT)
@@ -261,12 +265,17 @@ $stmtOut = $pdo->prepare("
     SELECT 
         sm.movement_id AS stock_out_id,
         CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
-        CASE 
-            WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
-            ELSE 'SALES_DELIVERY'
-        END AS source_type,
+        COALESCE(
+            NULLIF(sm.source_type, ''),
+            CASE 
+                WHEN sm.remarks LIKE '%SUPPLIER_RETURN%' OR sm.remarks LIKE '%RTV%' OR sm.reference_no LIKE 'RTV-%' OR sm.reference_number LIKE 'RTV-%' THEN 'SUPPLIER_RETURN'
+                WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
+                ELSE 'SALES_DELIVERY'
+            END
+        ) AS source_type,
         COALESCE(
             NULLIF(sm.reference_no, ''),
+            NULLIF(sm.reference_number, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
@@ -409,7 +418,7 @@ $stmtOutLines = $pdo->prepare("
         i.name AS item_name,
         i.type AS item_type,
         i.unit,
-        COALESCE(s.qty_on_hand, 0.00) AS available_stock
+        GREATEST(0.00, COALESCE(s.qty_on_hand, 0.00) - COALESCE(s.qty_reserved, 0.00)) AS available_stock
     FROM outbound_order_items ooi
     JOIN items i ON ooi.item_id = i.item_id
     JOIN outbound_orders oo ON ooi.outbound_order_id = oo.outbound_order_id
@@ -690,7 +699,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 <select id="sourceTypeFilter" class="select-filter" aria-label="Filter by inbound source" onchange="filterStockInTable()">
                     <option value="">All Sources</option>
                     <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
-                    <option value="PRODUCTION_RETURN">Production (Work Orders)</option>
+                    <option value="PRODUCTION_RECEIPT">Production (Work Orders)</option>
                     <option value="CUSTOMER_RETURN">Customer (RMA Returns)</option>
                 </select>
 
@@ -737,14 +746,14 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 
                             // Derive item classification
                             $itemType = 'raw_material';
-                            if ($row['source_type'] === 'PRODUCTION_RETURN' || $row['source_type'] === 'CUSTOMER_RETURN') {
+                            if (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true) || $row['source_type'] === 'CUSTOMER_RETURN') {
                                 $itemType = 'finished_good';
                             } elseif (!empty($lines)) {
                                 $types = array_unique(array_column($lines, 'item_type'));
                                 $itemType = count($types) === 1 ? strtolower(str_replace(' ', '_', $types[0])) : 'mixed';
                             }
                         ?>
-                            <tr data-source="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
+                            <tr data-source="<?= htmlspecialchars($row['source_type'] === 'PRODUCTION_RETURN' ? 'PRODUCTION_RECEIPT' : $row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
                                 <!-- Source -->
                                 <td>
                                     <?php if ($row['source_type'] === 'PURCHASE_ORDER'): ?>
@@ -752,7 +761,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
                                             Procurement
                                         </span>
-                                    <?php elseif ($row['source_type'] === 'PRODUCTION_RETURN'): ?>
+                                    <?php elseif (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)): ?>
                                         <span class="badge-source-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
                                             Production
@@ -1165,6 +1174,10 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge-dest-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/>    <polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
                                             Production
+                                        </span>
+                                    <?php elseif ($row['source_type'] === 'SUPPLIER_RETURN'): ?>
+                                        <span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FDE68A;">
+                                            Supplier RTV
                                         </span>
                                     <?php else: ?>
                                         <span class="badge-dest-manual">

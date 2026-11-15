@@ -219,6 +219,8 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 <option value="ADJUSTMENT">Stock Adjustment</option>
                 <option value="ADJUSTMENT_CANCELLED">Adjustment Cancelled</option>
                 <option value="BAD_PRODUCT">Damaged / Bad Stock</option>
+                <option value="BAD_PRODUCT_CONFIRMED">Bad Stock Confirmed</option>
+                <option value="BAD_PRODUCT_DISPOSED">Bad Stock Disposed</option>
                 <option value="BAD_PRODUCT_CANCEL">Bad Stock Cancelled</option>
                 <option value="ITEM_CREATED">Item Master Created</option>
                 <option value="ITEM_UPDATED">Item Master Updated</option>
@@ -291,7 +293,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                         $team = htmlspecialchars($log['team']);
                         $actionBadge = AccountabilityService::formatActionBadge($log['action_type'], $log['channel']);
                         $teamBadge = AccountabilityService::formatTeamBadge($log['team']);
-                        $whName = htmlspecialchars($log['warehouse_name']);
+                        $whName = htmlspecialchars($log['warehouse_name'] ?? 'All Facilities');
                         $whBadgeClass = getWarehouseBadgeClass($log['warehouse_code'] ?? '');
                         $destName = !empty($log['dest_name']) ? htmlspecialchars($log['dest_name']) : '';
                     ?>

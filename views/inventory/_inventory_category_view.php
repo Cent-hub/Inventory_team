@@ -31,11 +31,7 @@ $stmt = $pdo->prepare("
         w.warehouse_id,
         w.code AS warehouse_code,
         w.name AS warehouse_name,
-        CASE 
-            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand
-            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
-            ELSE COALESCE(s.qty_on_hand, 0.000)
-        END AS current_stock,
+        COALESCE(s.qty_on_hand, 0.000) AS current_stock,
         latest_mov.latest_date,
         latest_mov.source_reference_no AS latest_reference,
         latest_mov.latest_qty

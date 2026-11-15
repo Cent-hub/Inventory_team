@@ -7,7 +7,7 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/AccountabilityService.php';
-require_once __DIR__ . '/ExternalApiService.php';
+
 
 class StockService {
     public const MAX_DECIMAL_QUANTITY = 99999999.9999;
@@ -490,9 +490,10 @@ class StockService {
                 }
 
                 $validatedEntries[] = [
-                    'item'          => $itemInfo,
-                    'quantity'      => $qty,
-                    'current_stock' => $available
+                    'item'              => $itemInfo,
+                    'quantity'          => $qty,
+                    'current_stock'     => $available,
+                    'reserved_released' => $isReservedDispatch ? min($qty, $currentReserved) : 0.0
                 ];
             }
 
@@ -525,7 +526,8 @@ class StockService {
                 $itemId = (int)$itemInfo['item_id'];
                 $qty = (float)$entry['quantity'];
 
-                $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "");
+                $resTag = ($entry['reserved_released'] > 0) ? " [ResReleased:" . number_format((float)$entry['reserved_released'], 4, '.', '') . "]" : "";
+                $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "") . $resTag;
 
                 if ($isReservedDispatch) {
                     $stmtDeductStock->execute([$qty, $qty, $itemId, $warehouseId]);
@@ -765,8 +767,8 @@ class StockService {
 
                 $this->pdo->commit();
 
-                // Outgoing B2B Integration: Notify partner team
-                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $firstBpNumber ?? $order['order_number'], 'damaged');
+    
+
 
                 return [
                     'success'            => true,
@@ -792,8 +794,8 @@ class StockService {
 
                 $this->pdo->commit();
 
-                // Outgoing B2B Integration: Notify partner team
-                ExternalApiService::notifyInboundReceipt($order, $itemsToStock, $stockInRes['transaction_number'], 'salable');
+    
+
 
                 return [
                     'success'            => true,
@@ -914,6 +916,37 @@ class StockService {
             );
 
             // Sync with Sales Team's native `orders` and `order_items` tables when dispatching a Sales Order
+            // Sync with Production Team's native `production_orders` and `production_materials` tables when dispatching a Material Request
+            if ($order['source_type'] === 'MATERIAL_REQUEST') {
+                $stmtProdOrder = $this->pdo->prepare("SELECT id FROM production_orders WHERE order_number = ? LIMIT 1");
+                $stmtProdOrder->execute([$order['order_number']]);
+                $prodOrderId = (int)($stmtProdOrder->fetchColumn() ?: 0);
+                if ($prodOrderId > 0) {
+                    $stmtUpdProdMat = $this->pdo->prepare("
+                        UPDATE production_materials
+                        SET issued_qty = LEAST(required_qty, issued_qty + ?),
+                            status = CASE
+                                WHEN LEAST(required_qty, issued_qty + ?) >= required_qty THEN 'Fully Issued'
+                                WHEN LEAST(required_qty, issued_qty + ?) > 0 THEN 'Partially Issued'
+                                ELSE status
+                            END
+                        WHERE prod_order_id = ? AND item_id = ?
+                    ");
+                    foreach ($itemsToDispatch as $itd) {
+                        $qtyVal = (float)$itd['quantity'];
+                        $stmtUpdProdMat->execute([$qtyVal, $qtyVal, $qtyVal, $prodOrderId, (int)$itd['item_id']]);
+                    }
+                    $stmtUpdProdOrd = $this->pdo->prepare("
+                        UPDATE production_orders
+                        SET status = CASE WHEN status IN ('Draft', 'Planned', 'Approved') THEN 'In Progress' ELSE status END,
+                            actual_start = COALESCE(actual_start, NOW()),
+                            updated_at = NOW()
+                        WHERE id = ?
+                    ");
+                    $stmtUpdProdOrd->execute([$prodOrderId]);
+                }
+            }
+
             if ($order['source_type'] === 'SALES_DELIVERY') {
                 $stmtSalesOrder = $this->pdo->prepare("SELECT id FROM orders WHERE order_number = ? LIMIT 1");
                 $stmtSalesOrder->execute([$order['order_number']]);
@@ -938,8 +971,8 @@ class StockService {
                 $this->pdo->commit();
             }
 
-            // Outgoing B2B Integration: Notify partner team
-            ExternalApiService::notifyOutboundDispatch($order, $itemsToDispatch, $stockOutRes['transaction_number']);
+
+
 
             return [
                 'success'            => true,
@@ -1589,9 +1622,14 @@ class StockService {
                         $stmtUpdOrd = $this->pdo->prepare("UPDATE outbound_orders SET status = ?, updated_at = NOW() WHERE outbound_order_id = ?");
                         $stmtUpdOrd->execute([$newOrdStatus, $ordId]);
 
-                        // Restore reserved stock balance for the un-dispatched portion of the order
-                        $stmtRestoreRes = $this->pdo->prepare("UPDATE stock SET qty_reserved = qty_reserved + ? WHERE item_id = ? AND warehouse_id = ?");
-                        $stmtRestoreRes->execute([$qty, $itemId, (int)$outOrd['warehouse_id']]);
+                        // Restore reserved stock only if this movement originally consumed an active reservation
+                        if (preg_match('/\[ResReleased:([0-9]+(?:\.[0-9]+)?)\]/', (string)($bm['remarks'] ?? ''), $resMatch)) {
+                            $restoreQty = min($qty, (float)$resMatch[1]);
+                            if ($restoreQty > 0) {
+                                $stmtRestoreRes = $this->pdo->prepare("UPDATE stock SET qty_reserved = qty_reserved + ? WHERE item_id = ? AND warehouse_id = ?");
+                                $stmtRestoreRes->execute([$restoreQty, $itemId, (int)$outOrd['warehouse_id']]);
+                            }
+                        }
                     }
                 }
 
@@ -3214,10 +3252,16 @@ class StockService {
             }
 
             if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
+                if (!in_array($authUser['role'] ?? '', ['super_admin', 'admin'], true)) {
+                    throw new DomainException("Access Denied: Only warehouse admins or super admins can confirm bad product write-offs.");
+                }
                 $userWhId = (int)($authUser['warehouse_id'] ?? 0);
                 if ($userWhId > 0 && $userWhId !== (int)$bp['warehouse_id']) {
                     throw new DomainException("Access Denied: You cannot confirm bad product records for another warehouse.");
                 }
+            }
+            if (($authUser['role'] ?? '') !== 'super_admin' && (int)($bp['reported_by'] ?? 0) === $userId) {
+                throw new DomainException("Segregation of Duties: You cannot confirm a bad product record that you reported yourself.");
             }
 
             $stmtUpd = $this->pdo->prepare("
@@ -3298,12 +3342,26 @@ class StockService {
                 }
             }
 
+            $cleanMethod = trim($disposalMethod);
+            if (mb_strlen($cleanMethod, 'UTF-8') > 100) {
+                $cleanMethod = mb_substr($cleanMethod, 0, 97, 'UTF-8') . '...';
+            }
+            $disposalSuffix = " [Disposed: {$cleanMethod}]";
+            $maxBaseLen = max(0, 255 - mb_strlen($disposalSuffix, 'UTF-8'));
+            $baseReason = (string)($bp['reason'] ?? '');
+            if (mb_strlen($baseReason, 'UTF-8') > $maxBaseLen) {
+                $baseReason = $maxBaseLen >= 3
+                    ? mb_substr($baseReason, 0, $maxBaseLen - 3, 'UTF-8') . '...'
+                    : mb_substr($baseReason, 0, $maxBaseLen, 'UTF-8');
+            }
+            $updatedReason = $baseReason . $disposalSuffix;
+
             $stmtUpd = $this->pdo->prepare("
                 UPDATE bad_products 
-                SET status = 'disposed', reason = CONCAT(reason, ' [Disposed: ', ?, ']')
+                SET status = 'disposed', reason = ?
                 WHERE bad_product_id = ?
             ");
-            $stmtUpd->execute([$disposalMethod, $badProductId]);
+            $stmtUpd->execute([$updatedReason, $badProductId]);
 
             AccountabilityService::log([
                 'user_id'          => $userId,

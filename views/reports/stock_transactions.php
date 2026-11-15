@@ -80,6 +80,8 @@ $sqlM = "
             sm.item_id,
             sm.warehouse_id,
             sm.movement_type,
+            sm.reference_no,
+            sm.reference_number,
             sm.quantity,
             sm.remarks,
             sm.created_at,
@@ -96,13 +98,15 @@ $sqlM = "
     movement_ledger AS (
         SELECT
             mb.*,
-            SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
+            (COALESCE(s.qty_on_hand, 0) - SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id))
+            + SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
         FROM movement_base mb
+        LEFT JOIN stock s ON s.item_id = mb.item_id AND s.warehouse_id = mb.warehouse_id
     )
     SELECT 
         sm.movement_id,
         sm.movement_type,
-        COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
+        COALESCE(NULLIF(sm.reference_number, ''), NULLIF(sm.reference_no, ''), sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
         CASE WHEN sm.signed_delta > 0 THEN sm.signed_delta ELSE 0 END AS quantity_in,
         CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) WHEN sm.movement_type = 'BAD_PRODUCT_DISCARD' THEN sm.quantity ELSE 0 END AS quantity_out,
         sm.balance_after,
@@ -137,13 +141,18 @@ $sqlIn = "
     SELECT 
         sm.movement_id AS stock_in_id,
         CONCAT('IN-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
-        CASE 
-            WHEN sm.source_type = 'CUSTOMER_RETURN' OR sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
-            WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RETURN'
-            ELSE 'PURCHASE_ORDER'
-        END AS source_type,
+        COALESCE(
+            NULLIF(sm.source_type, ''),
+            CASE 
+                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
+                WHEN sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
+                WHEN i.type IN ('finished_good', 'Finished Good') THEN 'PRODUCTION_RECEIPT'
+                ELSE 'PURCHASE_ORDER'
+            END
+        ) AS source_type,
         COALESCE(
             NULLIF(sm.reference_no, ''),
+            NULLIF(sm.reference_number, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,
@@ -189,12 +198,17 @@ $sqlOut = "
     SELECT 
         sm.movement_id AS stock_out_id,
         CONCAT('OUT-', LPAD(sm.movement_id, 6, '0')) AS transaction_number,
-        CASE 
-            WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
-            ELSE 'SALES_DELIVERY'
-        END AS source_type,
+        COALESCE(
+            NULLIF(sm.source_type, ''),
+            CASE 
+                WHEN sm.remarks LIKE '%SUPPLIER_RETURN%' OR sm.remarks LIKE '%RTV%' OR sm.reference_no LIKE 'RTV-%' OR sm.reference_number LIKE 'RTV-%' THEN 'SUPPLIER_RETURN'
+                WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
+                ELSE 'SALES_DELIVERY'
+            END
+        ) AS source_type,
         COALESCE(
             NULLIF(sm.reference_no, ''),
+            NULLIF(sm.reference_number, ''),
             NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(sm.remarks, ']', 1), '[', -1), ''),
             CONCAT('REF-', sm.movement_id)
         ) AS source_reference_no,

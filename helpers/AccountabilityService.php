@@ -184,9 +184,9 @@ class AccountabilityService {
                 al.log_id,
                 al.created_at,
                 al.user_id,
-                COALESCE(u.name, u.username, 'Warehouse Staff') AS user_name,
-                COALESCE(u.role, 'admin') AS user_role,
-                'Inventory' AS team,
+                COALESCE(u.name, u.username, 'System Service') AS user_name,
+                COALESCE(u.role, 'system') AS user_role,
+                COALESCE(NULLIF(al.team, ''), 'Inventory') AS team,
                 al.action AS action_type,
                 al.action,
                 al.item_id,
@@ -199,12 +199,10 @@ class AccountabilityService {
                 w.code AS warehouse_code,
                 w.name AS warehouse_name
             FROM accountability_logs al
-            INNER JOIN users u ON al.user_id = u.user_id
+            LEFT JOIN users u ON al.user_id = u.user_id
             LEFT JOIN items i ON al.item_id = i.item_id
             LEFT JOIN warehouses w ON al.warehouse_id = w.warehouse_id
-            WHERE LOWER(COALESCE(u.team, '')) = 'inventory'
-              AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin'))
-              AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')
+            WHERE 1=1
         ";
         $params = [];
 
@@ -276,6 +274,11 @@ class AccountabilityService {
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        $whMap = [];
+        foreach ($pdo->query("SELECT warehouse_id, code, name FROM warehouses")->fetchAll(PDO::FETCH_ASSOC) as $whRow) {
+            $whMap[(int)$whRow['warehouse_id']] = $whRow;
+        }
+
         foreach ($rows as &$row) {
             $channel  = 'UI';
             $destWhId = null;
@@ -307,6 +310,10 @@ class AccountabilityService {
                     }
                     if (!empty($meta['destination_warehouse_id'])) {
                         $destWhId = (int)$meta['destination_warehouse_id'];
+                        if (isset($whMap[$destWhId])) {
+                            $destCode = $whMap[$destWhId]['code'];
+                            $destName = $whMap[$destWhId]['name'];
+                        }
                     }
                     if (!empty($meta['reference_number'])) {
                         $refNo = $meta['reference_number'];
@@ -335,7 +342,7 @@ class AccountabilityService {
     public static function getKpis(int $warehouseId): array {
         $pdo = self::getPdo();
 
-        $where = "LOWER(COALESCE(u.team, '')) = 'inventory' AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin')) AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')";
+        $where = "1=1";
         $params = [];
         if ($warehouseId > 0) {
             $where .= " AND al.warehouse_id = ?";
@@ -350,7 +357,7 @@ class AccountabilityService {
                 SUM(CASE WHEN al.action IN ('USER_LOGIN', 'ITEM_CREATED', 'ITEM_UPDATED', 'STATUS_TOGGLED', 'USER_CREATED', 'USER_UPDATED', 'USER_STATUS_TOGGLED', 'SUPPORT_INQUIRY') THEN 1 ELSE 0 END) AS staff_logins,
                 COUNT(*) AS inventory_ops
             FROM accountability_logs al
-            INNER JOIN users u ON al.user_id = u.user_id
+            LEFT JOIN users u ON al.user_id = u.user_id
             WHERE {$where}
         ";
 
@@ -456,6 +463,16 @@ class AccountabilityService {
                 $badgeClass = 'issue';
                 $label = 'Bad Stock Cancelled';
                 $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+                break;
+            case 'BAD_PRODUCT_CONFIRMED':
+                $badgeClass = 'adjustment';
+                $label = 'Bad Stock Confirmed';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                break;
+            case 'BAD_PRODUCT_DISPOSED':
+                $badgeClass = 'issue';
+                $label = 'Bad Stock Disposed';
+                $iconSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
                 break;
             case 'ITEM_CREATED':
                 $badgeClass = 'inbound';

@@ -5,7 +5,16 @@
  * Uses transient local cache file without querying deprecated api_rate_limits table.
  */
 
-require_once __DIR__ . '/response.php';
+if (!function_exists('jsonResponse')) {
+    function jsonResponse(array $data, int $statusCode = 200): void {
+        if (!headers_sent()) {
+            http_response_code($statusCode);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
 
 function checkRateLimit(
     string $endpoint,

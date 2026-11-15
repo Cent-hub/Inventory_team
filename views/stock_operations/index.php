@@ -514,6 +514,8 @@ if ($selectedItemId > 0) {
                 sm.item_id,
                 sm.warehouse_id,
                 sm.movement_type,
+                sm.reference_no,
+                sm.reference_number,
                 sm.quantity,
                 sm.remarks,
                 sm.created_at,
@@ -530,13 +532,15 @@ if ($selectedItemId > 0) {
         movement_ledger AS (
             SELECT
                 mb.*,
-                SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
+                (COALESCE(s.qty_on_hand, 0) - SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id))
+                + SUM(mb.signed_delta) OVER (PARTITION BY mb.item_id, mb.warehouse_id ORDER BY mb.created_at ASC, mb.movement_id ASC) AS balance_after
             FROM movement_base mb
+            LEFT JOIN stock s ON s.item_id = mb.item_id AND s.warehouse_id = mb.warehouse_id
         )
         SELECT 
             sm.movement_id,
             sm.movement_type,
-            COALESCE(sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
+            COALESCE(NULLIF(sm.reference_number, ''), NULLIF(sm.reference_no, ''), sm.remarks, CONCAT('MOV-', sm.movement_id)) AS reference_number,
             CASE WHEN sm.signed_delta > 0 THEN sm.signed_delta ELSE 0 END AS quantity_in,
             CASE WHEN sm.signed_delta < 0 THEN ABS(sm.signed_delta) ELSE 0 END AS quantity_out,
             sm.balance_after,

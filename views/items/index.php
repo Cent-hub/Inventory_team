@@ -17,119 +17,6 @@ $errorMessage   = null;
 $isSuperAdmin   = (($currentUser['role'] ?? '') === 'super_admin');
 $canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 
-// Handle New Item Creation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_item') {
-    if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
-    } elseif (!$canManageItems) {
-        $errorMessage = "Access denied: Only Administrators can create catalog items.";
-    } else {
-        $itemCode        = strtoupper(trim($_POST['item_code'] ?? ''));
-        $itemName        = trim($_POST['item_name'] ?? '');
-        $rawItemType     = trim($_POST['item_type'] ?? '');
-        $unit            = strtolower(trim($_POST['unit'] ?? 'pcs'));
-        $rawReorderLevel = trim((string)($_POST['default_reorder_level'] ?? '0'));
-        $description     = trim($_POST['description'] ?? '');
-
-        // Set item classification based on selected classification or SKU prefix
-        if ($rawItemType === 'finished_good' || str_starts_with($itemCode, 'FG-')) {
-            $itemType = 'finished_good';
-        } else {
-            $itemType = 'raw_material';
-        }
-
-        if (empty($itemCode)) {
-            $errorMessage = "Item Code is required.";
-        } elseif (mb_strlen($itemCode) > 50 || !preg_match('/^[A-Z0-9\-_]+$/', $itemCode)) {
-            $errorMessage = "Item Code must be 1–50 characters and contain only letters, numbers, hyphens (-), or underscores (_).";
-        } elseif (empty($itemName)) {
-            $errorMessage = "Item Name is required.";
-        } elseif (mb_strlen($itemName) > 150) {
-            $errorMessage = "Item Name cannot exceed 150 characters.";
-        } elseif (empty($unit) || mb_strlen($unit) > 20) {
-            $errorMessage = "Unit of measurement is required and cannot exceed 20 characters.";
-        } elseif ($rawReorderLevel !== '' && !is_numeric($rawReorderLevel)) {
-            $errorMessage = "Default reorder level must be a valid number.";
-        } else {
-
-            $reorderLevel = $rawReorderLevel === '' ? 0.0 : (float)$rawReorderLevel;
-            if ($reorderLevel < 0 || $reorderLevel > 99999999) {
-                $errorMessage = "Default reorder level must be between 0 and 99,999,999.";
-            } elseif (floor($reorderLevel) != $reorderLevel) {
-                $errorMessage = "Default reorder level must be a whole number (no decimals).";
-            } else {
-                try {
-                    // Check uniqueness of item code
-                    $stmtChk = $pdo->prepare("SELECT COUNT(*) FROM items WHERE code = ?");
-                    $stmtChk->execute([$itemCode]);
-                    if ((int)$stmtChk->fetchColumn() > 0) {
-                        $errorMessage = "An item with Item Code '{$itemCode}' already exists.";
-                    } else {
-                        $userId = (int)($currentUser['id'] ?? 1);
-                        
-                        // BR-01: Employees create items in 'pending' status; Super Admin can create directly in 'active' status
-                        $initialStatus = $isSuperAdmin ? 'active' : 'pending';
-                        $dbType   = ($itemType === 'finished_good') ? 'Finished Good' : 'Raw Material';
-                        $dbUnit   = (strcasecmp($unit, 'bulk') === 0 || strcasecmp($unit, 'box') === 0) ? 'Bulk' : 'Pieces';
-                        $dbStatus = ($initialStatus === 'active') ? 'Active' : 'Inactive';
-
-                        $stmtIns = $pdo->prepare("
-                            INSERT INTO items (
-                                item_code, item_name, description, type, unit_of_measure, reorder_level, status
-                            ) VALUES (
-                                ?, ?, ?, ?, ?, ?, ?
-                            )
-                        ");
-                        $stmtIns->execute([
-                            $itemCode,
-                            $itemName,
-                            $description !== '' ? $description : null,
-                            $dbType,
-                            $dbUnit,
-                            round($reorderLevel, 3),
-                            $dbStatus
-                        ]);
-                        $newId = (int)$pdo->lastInsertId();
-
-                        // Only active items initialize stock snapshot rows across warehouses
-                        if ($initialStatus === 'active') {
-                            $stmtSeedInv = $pdo->prepare("
-                                INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
-                                SELECT ?, warehouse_id, 0.00, ?
-                                FROM warehouses
-                                WHERE status = 'active'
-                            ");
-                            $stmtSeedInv->execute([$newId, round($reorderLevel, 3)]);
-                        }
-
-                        require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                        AccountabilityService::log([
-                            'user_id'          => $userId,
-                            'team'             => $currentUser['team'] ?? 'Inventory',
-                            'action_type'      => ($initialStatus === 'active') ? 'ITEM_CREATED' : 'ITEM_SUBMITTED',
-                            'channel'          => 'UI',
-                            'item_id'          => $newId,
-                            'warehouse_id'     => $currentWarehouseId ?: 1,
-                            'reference_number' => $itemCode,
-                            'notes'            => ($initialStatus === 'active')
-                                ? "Master item created: {$itemName} ({$itemType})"
-                                : "Master item submitted for Super Admin approval: {$itemName} ({$itemType})"
-                        ]);
-
-                        if ($initialStatus === 'active') {
-                            $successMessage = "Master item '{$itemName}' ({$itemCode}) created and activated successfully!";
-                        } else {
-                            $successMessage = "Master item '{$itemName}' ({$itemCode}) submitted successfully! Awaiting Super Admin review and approval.";
-                        }
-                    }
-                } catch (Throwable $e) {
-                    $errorMessage = "Failed to create item: " . $e->getMessage();
-                }
-            }
-        }
-    }
-}
-
 // Handle Item Approval (Super Admin Only — BR-01)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'approve_item') {
     if (!validateCsrfToken()) {
@@ -430,9 +317,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
-        <?php if ($canManageItems): ?>
-            <button type="button" class="btn btn-primary" onclick="openNewItemModal()">+ Add New Item</button>
-        <?php endif; ?>
     </div>
 </div>
 
@@ -560,7 +444,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
             <tbody>
                 <?php if (empty($itemsList)): ?>
                     <tr>
-                        <td colspan="<?= $canManageItems ? 8 : 7 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found. Click "+ Add New Item" above to create your first item.</td>
+                        <td colspan="<?= $canManageItems ? 8 : 7 ?>" style="text-align: center; color: var(--gray); padding: 36px;">No catalog items found.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
@@ -659,93 +543,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 </div>
 
-<!-- Modal: Add New Item -->
-<div id="newItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newItemModalTitle" onclick="if(event.target === this && !document.getElementById('modalItemName').value.trim()) closeNewItemModal()">
-    <div class="modal-card" style="max-width: 520px;">
-        <form method="POST" action="index.php">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="create_item">
-            <div class="modal-header">
-                <div>
-                    <h3 id="newItemModalTitle" class="card-title">Add New Catalog Item</h3>
-                    <p class="card-desc">Define a new raw material ingredient or finished product</p>
-                </div>
-                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewItemModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <?php if (!$isSuperAdmin): ?>
-                    <div style="font-size: 12px; color: #92400E; background: #FEF3C7; padding: 10px 12px; border-radius: 6px; border: 1px solid #FCD34D; display: flex; align-items: flex-start; gap: 8px;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        <span><strong>Approval Workflow:</strong> New catalog items submitted by warehouse staff are saved as <strong>Pending Approval</strong>. A Super Admin must review and approve this item before it can be used for stock movements or orders.</span>
-                    </div>
-                <?php endif; ?>
-                <!-- Classification -->
-                <div>
-                    <label for="modalItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Classification <span style="color: #DC2626;">*</span>
-                    </label>
-                    <select name="item_type" id="modalItemType" class="select-filter" style="width: 100%;" required onchange="onModalTypeChange(this.value)">
-                        <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
-                        <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
-                    </select>
-                </div>
-
-                <!-- Item Code & Name -->
-                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label for="modalItemCode" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Item Code <span style="color: #DC2626;">*</span>
-                        </label>
-                        <input type="text" name="item_code" id="modalItemCode" class="search-box" style="width: 100%; padding-left: 12px; text-transform: uppercase;" placeholder="RM-EXAMPLE" required oninput="onModalCodeInput(this.value)">
-                    </div>
-                    <div>
-                        <label for="modalItemName" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Item Name <span style="color: #DC2626;">*</span>
-                        </label>
-                        <input type="text" name="item_name" id="modalItemName" class="search-box" style="width: 100%; padding-left: 12px;" placeholder="e.g. Oak-Aged Whiskey Base" required>
-                    </div>
-                </div>
-
-                <!-- Unit & Reorder Level -->
-                <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label for="modalUnit" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Unit <span style="color: #DC2626;">*</span>
-                        </label>
-                        <select name="unit" id="modalUnit" class="select-filter" style="width: 100%;" required>
-                            <?php foreach ($uoms as $u): ?>
-                                <option value="<?= htmlspecialchars($u['uom_code']) ?>">
-                                    <?= htmlspecialchars($u['uom_code']) ?> (<?= htmlspecialchars($u['uom_name']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="modalReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Default Reorder Threshold <span style="color: #DC2626;">*</span>
-                        </label>
-                        <input type="number" step="1" min="0" name="default_reorder_level" id="modalReorder" class="search-box" style="width: 100%; padding-left: 12px;" value="50" onkeydown="if(event.key==='.'||event.key===',')event.preventDefault();" oninput="this.value=this.value.replace(/[^0-9]/g,'');" required>
-                    </div>
-                </div>
-
-                <!-- Description -->
-                <div>
-                    <label for="modalDesc" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Description / Specifications
-                    </label>
-                    <textarea name="description" id="modalDesc" class="search-box" style="width: 100%; height: 50px; padding: 8px 12px;" placeholder="Optional details (ABV, packaging specs, notes)..."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn btn-secondary" onclick="closeNewItemModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Save Item</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <!-- Modal: Edit Existing Item -->
 <div id="editItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editItemModalTitle" onclick="if(event.target === this) closeEditItemModal()">
     <div class="modal-card" style="max-width: 520px;">
@@ -838,12 +635,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
 </div>
 
 <script>
-function openNewItemModal() {
-    document.getElementById('newItemModal').classList.add('open');
-}
-function closeNewItemModal() {
-    document.getElementById('newItemModal').classList.remove('open');
-}
 function openEditItemModal(item) {
     document.getElementById('editItemId').value = item.item_id;
     document.getElementById('editItemCode').value = item.item_code;
@@ -867,24 +658,6 @@ function openEditItemModal(item) {
 }
 function closeEditItemModal() {
     document.getElementById('editItemModal').classList.remove('open');
-}
-function autoSuggestCodePrefix(type) {
-    const codeInput = document.getElementById('modalItemCode');
-    if (!codeInput.value || codeInput.value.startsWith('RM-') || codeInput.value.startsWith('FG-')) {
-        codeInput.value = (type === 'finished_good') ? 'FG-' : 'RM-';
-    }
-}
-function onModalTypeChange(type) {
-    autoSuggestCodePrefix(type);
-}
-function onModalCodeInput(val) {
-    val = (val || '').toUpperCase();
-    const typeSelect = document.getElementById('modalItemType');
-    if (val.startsWith('FG-')) {
-        if (typeSelect && typeSelect.value !== 'finished_good') typeSelect.value = 'finished_good';
-    } else if (val.startsWith('RM-')) {
-        if (typeSelect && typeSelect.value !== 'raw_material') typeSelect.value = 'raw_material';
-    }
 }
 function filterItemsTable() {
     const query = document.getElementById('itemSearch').value.toLowerCase().trim();

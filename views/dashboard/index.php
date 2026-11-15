@@ -21,11 +21,7 @@ $stmtInventory = $pdo->prepare("
         i.name AS item_name,
         COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
-        CASE 
-            WHEN COALESCE(s.qty_on_hand, 0) > 0 THEN s.qty_on_hand 
-            WHEN (SELECT COALESCE(SUM(s2.qty_on_hand), 0) FROM stock s2 WHERE s2.item_id = i.item_id) = 0 AND w.warehouse_id = 1 THEN COALESCE(i.current_stock, 0)
-            ELSE COALESCE(s.qty_on_hand, 0) 
-        END AS quantity,
+        COALESCE(s.qty_on_hand, 0) AS quantity,
         COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level
     FROM items i
     JOIN warehouses w ON w.warehouse_id = :wid1
@@ -39,8 +35,8 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 // Compute KPI metrics directly from $inventoryRows (eliminating redundant SQL queries)
 $totalRawMaterials   = 0;
 $totalFinishedGoods  = 0;
-$totalStockDiscrete  = 0.0;
-$totalStockLiquid    = 0.0;
+$totalStockPieces    = 0.0;
+$totalStockBulk      = 0.0;
 $totalStock          = 0.0;
 $lowStockCount       = 0;
 
@@ -55,10 +51,10 @@ foreach ($inventoryRows as $row) {
     $reorder = (float)($row['default_reorder_level'] ?? 0);
     $unit = strtolower(trim($row['unit'] ?? ''));
 
-    if (in_array($unit, ['l', 'liter', 'liters', 'ml', 'gallon', 'gal'], true)) {
-        $totalStockLiquid += $qty;
+    if ($unit === 'bulk') {
+        $totalStockBulk += $qty;
     } else {
-        $totalStockDiscrete += $qty;
+        $totalStockPieces += $qty;
     }
     $totalStock += $qty;
 
@@ -270,8 +266,8 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div class="stat-value"><?= formatQty($totalStock) ?></div>
         <div class="stat-meta">
-            <span><strong><?= formatQty($totalStockDiscrete) ?></strong> discrete (pcs/box)</span> &bull; 
-            <span><strong><?= formatQty($totalStockLiquid) ?></strong> liquid (L/ml)</span>
+            <span><strong><?= formatQty($totalStockPieces) ?></strong> Pieces</span> &bull; 
+            <span><strong><?= formatQty($totalStockBulk) ?></strong> Bulk</span>
         </div>
     </div>
 
