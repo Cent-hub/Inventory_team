@@ -162,7 +162,6 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
                             'inbound_receipts'    => 'Inbound Receipts Notifications',
                             'outbound_dispatches' => 'Outbound Dispatches Notifications',
                             'daily_digest'        => 'Daily Stock Ledger Digest',
-                            'two_factor_auth'     => 'Two-Factor Authentication (2FA)',
                             'notif_sound'         => 'Notification Sound Alerts',
                             'toast_alerts'        => 'Floating Toast Notifications',
                             'sound_focus_only'    => 'Mute Sound in Background Tabs'
@@ -203,19 +202,6 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
                         }
                         $label = $allowedKeys[$key];
                         $stateText = $enabled ? 'Enabled' : 'Disabled';
-                        if ($key === 'two_factor_auth') {
-                            try {
-                                AccountabilityService::log([
-                                    'user_id'          => $userId,
-                                    'team'             => 'Administration',
-                                    'action_type'      => 'USER_UPDATED',
-                                    'channel'          => 'UI',
-                                    'warehouse_id'     => $warehouseId,
-                                    'reference_number' => 'SEC-2FA',
-                                    'notes'            => "{$label} preference set to {$stateText}"
-                                ]);
-                            } catch (Throwable $e) {}
-                        }
                         echo json_encode([
                             'success' => true,
                             'key'     => $key,
@@ -832,26 +818,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </button>
                             </div>
                             <p id="error-password" class="error-text" style="display: none;"></p>
-                        </div>
-
-                                                <!-- 2FA Code Field (Appears dynamically if user has 2FA enabled - F-26) -->
-                        <div id="wrap-2fa" class="field" style="display: none; margin-bottom: 14px;">
-                            <label class="label" for="two_factor_code" style="color: var(--accent); font-weight: 600;">Security Code (2FA)</label>
-                            <div class="input-wrap">
-                                <input 
-                                    id="two_factor_code" 
-                                    name="two_factor_code" 
-                                    type="text" 
-                                    class="input" 
-                                    placeholder="Enter 6-digit code from email"
-                                    maxlength="6"
-                                    inputmode="numeric"
-                                    pattern="[0-9]*"
-                                    autocomplete="one-time-code"
-                                    style="letter-spacing: 3px; font-weight: 700; font-size: 15px;"
-                                />
-                            </div>
-                            <p id="info-2fa" style="font-size: 12px; color: var(--accent); margin-top: 4px; display: block;">A verification code was dispatched to your email.</p>
                         </div>
 
                         <!-- Login Submit Button -->

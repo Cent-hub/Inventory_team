@@ -28,7 +28,7 @@ $userPrefs = array_merge([
     'inbound_receipts'    => true,
     'outbound_dispatches' => true,
     'daily_digest'        => false,
-    'two_factor_auth'     => true,
+
     'notif_sound'         => true,
     'toast_alerts'        => true,
     'sound_focus_only'    => true,

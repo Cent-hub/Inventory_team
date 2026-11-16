@@ -102,7 +102,7 @@ $rawMaterialsData   = array_values(array_filter($allInventoryData, fn($r) => in_
 $finishedGoodsData  = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['finished_good', 'Finished Good'], true)));
 $currentBalanceData = $allInventoryData;
 
-// Bad Products Report Data (Damaged Customer Returns & Defective Write-Offs — excluded from salable stock)
+// Bad Products Report Data (Defective & Damaged Write-Offs — excluded from salable stock)
 $sqlBad = "
     SELECT 
         bp.bad_product_id,
@@ -161,7 +161,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
         <div>
             <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">InventoryTeam Inventory Management System</h2>
             <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">
-                <?= htmlspecialchars($activeTab === 'finished_goods' ? 'Finished Goods Stock Report' : ($activeTab === 'current_balance' ? 'Current Inventory Balance' : ($activeTab === 'bad_products' ? 'Bad Products & Damaged Returns Report' : 'Raw Materials Stock Report'))) ?>
+                <?= htmlspecialchars($activeTab === 'finished_goods' ? 'Finished Goods Stock Report' : ($activeTab === 'current_balance' ? 'Current Inventory Balance' : ($activeTab === 'bad_products' ? 'Bad Products Report' : 'Raw Materials Stock Report'))) ?>
             </h3>
         </div>
         <div style="text-align: right; font-size: 11px; color: var(--gray);">
@@ -283,7 +283,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Raw Materials Stock Report</h2>
-                <p class="card-desc">Audited raw ingredients inventory and reorder thresholds &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Current stock and reorder levels for raw materials</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -346,7 +346,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Finished Goods Stock Report</h2>
-                <p class="card-desc">Audited packaged and bottled stock inventory &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Current stock of finished goods ready for sale</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -409,7 +409,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Current Inventory Balance</h2>
-                <p class="card-desc">Comprehensive facility balance across all item classifications &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Complete stock levels for all raw materials and finished goods</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -473,8 +473,8 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
     <div class="card">
         <div class="card-header">
             <div>
-                <h2 class="card-title">Bad Products &amp; Damaged Returns Report</h2>
-                <p class="card-desc">Non-salable items from verified damaged customer returns (RMA) and warehouse defect write-offs (excluded from salable Finished Goods) &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <h2 class="card-title">Bad Products Report</h2>
+                <p class="card-desc">List of damaged or defective items (not counted in sellable stock)</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -494,7 +494,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody>
                     <?php if (empty($badProductsData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products or damaged returns recorded for this warehouse.</td></tr>
+                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products recorded for this warehouse.</td></tr>
                     <?php else: ?>
                         <?php foreach ($badProductsData as $bp): 
                             $isFg = in_array($bp['item_type'], ['finished_good', 'Finished Good'], true);
@@ -554,7 +554,7 @@ const reportTitles = {
     'raw_materials': 'Raw Materials Stock Report',
     'finished_goods': 'Finished Goods Stock Report',
     'current_balance': 'Current Inventory Balance',
-    'bad_products': 'Bad Products & Damaged Returns Report'
+    'bad_products': 'Bad Products Report'
 };
 
 function switchReportTab(tabName) {

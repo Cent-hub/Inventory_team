@@ -591,7 +591,7 @@ function toggleNotificationFeedback(checkbox, prefKey, label) {
         localStorage.setItem('inventoryteam_pref_' + key, enabled ? '1' : '0');
     } catch (e) {}
 
-    const bannerId = (key === 'two_factor_auth') ? 'securityFeedbackBanner' : 'notifFeedbackBanner';
+    const bannerId = 'notifFeedbackBanner';
     const banner = document.getElementById(bannerId);
 
     const baseUrl = getSettingsBaseUrl();

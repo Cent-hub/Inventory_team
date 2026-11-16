@@ -215,7 +215,7 @@ try {
         }
     }
 
-    // 3. Bridge Sales Team `orders` & `order_items` (Pending Dispatches, Direct Fulfillments, & Customer Returns)
+    // 3. Bridge Sales Team `orders` & `order_items` (Pending Dispatches & Direct Fulfillments)
     // 3a. Sync unfulfilled Sales Orders into `outbound_orders` queue for Warehouse Fulfillment
     // 3. Auto-deduct Finished Goods (FG) for active/completed Sales Orders that need FG (including remaining partial shortfalls)
     $salesFgStmt = $pdo->query("
@@ -373,49 +373,6 @@ try {
                             'warehouse_id' => 0
                         ]);
                     } catch (Throwable $e) {}
-                }
-            }
-        }
-    }
-
-    // 3c. Sync Customer Returns recorded by Sales Team in `order_items.quantity_returned > 0` into `inbound_orders` (CUSTOMER_RETURN)
-    //     so returned items go to the Receiving Dock for QA verification (Salable vs. Bad Product) instead of auto-entering salable stock!
-    $returnedSalesStmt = $pdo->query("
-        SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes,
-               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RMA-', o.order_number)
-        WHERE io.inbound_order_id IS NULL
-          AND EXISTS (
-              SELECT 1 FROM order_items oi 
-              WHERE oi.order_id = o.id AND oi.quantity_returned > 0
-          )
-    ");
-    if ($returnedSalesStmt) {
-        $insInbOrd = $pdo->prepare("
-            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
-            VALUES (?, 'CUSTOMER_RETURN', ?, ?, CURDATE(), 'pending', ?, ?)
-        ");
-        $insInbItem = $pdo->prepare("
-            INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
-            VALUES (?, ?, ?, 0.0000)
-        ");
-        $selRetItems = $pdo->prepare("SELECT item_id, SUM(quantity_returned) AS ret_qty FROM order_items WHERE order_id = ? AND quantity_returned > 0 GROUP BY item_id");
-        foreach ($returnedSalesStmt->fetchAll(PDO::FETCH_ASSOC) as $ro) {
-            $rmaNo = 'RMA-' . $ro['order_number'];
-            $insInbOrd->execute([
-                $rmaNo,
-                trim($ro['customer_name']) ?: 'Sales Customer',
-                (int)$ro['warehouse_id'] ?: 1,
-                "Customer return from Sales Order {$ro['order_number']}" . ($ro['notes'] ? " ({$ro['notes']})" : ""),
-                (int)($ro['created_by'] ?: 1)
-            ]);
-            $newInbId = (int)$pdo->lastInsertId();
-            if ($newInbId > 0) {
-                $selRetItems->execute([(int)$ro['order_id']]);
-                foreach ($selRetItems->fetchAll(PDO::FETCH_ASSOC) as $ri) {
-                    $insInbItem->execute([$newInbId, (int)$ri['item_id'], (float)$ri['ret_qty']]);
                 }
             }
         }

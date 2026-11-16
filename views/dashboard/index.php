@@ -77,32 +77,19 @@ $transferDoneRow = $stmtTransferDone->fetch(PDO::FETCH_ASSOC);
 $transfersDoneCount  = (int)($transferDoneRow['txn_count'] ?? 0);
 $transfersDoneVolume = (float)($transferDoneRow['total_qty'] ?? 0);
 
-// 3. Return Products (Customer RMA returns & Supplier RTV returns for assigned warehouse)
-$stmtRP = $pdo->prepare("
+// 3. Bad Products List (Active damaged / defective records for assigned warehouse)
+$stmtBP = $pdo->prepare("
     SELECT 
-        COUNT(sm.movement_id) AS txn_count,
-        COALESCE(SUM(sm.quantity), 0) AS total_qty
-    FROM stock_movements sm
-    LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
-        AND rev.movement_type IN ('CANCELLED_INBOUND', 'CANCELLED_OUTBOUND')
-    WHERE sm.warehouse_id = :wid
-      AND rev.movement_id IS NULL
-      AND (
-          sm.source_type IN ('CUSTOMER_RETURN', 'SUPPLIER_RETURN')
-          OR sm.remarks LIKE '[CUSTOMER_RETURN:%'
-          OR sm.remarks LIKE '[SUPPLIER_RETURN:%'
-          OR sm.remarks LIKE '%Damaged Customer Return%'
-          OR sm.remarks REGEXP '^(RMA|RTV)-'
-          OR sm.remarks LIKE '%[RMA%'
-          OR sm.remarks LIKE '%[RTV%'
-      )
-      AND sm.movement_type IN ('STOCK_IN', 'STOCK_OUT', 'BAD_PRODUCT_DISCARD')
-      AND (sm.remarks IS NULL OR sm.remarks NOT LIKE 'Customer RMA Inbound (%')
+        COUNT(*) AS record_count,
+        COALESCE(SUM(quantity), 0) AS total_qty
+    FROM bad_products
+    WHERE warehouse_id = :wid
+      AND status != 'cancelled'
 ");
-$stmtRP->execute([':wid' => $currentWarehouseId]);
-$rpRow = $stmtRP->fetch(PDO::FETCH_ASSOC);
-$returnProductsCount  = (int)($rpRow['txn_count'] ?? 0);
-$returnProductsVolume = (float)($rpRow['total_qty'] ?? 0);
+$stmtBP->execute([':wid' => $currentWarehouseId]);
+$bpRow = $stmtBP->fetch(PDO::FETCH_ASSOC);
+$badProductsCount  = (int)($bpRow['record_count'] ?? 0);
+$badProductsVolume = (float)($bpRow['total_qty'] ?? 0);
 
 // 4. Recent Inventory Activity in assigned warehouse (within 3 days only)
 $stmtRecent = $pdo->prepare("
@@ -151,7 +138,7 @@ $stmtChart = $pdo->prepare("
     SELECT 
         DATE(sm.created_at) AS txn_date,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_in,
         COALESCE(SUM(CASE 
@@ -312,20 +299,24 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         <div class="stat-meta"><?= $transfersDoneCount ?> completed transfer<?= $transfersDoneCount === 1 ? '' : 's' ?></div>
     </div>
 
-    <!-- 6. Return Products -->
+    <!-- 6. Bad Products List -->
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Return Products</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #EDE9FE;">
-                <!-- Lucide RotateCcw Icon -->
+            <span class="stat-label">Bad Products List</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
+                <!-- Lucide XCircle Icon -->
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                    <path d="M3 3v5h5"/>
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= formatQty($returnProductsVolume) ?></div>
-        <div class="stat-meta"><?= $returnProductsCount ?> processed return<?= $returnProductsCount === 1 ? '' : 's' ?></div>
+        <div class="stat-value"><?= formatQty($badProductsVolume) ?></div>
+        <div class="stat-meta">
+            <?= $badProductsCount ?> record<?= $badProductsCount === 1 ? '' : 's' ?> &bull;
+            <a href="<?= BASE_URL ?>views/stock_operations/index.php?tab=adjustment#badProductsTable" style="color: #B91C1C; font-weight: 600; text-decoration: underline;">View List &rarr;</a>
+        </div>
     </div>
 </div>
 

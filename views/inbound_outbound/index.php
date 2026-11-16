@@ -185,7 +185,6 @@ $stmtIn = $pdo->prepare("
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
-                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
                 WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
                 WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
                 ELSE 'PURCHASE_ORDER'
@@ -268,7 +267,6 @@ $stmtOut = $pdo->prepare("
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
-                WHEN sm.remarks LIKE '%SUPPLIER_RETURN%' OR sm.remarks LIKE '%RTV%' OR sm.reference_no LIKE 'RTV-%' OR sm.reference_number LIKE 'RTV-%' THEN 'SUPPLIER_RETURN'
                 WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
                 ELSE 'SALES_DELIVERY'
             END
@@ -433,16 +431,6 @@ foreach ($stmtOutLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
 
 $pendingInboundCount  = count($pendingInboundOrders);
 $pendingOutboundCount = count($pendingOutboundOrders);
-$stmtDamagedRma = $pdo->prepare("
-    SELECT COUNT(*) FROM bad_products 
-    WHERE warehouse_id = :wid 
-      AND status != 'cancelled' 
-      AND (reason LIKE '%Customer Return%' OR reason LIKE '%RMA%')
-");
-$stmtDamagedRma->execute([':wid' => $currentWarehouseId]);
-$damagedRmaCount = (int)$stmtDamagedRma->fetchColumn();
-$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN')) + $damagedRmaCount;
-$supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SUPPLIER_RETURN'));
 ?>
 
 <!-- Page Header -->
@@ -516,7 +504,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 <!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
     <!-- Inbound KPI Cards -->
-    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="stat-card">
             <div class="stat-header">
                 <span class="stat-label">Pending Inbounds</span>
@@ -528,7 +516,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $pendingInboundCount ?></div>
-            <div class="stat-meta">Awaiting warehouse dock receiving</div>
+            <div class="stat-meta">Waiting to be received</div>
         </div>
 
         <div class="stat-card stat-gold">
@@ -543,7 +531,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $procurementInbounds ?></div>
-            <div class="stat-meta">Inbound ingredients received via PO</div>
+            <div class="stat-meta">Raw materials received from suppliers</div>
         </div>
 
         <div class="stat-card">
@@ -557,21 +545,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $productionInbounds ?></div>
-            <div class="stat-meta">Bottles received from distillery</div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-header">
-                <span class="stat-label">Customer Returns (RMA)</span>
-                <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #F3E8FF;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 14 4 9 9 4"/>
-                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
-                    </svg>
-                </div>
-            </div>
-            <div class="stat-value"><?= $customerReturnsCount ?></div>
-            <div class="stat-meta">RMA sales returns processed</div>
+            <div class="stat-meta">Finished goods received from production</div>
         </div>
     </div>
 
@@ -582,11 +556,10 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <h2 class="card-title" style="margin: 0;">Expected Inbound Shipments (Receiving Dock)</h2>
-                    <span class="badge status-pending" style="font-size: 11px; padding: 2px 8px;"><?= $pendingInboundCount ?> Orders Awaiting Check-In</span>
+                    <h2 class="card-title" style="margin: 0;">Incoming Shipments to Receive</h2>
                 </div>
                 <p class="card-desc" style="margin: 4px 0 0 0;">
-                    Document-driven receiving: Select an open PO, Production Batch, or Customer RMA return to verify and accept into stock
+                    Select a pending Purchase Order or Production Batch below to check and add items to stock.
                 </p>
             </div>
         </div>
@@ -624,8 +597,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge-source-procurement">Purchase Order</span>
                                     <?php elseif ($pIn['source_type'] === 'PRODUCTION_RECEIPT' || $pIn['source_type'] === 'PRODUCTION_RETURN'): ?>
                                         <span class="badge-source-production">Production Batch</span>
-                                    <?php elseif ($pIn['source_type'] === 'CUSTOMER_RETURN'): ?>
-                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer RMA Return</span>
                                     <?php else: ?>
                                         <span class="badge-source-manual"><?= htmlspecialchars($pIn['source_type']) ?></span>
                                     <?php endif; ?>
@@ -680,8 +651,8 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
     <div class="card">
         <div class="card-header">
             <div>
-                <h2 class="card-title">Completed Inbound Receipts (Transaction Ledger)</h2>
-                <p class="card-desc">Audited chronological ledger of completed stock-in movements</p>
+                <h2 class="card-title">Completed Inbound History</h2>
+                <p class="card-desc">List of all completed items received into stock.</p>
             </div>
             <div class="filter-group">
                 <!-- Search Filter -->
@@ -700,7 +671,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <option value="">All Sources</option>
                     <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
                     <option value="PRODUCTION_RECEIPT">Production (Work Orders)</option>
-                    <option value="CUSTOMER_RETURN">Customer (RMA Returns)</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -746,7 +716,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 
                             // Derive item classification
                             $itemType = 'raw_material';
-                            if (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true) || $row['source_type'] === 'CUSTOMER_RETURN') {
+                            if (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)) {
                                 $itemType = 'finished_good';
                             } elseif (!empty($lines)) {
                                 $types = array_unique(array_column($lines, 'item_type'));
@@ -765,10 +735,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge-source-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
                                             Production
-                                        </span>
-                                    <?php elseif ($row['source_type'] === 'CUSTOMER_RETURN'): ?>
-                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">
-                                            Customer RMA
                                         </span>
                                     <?php else: ?>
                                         <span class="badge-source-manual">
@@ -920,7 +886,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
 <!-- ######################################################################### -->
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
     <!-- Outbound KPI Cards -->
-    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="stat-card">
             <div class="stat-header">
                 <span class="stat-label">Pending Dispatches</span>
@@ -932,7 +898,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $pendingOutboundCount ?></div>
-            <div class="stat-meta">Awaiting warehouse picking &amp; shipping</div>
+            <div class="stat-meta">Waiting to be packed and shipped</div>
         </div>
 
         <div class="stat-card">
@@ -948,7 +914,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $salesDispatches ?></div>
-            <div class="stat-meta">Customer orders fulfilled &amp; dispatched</div>
+            <div class="stat-meta">Orders shipped to customers</div>
         </div>
 
         <div class="stat-card stat-gold">
@@ -963,21 +929,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                 </div>
             </div>
             <div class="stat-value"><?= $materialRequests ?></div>
-            <div class="stat-meta">Raw materials issued to distilling line</div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-header">
-                <span class="stat-label">Supplier Returns (RTV)</span>
-                <div class="stat-icon-wrap" aria-hidden="true" style="color: #B45309; background: #FEF3C7;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="15 10 20 15 15 20"/>
-                        <path d="M4 4v7a4 4 0 0 0 4 4h12"/>
-                    </svg>
-                </div>
-            </div>
-            <div class="stat-value"><?= $supplierReturnsCount ?></div>
-            <div class="stat-meta">Defective items returned to vendors</div>
+            <div class="stat-meta">Raw materials sent to production</div>
         </div>
     </div>
 
@@ -988,11 +940,10 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <h2 class="card-title" style="margin: 0;">Pending Outbound Orders (Fulfillment &amp; Shipping Dock)</h2>
-                    <span class="badge status-pending" style="font-size: 11px; padding: 2px 8px;"><?= $pendingOutboundCount ?> Orders Awaiting Dispatch</span>
+                    <h2 class="card-title" style="margin: 0;">Pending Outbound Orders</h2>
                 </div>
                 <p class="card-desc" style="margin: 4px 0 0 0;">
-                    Document-driven fulfillment: Select an approved Sales Order, Material Requisition, or Return to Vendor (RTV) to pack and ship
+                    Select a pending Sales Order or Material Requisition below to pack and ship.
                 </p>
             </div>
         </div>
@@ -1003,7 +954,7 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <tr>
                         <th>Order / Requisition #</th>
                         <th>Document Type</th>
-                        <th>Customer / Recipient / Vendor</th>
+                        <th>Customer / Recipient</th>
                         <th>Requested Items &amp; Quantity</th>
                         <th>Required Date</th>
                         <th>Queue Status</th>
@@ -1030,8 +981,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>
                                     <?php elseif ($pOut['source_type'] === 'MATERIAL_REQUEST'): ?>
                                         <span class="badge-source-production">Material Requisition</span>
-                                    <?php elseif ($pOut['source_type'] === 'SUPPLIER_RETURN'): ?>
-                                        <span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D;">Return to Vendor (RTV)</span>
                                     <?php else: ?>
                                         <span class="badge-source-manual"><?= htmlspecialchars($pOut['source_type']) ?></span>
                                     <?php endif; ?>
@@ -1089,8 +1038,8 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
     <div class="card">
         <div class="card-header">
             <div>
-                <h2 class="card-title">Completed Outbound Dispatches (Transaction Ledger)</h2>
-                <p class="card-desc">Audited permanent ledger of completed stock-out dispatches</p>
+                <h2 class="card-title">Completed Outbound History</h2>
+                <p class="card-desc">List of all completed items shipped or issued out of stock.</p>
             </div>
             <div class="filter-group">
                 <!-- Search Filter -->
@@ -1109,7 +1058,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                     <option value="">All Destinations</option>
                     <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
                     <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
-                    <option value="SUPPLIER_RETURN">Supplier Returns (RTV)</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -1174,10 +1122,6 @@ $supplierReturnsCount = count(array_filter($stockOuts, fn($r) => ($r['status'] ?
                                         <span class="badge-dest-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/>    <polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
                                             Production
-                                        </span>
-                                    <?php elseif ($row['source_type'] === 'SUPPLIER_RETURN'): ?>
-                                        <span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FDE68A;">
-                                            Supplier RTV
                                         </span>
                                     <?php else: ?>
                                         <span class="badge-dest-manual">
@@ -1924,8 +1868,6 @@ function openReceiveOrderModal(id) {
         badgeHtml = '<span class="badge-source-procurement">Purchase Order</span>';
     } else if (order.source_type === 'PRODUCTION_RECEIPT' || order.source_type === 'PRODUCTION_RETURN') {
         badgeHtml = '<span class="badge-source-production">Production Batch</span>';
-    } else if (order.source_type === 'CUSTOMER_RETURN') {
-        badgeHtml = '<span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer RMA Return</span>';
     } else {
         badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
     }
@@ -1938,19 +1880,11 @@ function openReceiveOrderModal(id) {
     const condHint   = document.getElementById('recConditionHint');
     const submitBtn  = document.getElementById('btnConfirmReceive');
 
-    if (order.source_type === 'CUSTOMER_RETURN') {
-        condSelect.value = 'salable';
-        condHint.textContent = 'Customer returns: Select whether returned items passed QA for restock or should be discarded.';
-        submitBtn.textContent = 'Confirm & Receive RMA';
-        submitBtn.style.background = '#6D28D9';
-        submitBtn.style.borderColor = '#6D28D9';
-    } else {
-        condSelect.value = 'salable';
-        condHint.textContent = 'Salable items will increase current inventory balance.';
-        submitBtn.textContent = 'Confirm & Receive Shipment';
-        submitBtn.style.background = '#15803D';
-        submitBtn.style.borderColor = '#15803D';
-    }
+    condSelect.value = 'salable';
+    condHint.textContent = 'Salable items will increase current inventory balance.';
+    submitBtn.textContent = 'Confirm & Receive Shipment';
+    submitBtn.style.background = '#15803D';
+    submitBtn.style.borderColor = '#15803D';
 
     const tbody = document.getElementById('receiveOrderLinesTbody');
     tbody.innerHTML = '';
@@ -2065,8 +1999,6 @@ function openDispatchOrderModal(id) {
         badgeHtml = '<span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>';
     } else if (order.source_type === 'MATERIAL_REQUEST') {
         badgeHtml = '<span class="badge-source-production">Material Requisition</span>';
-    } else if (order.source_type === 'SUPPLIER_RETURN') {
-        badgeHtml = '<span class="badge" style="background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D;">Return to Vendor (RTV)</span>';
     } else {
         badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
     }

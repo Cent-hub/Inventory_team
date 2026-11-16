@@ -211,69 +211,6 @@ class AuthController {
             ];
         }
 
-                // Check if 2FA is enabled for this user in user_preferences (F-26)
-        $is2faEnabled = false;
-        try {
-            $stmtPref = $this->db->prepare("SELECT preferences_json FROM user_preferences WHERE user_id = :uid LIMIT 1");
-            $stmtPref->execute([':uid' => (int)$user['user_id']]);
-            $rawPrefs = $stmtPref->fetchColumn();
-            if ($rawPrefs) {
-                $prefsArr = json_decode($rawPrefs, true);
-                $is2faEnabled = !empty($prefsArr['two_factor_auth']);
-            }
-        } catch (Throwable $e) {
-            $is2faEnabled = false;
-        }
-
-        if ($is2faEnabled) {
-            $trimmed2fa = trim((string)($twoFactorCode ?? ''));
-            if ($trimmed2fa === '') {
-                // Step 1: Issue 6-digit OTP and request verification
-                $otp2fa = (string)random_int(100000, 999999);
-                $_SESSION['login_2fa'] = [
-                    'user_id'    => (int)$user['user_id'],
-                    'code'       => $otp2fa,
-                    'expires_at' => time() + 300, // 5 minutes
-                    'attempts'   => 0
-                ];
-                $this->deliverOtpEmail($user['email'], $user['name'], $otp2fa, '2fa');
-                return [
-                    'success'      => false,
-                    'requires_2fa' => true,
-                    'message'      => 'A 6-digit verification code has been sent to your email. Please enter it to complete sign-in.',
-                    'masked_email' => $this->maskEmail($user['email'])
-                ];
-            }
-
-            // Step 2: Validate submitted 2FA code
-            $session2fa = $_SESSION['login_2fa'] ?? null;
-            if (!$session2fa || (int)($session2fa['user_id'] ?? 0) !== (int)$user['user_id'] || time() > (int)($session2fa['expires_at'] ?? 0)) {
-                unset($_SESSION['login_2fa']);
-                return [
-                    'success' => false,
-                    'error'   => 'Two-factor authentication code has expired. Please log in again.'
-                ];
-            }
-
-            $_SESSION['login_2fa']['attempts'] = (int)($session2fa['attempts'] ?? 0) + 1;
-            if ($_SESSION['login_2fa']['attempts'] > 5) {
-                unset($_SESSION['login_2fa']);
-                return [
-                    'success' => false,
-                    'error'   => 'Too many incorrect 2FA attempts. Please log in again.'
-                ];
-            }
-
-            if (!hash_equals((string)$session2fa['code'], $trimmed2fa)) {
-                return [
-                    'success' => false,
-                    'error'   => 'Invalid two-factor authentication code. Please try again.'
-                ];
-            }
-
-            unset($_SESSION['login_2fa']);
-        }
-
         // Authentication successful: clear failed attempt tracker
         $this->clearLoginRateLimit();
 
@@ -772,10 +709,8 @@ class AuthController {
      * Dispatch OTP verification email with system error_log fallback (F-27)
      */
     public function deliverOtpEmail(string $email, string $name, string $code, string $type = 'password_reset'): bool {
-        $subject = ($type === '2fa')
-            ? "InventoryTeam - Sign-in Verification Code (2FA)"
-            : "InventoryTeam - Password Reset Verification Code";
-        $body = "Hello {$name},\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in " . ($type === '2fa' ? '5' : '15') . " minutes.\nIf you did not request this, please secure your account immediately.";
+        $subject = "InventoryTeam - Password Reset Verification Code";
+        $body = "Hello {$name},\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please secure your account immediately.";
         $headers = "From: no-reply@inventory.local\r\nReply-To: no-reply@inventory.local\r\nX-Mailer: PHP/" . phpversion();
         $sent = @mail($email, $subject, $body, $headers);
         if (!$sent) {

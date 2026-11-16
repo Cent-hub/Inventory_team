@@ -573,7 +573,7 @@ if ($selectedItemId > 0) {
         $params[] = $endDate;
     }
 
-    $sql .= " ORDER BY sm.created_at ASC, sm.movement_id ASC";
+    $sql .= " ORDER BY sm.created_at DESC, sm.movement_id DESC";
 
     $stmtMovements = $pdo->prepare($sql);
     $stmtMovements->execute($params);
@@ -772,7 +772,7 @@ if ($selectedItemId > 0) {
                     <h3 class="card-title" style="margin: 0; font-size: 16px;">Received from Other Warehouse</h3>
                     <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalReceived ?></span>
                 </div>
-                <p class="card-desc" style="margin: 0;">Transfers where <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong> is the destination receiving facility</p>
+                <p class="card-desc" style="margin: 0;">Stock transfers received by <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong></p>
             </div>
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
@@ -903,7 +903,7 @@ if ($selectedItemId > 0) {
                     <h3 class="card-title" style="margin: 0; font-size: 16px;">Transferred to Other Warehouse</h3>
                     <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalTransferred ?></span>
                 </div>
-                <p class="card-desc" style="margin: 0;">Transfers originating from <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong> dispatched to other facilities</p>
+                <p class="card-desc" style="margin: 0;">Stock transfers sent from <strong><?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?></strong> to other warehouses</p>
             </div>
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
@@ -1054,7 +1054,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="stat-value"><?= $totalAdjustments ?></div>
-            <div class="stat-meta">Discrepancy count records logged</div>
+            <div class="stat-meta">Total stock adjustments recorded</div>
         </div>
 
         <div class="stat-card">
@@ -1077,8 +1077,8 @@ if ($selectedItemId > 0) {
     <div class="card mb-6" style="margin-bottom: 28px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
-                <h3 class="card-title" style="margin: 0; font-size: 16px;">Stock Adjustment Reconciliation Records</h3>
-                <p class="card-desc" style="margin: 0;">Audited inventory corrections between recorded balance and physical shelf counts</p>
+                <h3 class="card-title" style="margin: 0; font-size: 16px;">Stock Adjustments</h3>
+                <p class="card-desc" style="margin: 0;">Adjustments made to match system stock with actual physical counts</p>
             </div>
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
@@ -1297,7 +1297,7 @@ if ($selectedItemId > 0) {
     <!-- Section Header Toolbar -->
     <div style="margin-bottom: 20px;">
         <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Item Stock Card Ledger</h2>
-        <p style="font-size: 13px; color: var(--gray); margin: 0;">Chronological debit, credit, and running balance audit ledger for each item</p>
+        <p style="font-size: 13px; color: var(--gray); margin: 0;">Full history of stock in, stock out, and running balance for each item</p>
     </div>
 
     <!-- Filter Toolbar Card -->
@@ -1368,38 +1368,38 @@ if ($selectedItemId > 0) {
         </form>
     </div>
 
-    <!-- Selected Item Profile Banner -->
+    <!-- Compact Selected Item Header + 4-Card KPI Strip -->
     <?php if ($selectedItem): ?>
-    <div class="card" style="background: linear-gradient(135deg, var(--maroon-deep) 0%, var(--maroon-card) 55%, var(--maroon-dark) 100%); color: #ffffff; border: none; margin-bottom: 24px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-            <div>
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                    <span class="badge-type <?= $selectedItem['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
-                        <?= $selectedItem['item_type'] === 'finished_good' ? 'Finished Product' : 'Raw Material' ?>
-                    </span>
-                    <span style="font-family: monospace; font-size: 13px; color: var(--gold); font-weight: 700;">
-                        <?= htmlspecialchars($selectedItem['item_code']) ?>
-                    </span>
-                </div>
-                <h3 style="font-family: var(--font-display); font-size: 22px; font-weight: 800; color: #ffffff; margin-bottom: 4px;">
+    <?php
+        $unitLabel = htmlspecialchars($selectedItem['unit']);
+        $reorderLvl = (float)($selectedItem['default_reorder_level'] ?? 0);
+        $isCardOut = $cardCurrentStock <= 0;
+        $isCardLow = !$isCardOut && $cardCurrentStock <= $reorderLvl;
+    ?>
+    <div class="card" style="padding: 16px 22px; margin-bottom: 18px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <span class="badge-type <?= $selectedItem['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
+                    <?= $selectedItem['item_type'] === 'finished_good' ? 'Finished Product' : 'Raw Material' ?>
+                </span>
+                <h3 style="font-family: var(--font-display); font-size: 18px; font-weight: 800; color: var(--panel-ink); margin: 0;">
                     <?= htmlspecialchars($selectedItem['item_name']) ?>
                 </h3>
-                <p style="font-size: 13px; color: #94A3B8; margin: 0;">
-                    Standard Inventory Unit: <strong><?= htmlspecialchars($selectedItem['unit']) ?></strong> &middot; Reorder Threshold: <?= formatQty($selectedItem['default_reorder_level']) ?> <?= htmlspecialchars($selectedItem['unit']) ?>
-                </p>
+                <span style="font-family: monospace; font-size: 12.5px; color: var(--gray); font-weight: 700; background: #F1F5F9; padding: 2px 8px; border-radius: 6px;">
+                    <?= htmlspecialchars($selectedItem['item_code']) ?>
+                </span>
             </div>
 
-            <!-- Current Stock Big Badge -->
-            <div style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: var(--radius-lg); padding: 14px 22px; text-align: right;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--amber-bright);">
-                    Current Balance on Hand
-                </div>
-                <div style="font-family: var(--font-display); font-size: 28px; font-weight: 800; color: #ffffff;">
-                    <?= formatQty($cardCurrentStock) ?> <small style="font-size: 14px; font-weight: 500; color: #E2E8F0;"><?= htmlspecialchars($selectedItem['unit']) ?></small>
-                </div>
-                <div style="font-size: 11.5px; color: #CBD5E1; margin-top: 2px;">
-                    <?= count($movements) ?> ledger transactions recorded
-                </div>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--gray);">
+                <span>Current Stock: <strong style="color: var(--panel-ink);"><?= formatQty($cardCurrentStock) ?> <?= $unitLabel ?></strong></span>
+                <span>Reorder Level: <strong style="color: var(--panel-ink);"><?= formatQty($reorderLvl) ?> <?= $unitLabel ?></strong></span>
+                <?php if ($isCardOut): ?>
+                    <span class="badge status-alert">Out of Stock</span>
+                <?php elseif ($isCardLow): ?>
+                    <span class="badge status-pending">Low Stock</span>
+                <?php else: ?>
+                    <span class="badge status-optimal">Optimal</span>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -1407,10 +1407,19 @@ if ($selectedItemId > 0) {
 
     <!-- Stock Card Ledger Table -->
     <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
-                <h3 class="card-title">Chronological Stock Card Entries</h3>
-                <p class="card-desc">Every transaction debit, credit, and resulting running stock balance</p>
+                <h3 class="card-title">Stock Card History</h3>
+                <p class="card-desc">Every stock in, stock out, and updated stock balance</p>
+            </div>
+            <div class="search-wrap">
+                <span class="search-icon" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </span>
+                <input type="text" id="stockCardSearch" class="search-box" aria-label="Filter stock card history" placeholder="Filter ref, type, notes..." oninput="filterTable('stockCardSearch', 'stockCardTable')">
             </div>
         </div>
         <div class="table-responsive">

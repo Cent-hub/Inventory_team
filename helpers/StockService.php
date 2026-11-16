@@ -19,8 +19,8 @@ class StockService {
         'pack', 'packs',
         'can', 'cans'
     ];
-    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'CUSTOMER_RETURN', 'PRODUCTION_RETURN'];
-    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY', 'SUPPLIER_RETURN'];
+    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'];
+    public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY'];
 
     private PDO $pdo;
 
@@ -275,12 +275,6 @@ class StockService {
                         "Production Receipt violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Production receipts can only receive finished goods."
                     );
                 }
-                if ($sourceType === 'CUSTOMER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
-                    throw new InvalidArgumentException(
-                        "Customer Return violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Customer returns only apply to finished goods."
-                    );
-                }
-
                 // Construct remarks string containing tracking info
                 $movRemarks = "[{$sourceType}: " . ($sourceReferenceNo ?: $txnNumber) . "]" . ($remarks ? " {$remarks}" : "");
 
@@ -309,7 +303,6 @@ class StockService {
 
                 $inboundTeam = match($sourceType) {
                     'PURCHASE_ORDER'                      => 'Procurement',
-                    'CUSTOMER_RETURN'                     => 'Sales',
                     'PRODUCTION_RETURN', 'PRODUCTION_RECEIPT' => 'Production',
                     default                               => 'Inventory'
                 };
@@ -468,12 +461,6 @@ class StockService {
                         "Sales Delivery violation: Item '{$itemInfo['item_code']}' is a raw material. Sales can only deliver finished goods."
                     );
                 }
-                if ($sourceType === 'SUPPLIER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['raw_material', 'raw'], true)) {
-                    throw new InvalidArgumentException(
-                        "Supplier Return violation: Item '{$itemInfo['item_code']}' is a finished good. Supplier returns only apply to raw materials."
-                    );
-                }
-
                 // Check current stock balance (F-14: unreserved stock check)
                 $stmtLock->execute([$itemId, $warehouseId]);
                 $stockRow = $stmtLock->fetch(PDO::FETCH_ASSOC);
@@ -556,7 +543,6 @@ class StockService {
                 $outboundTeam = match($sourceType) {
                     'MATERIAL_REQUEST' => 'Production',
                     'SALES_DELIVERY'   => 'Sales',
-                    'SUPPLIER_RETURN'  => 'Procurement',
                     default            => 'Inventory'
                 };
 
@@ -598,14 +584,14 @@ class StockService {
     }
 
     /**
-     * Process document-driven receiving for an Inbound Order (PO, Production Receipt, or RMA)
+     * Process document-driven receiving for an Inbound Order (PO or Production Receipt)
      *
      * @param int $orderId Inbound order ID
      * @param array $receivedQuantities Associative array: item_id => quantity received
      * @param int $userId Operating user ID
      * @param string|null $remarks Delivery notes or lot info
      * @param array|null $currentUser Authenticated user session
-     * @param string $condition 'salable' (restock) or 'damaged' (route to bad products for customer returns)
+     * @param string $condition 'salable' (restock) or 'damaged' (route to bad products)
      */
     public function receiveInboundOrder(int $orderId, array $receivedQuantities, int $userId, ?string $remarks = null, ?array $currentUser = null, string $condition = 'salable'): array {
         $stmtOrder = $this->pdo->prepare("SELECT * FROM inbound_orders WHERE inbound_order_id = ? FOR UPDATE");
@@ -703,10 +689,7 @@ class StockService {
 
                 $results = [];
                 $firstBpNumber = null;
-                $isCustReturn = ($order['source_type'] === 'CUSTOMER_RETURN');
-                $reasonPrefix = $isCustReturn
-                    ? "Damaged Customer Return ({$order['order_number']})"
-                    : "Damaged Inbound ({$order['order_number']})";
+                $reasonPrefix = "Damaged Inbound ({$order['order_number']})";
 
                 foreach ($itemsToStock as $its) {
                     $itemId = (int)$its['item_id'];
@@ -730,7 +713,7 @@ class StockService {
                         $firstBpNumber = $bpNumber;
                     }
 
-                    $movRemarks = "[{$order['source_type']}: {$order['order_number']}] Verified Bad Product on Return ({$bpNumber})" . ($remarks ? ": {$remarks}" : "");
+                    $movRemarks = "[{$order['source_type']}: {$order['order_number']}] Verified Bad Product on Inbound ({$bpNumber})" . ($remarks ? ": {$remarks}" : "");
                     $stmtMov->execute([
                         $itemId,
                         (int)$order['warehouse_id'],
@@ -746,7 +729,7 @@ class StockService {
 
                     AccountabilityService::log([
                         'user_id'          => $userId,
-                        'team'             => $isCustReturn ? 'Sales' : 'Inventory',
+                        'team'             => 'Inventory',
                         'action_type'      => 'BAD_PRODUCT',
                         'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                         'item_id'          => $itemId,

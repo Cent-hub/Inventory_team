@@ -62,7 +62,6 @@ $tabMap = [
     'stock_transfers'  => 'transfers',
     'adjustments'      => 'adjustments',
     'stock_adjustments'=> 'adjustments',
-    'bad_products'     => 'bad_products',
 ];
 
 $requestedTab = $_GET['tab'] ?? $_GET['type'] ?? 'movements';
@@ -144,7 +143,6 @@ $sqlIn = "
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
-                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
                 WHEN sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
                 WHEN i.type IN ('finished_good', 'Finished Good') THEN 'PRODUCTION_RECEIPT'
                 ELSE 'PURCHASE_ORDER'
@@ -201,7 +199,6 @@ $sqlOut = "
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
-                WHEN sm.remarks LIKE '%SUPPLIER_RETURN%' OR sm.remarks LIKE '%RTV%' OR sm.reference_no LIKE 'RTV-%' OR sm.reference_number LIKE 'RTV-%' THEN 'SUPPLIER_RETURN'
                 WHEN i.type IN ('raw_material', 'Raw Material') OR sm.reference_type = 'PROD_ISSUE' OR sm.remarks LIKE '%Production%' THEN 'MATERIAL_REQUEST'
                 ELSE 'SALES_DELIVERY'
             END
@@ -319,44 +316,6 @@ $stmtAdj = $pdo->prepare($sqlAdj);
 $stmtAdj->execute($paramsAdj);
 $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
-// 6. Bad Products & Damaged Returns Ledger
-$sqlBp = "
-    SELECT 
-        bp.bad_product_id,
-        CONCAT('BP-', LPAD(bp.bad_product_id, 6, '0')) AS transaction_number,
-        DATE(bp.reported_at) AS reported_date,
-        bp.reported_at,
-        bp.quantity,
-        bp.reason,
-        bp.status,
-        CASE 
-            WHEN bp.reason LIKE '%Customer Return%' OR bp.reason LIKE '%RMA%' THEN 'Customer Return (RMA)'
-            ELSE 'Warehouse Write-Off'
-        END AS source_origin,
-        COALESCE(u.name, 'Warehouse Operator') AS operator_name,
-        i.code AS item_code,
-        i.name AS item_name,
-        i.type AS item_type,
-        i.unit
-    FROM bad_products bp
-    JOIN items i ON bp.item_id = i.item_id
-    LEFT JOIN users u ON bp.reported_by = u.user_id
-    WHERE DATE(bp.reported_at) BETWEEN ? AND ?
-      AND bp.warehouse_id = ?
-      AND bp.status != 'cancelled'
-";
-$paramsBp = [$startDate, $endDate, $currentWarehouseId];
-if ($search !== '') {
-    $sqlBp .= " AND (i.name LIKE ? OR i.code LIKE ? OR bp.reason LIKE ?)";
-    $paramsBp[] = "%$search%";
-    $paramsBp[] = "%$search%";
-    $paramsBp[] = "%$search%";
-}
-$sqlBp .= " ORDER BY bp.reported_at DESC, bp.bad_product_id DESC";
-if ($limitVal > 0) $sqlBp .= " LIMIT " . (int)$limitVal;
-$stmtBp = $pdo->prepare($sqlBp);
-$stmtBp->execute($paramsBp);
-$badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!-- Page Header -->
@@ -443,16 +402,6 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
             <span>Adjustments</span>
             <span class="tab-badge-count"><?= count($adjustmentData) ?></span>
         </button>
-
-        <button type="button" id="tab-btn-bad_products" class="stock-tab-btn <?= $activeTab === 'bad_products' ? 'active' : '' ?>" onclick="switchTransactionTab('bad_products')">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span>Bad Products</span>
-            <span class="tab-badge-count"><?= count($badProductsLedgerData) ?></span>
-        </button>
     </div>
 </div>
 
@@ -532,7 +481,7 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Stock Movement Ledger Report</h2>
-                <p class="card-desc">Chronological ledger of inventory balance debits and credits &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">History of all stock ins, stock outs, and balance changes</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -601,7 +550,7 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Inbound Stock Receipts</h2>
-                <p class="card-desc">Audited inbound receiving shipments from Procurement POs and Production &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Items received from suppliers and production</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -652,7 +601,7 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Outbound Stock Dispatches</h2>
-                <p class="card-desc">Audited outbound releases for Sales Orders and Distilling Material Requests &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Items shipped for sales orders and sent to production</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -703,7 +652,7 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Inter-Branch Stock Transfers</h2>
-                <p class="card-desc">Audited movement between inventory facilities &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Stock transfers between warehouses</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -754,7 +703,7 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
         <div class="card-header">
             <div>
                 <h2 class="card-title">Stock Adjustments &amp; Variances</h2>
-                <p class="card-desc">Audited cycle counts, discrepancy reconciliation, and shrinkage write-offs &middot; Generated on <?= date('M d, Y H:i') ?></p>
+                <p class="card-desc">Stock adjustments made to match physical counts</p>
             </div>
         </div>
         <div class="table-responsive">
@@ -809,86 +758,9 @@ $badProductsLedgerData = $stmtBp->fetchAll(PDO::FETCH_ASSOC);
 </div>
 
 <!-- ######################################################################### -->
-<!-- SECTION 6: BAD PRODUCTS & DAMAGED RETURNS LEDGER                          -->
-<!-- ######################################################################### -->
-<div id="pane-bad_products" class="stock-op-pane" style="display: <?= $activeTab === 'bad_products' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Bad Products &amp; Damaged Returns Ledger</h2>
-                <p class="card-desc">Audited ledger of verified damaged customer returns (RMA) and warehouse defect write-offs excluded from salable inventory &middot; Generated on <?= date('M d, Y H:i') ?></p>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table id="table-bad_products">
-                <thead>
-                    <tr>
-                        <th>Report Ref #</th>
-                        <th>Date Logged</th>
-                        <th>Item Affected</th>
-                        <th>Classification</th>
-                        <th>Origin / Source</th>
-                        <th>Reason / QA Inspection Notes</th>
-                        <th>Logged By</th>
-                        <th class="text-center" style="text-align: center;">Bad Quantity</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($badProductsLedgerData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products or damaged returns recorded in this date range.</td></tr>
-                    <?php else: ?>
-                        <?php foreach ($badProductsLedgerData as $bp): 
-                            $isFg = in_array($bp['item_type'], ['finished_good', 'Finished Good'], true);
-                            $isRma = str_contains($bp['source_origin'], 'Customer Return');
-                        ?>
-                            <tr>
-                                <td style="font-weight: 700; font-family: monospace; color: var(--panel-ink);"><?= htmlspecialchars($bp['transaction_number']) ?></td>
-                                <td style="font-size: 12px; color: var(--gray); white-space: nowrap;"><?= date('M d, Y H:i', strtotime($bp['reported_at'])) ?></td>
-                                <td>
-                                    <strong><?= htmlspecialchars($bp['item_name']) ?></strong>
-                                    <div style="font-size: 11px; color: var(--gray);"><?= htmlspecialchars($bp['item_code']) ?></div>
-                                </td>
-                                <td>
-                                    <span class="badge-type <?= $isFg ? 'type-fg' : 'type-raw' ?>">
-                                        <?= $isFg ? 'Finished Good' : 'Raw Material' ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?php if ($isRma): ?>
-                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (RMA)</span>
-                                    <?php else: ?>
-                                        <span class="badge status-alert">Warehouse Write-Off</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="font-size: 12px; color: var(--gray); max-width: 220px;" title="<?= htmlspecialchars($bp['reason']) ?>">
-                                    <?= htmlspecialchars($bp['reason']) ?>
-                                </td>
-                                <td style="font-size: 12.5px;"><?= htmlspecialchars($bp['operator_name']) ?></td>
-                                <td class="text-center" style="text-align: center; font-weight: 700; color: #B91C1C;">
-                                    <?= formatQty((float)$bp['quantity'], 0) ?> <small style="font-weight: normal; color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
-                                </td>
-                                <td>
-                                    <?php if ($bp['status'] === 'confirmed'): ?>
-                                        <span class="badge status-completed" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Confirmed Defect</span>
-                                    <?php elseif ($bp['status'] === 'disposed'): ?>
-                                        <span class="badge status-completed">Disposed</span>
-                                    <?php else: ?>
-                                        <span class="badge status-pending">Pending QC</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
 <script>
 // =============================================================================
-// TRANSACTION REPORTS TAB SWITCHER (Movements | Inbound | Outbound | Transfers | Adjustments | Bad Products)
+// TRANSACTION REPORTS TAB SWITCHER (Movements | Inbound | Outbound | Transfers | Adjustments)
 // =============================================================================
 let currentActiveTab = '<?= $activeTab ?>';
 
@@ -897,12 +769,11 @@ const reportTitles = {
     'inbound': 'Inbound Stock Receipts',
     'outbound': 'Outbound Stock Dispatches',
     'transfers': 'Inter-Branch Stock Transfers',
-    'adjustments': 'Stock Adjustments & Variances',
-    'bad_products': 'Bad Products & Damaged Returns Ledger'
+    'adjustments': 'Stock Adjustments & Variances'
 };
 
 function switchTransactionTab(tabName) {
-    const validTabs = ['movements', 'inbound', 'outbound', 'transfers', 'adjustments', 'bad_products'];
+    const validTabs = ['movements', 'inbound', 'outbound', 'transfers', 'adjustments'];
     if (!validTabs.includes(tabName)) tabName = 'movements';
     currentActiveTab = tabName;
 
