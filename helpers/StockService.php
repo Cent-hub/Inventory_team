@@ -19,7 +19,7 @@ class StockService {
         'pack', 'packs',
         'can', 'cans'
     ];
-    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'];
+    public const VALID_STOCK_IN_SOURCES = ['PURCHASE_ORDER', 'PRODUCTION_RECEIPT', 'CUSTOMER_RETURN', 'PRODUCTION_RETURN'];
     public const VALID_STOCK_OUT_SOURCES = ['MATERIAL_REQUEST', 'SALES_DELIVERY'];
 
     private PDO $pdo;
@@ -270,9 +270,14 @@ class StockService {
                         "Procurement PO violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a finished good. Purchase orders from Procurement can only receive raw materials."
                     );
                 }
-                if (($sourceType === 'PRODUCTION_RETURN' || $sourceType === 'PRODUCTION_RECEIPT') && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
+                if ($sourceType === 'PRODUCTION_RECEIPT' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
                     throw new InvalidArgumentException(
                         "Production Receipt violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Production receipts can only receive finished goods."
+                    );
+                }
+                if ($sourceType === 'CUSTOMER_RETURN' && !in_array(strtolower(str_replace(' ', '_', $itemInfo['item_type'] ?? '')), ['finished_good', 'finished'], true)) {
+                    throw new InvalidArgumentException(
+                        "Customer Return violation: Item '{$itemInfo['item_code']}' ({$itemInfo['item_name']}) is a raw material. Customer returns only apply to finished goods."
                     );
                 }
                 // Construct remarks string containing tracking info
@@ -303,6 +308,7 @@ class StockService {
 
                 $inboundTeam = match($sourceType) {
                     'PURCHASE_ORDER'                      => 'Procurement',
+                    'CUSTOMER_RETURN'                     => 'Sales',
                     'PRODUCTION_RETURN', 'PRODUCTION_RECEIPT' => 'Production',
                     default                               => 'Inventory'
                 };
@@ -727,9 +733,10 @@ class StockService {
                         $userId
                     ]);
 
+                    $bpTeam = $order['source_type'] === 'PURCHASE_ORDER' ? 'Procurement' : ($order['source_type'] === 'CUSTOMER_RETURN' ? 'Sales' : 'Inventory');
                     AccountabilityService::log([
                         'user_id'          => $userId,
-                        'team'             => 'Inventory',
+                        'team'             => $bpTeam,
                         'action_type'      => 'BAD_PRODUCT',
                         'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                         'item_id'          => $itemId,
@@ -746,6 +753,10 @@ class StockService {
                         'quantity'           => $qty,
                         'status'             => 'confirmed'
                     ];
+                }
+
+                if ($order['source_type'] === 'PURCHASE_ORDER') {
+                    $this->syncProcurementGoodsReceipt($order['order_number'], $itemsToStock, 'damaged', $remarks);
                 }
 
                 $this->pdo->commit();
@@ -775,6 +786,10 @@ class StockService {
                     $currentUser
                 );
 
+                if ($order['source_type'] === 'PURCHASE_ORDER') {
+                    $this->syncProcurementGoodsReceipt($order['order_number'], $itemsToStock, 'salable', $remarks);
+                }
+
                 $this->pdo->commit();
 
     
@@ -795,6 +810,78 @@ class StockService {
             }
             throw $e;
         }
+    }
+
+    /**
+     * Sync Inventory receiving results (Accepted / Rejected / Damaged notes) back to Procurement's `goods_receipts`.
+     */
+    private function syncProcurementGoodsReceipt(string $grNumber, array $items, string $condition, ?string $remarks): void {
+        $stmtGr = $this->pdo->prepare("SELECT id, remarks FROM goods_receipts WHERE gr_number = ? FOR UPDATE");
+        $stmtGr->execute([$grNumber]);
+        $gr = $stmtGr->fetch(PDO::FETCH_ASSOC);
+        if (!$gr) {
+            return;
+        }
+        $grId = (int)$gr['id'];
+        $cleanNote = $remarks ? trim($remarks) : null;
+
+        if ($condition === 'damaged') {
+            $stmtUpdItem = $this->pdo->prepare("
+                UPDATE goods_receipt_items
+                SET quantity_rejected = ?,
+                    quantity_accepted = GREATEST(0, quantity_received - ?),
+                    remarks = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE remarks END
+                WHERE gr_id = ? AND item_id = ?
+            ");
+            foreach ($items as $it) {
+                $qty = (float)$it['quantity'];
+                $stmtUpdItem->execute([$qty, $qty, $cleanNote, $cleanNote, $cleanNote, $grId, (int)$it['item_id']]);
+            }
+        } else {
+            $stmtUpdItem = $this->pdo->prepare("
+                UPDATE goods_receipt_items
+                SET quantity_accepted = ?,
+                    quantity_rejected = 0.00,
+                    remarks = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE remarks END
+                WHERE gr_id = ? AND item_id = ?
+            ");
+            foreach ($items as $it) {
+                $qty = (float)$it['quantity'];
+                $stmtUpdItem->execute([$qty, $cleanNote, $cleanNote, $cleanNote, $grId, (int)$it['item_id']]);
+            }
+        }
+
+        $stmtTotals = $this->pdo->prepare("
+            SELECT COALESCE(SUM(quantity_accepted), 0) AS tot_acc,
+                   COALESCE(SUM(quantity_rejected), 0) AS tot_rej,
+                   COALESCE(SUM(quantity_received), 0) AS tot_rec
+            FROM goods_receipt_items
+            WHERE gr_id = ?
+        ");
+        $stmtTotals->execute([$grId]);
+        $tot = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+        $totAcc = (float)($tot['tot_acc'] ?? 0);
+        $totRej = (float)($tot['tot_rej'] ?? 0);
+        $totRec = (float)($tot['tot_rec'] ?? 0);
+
+        if ($totRej > 0 && $totAcc > 0) {
+            $grStatus = 'Partially Accepted';
+        } elseif ($totRej > 0 && $totAcc <= 0) {
+            $grStatus = 'Rejected';
+        } elseif ($totAcc + 0.0001 >= $totRec) {
+            $grStatus = 'Completed';
+        } else {
+            $grStatus = 'Partially Accepted';
+        }
+
+        $newRemarks = $gr['remarks'];
+        if ($cleanNote !== null && $cleanNote !== '') {
+            $prefix = $condition === 'damaged' ? '[Inventory Damaged Report] ' : '[Inventory Receiving] ';
+            $newRemarks = trim(($newRemarks ? $newRemarks . "\n" : '') . $prefix . $cleanNote);
+        }
+
+        $stmtUpdGr = $this->pdo->prepare("UPDATE goods_receipts SET status = ?, remarks = ?, updated_at = NOW() WHERE id = ?");
+        $stmtUpdGr->execute([$grStatus, $newRemarks, $grId]);
     }
 
     /**

@@ -1069,7 +1069,6 @@ document.addEventListener('DOMContentLoaded', function() {
     tables.forEach(table => {
         if (table.classList.contains('no-paginate') || table.closest('.modal, .modal-backdrop, .modal-card, .settings-modal-backdrop')) return;
         initTablePagination(table, 10);
-        initTableSorting(table);
     });
 
     // Global Escape key dismissal & Tab focus trapping for all page modals

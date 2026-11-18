@@ -43,7 +43,7 @@ $generatedTokenInfo = null;
 // Handle User Creation & Updates (Super Admin only)
 if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } else {
         $action = $_POST['action'];
 

@@ -226,66 +226,73 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Inventory Report Filter Card -->
-<div class="card no-print" style="margin-bottom: 20px;">
-    <form method="GET" action="index.php" id="reportFilterForm" class="report-filter-form" onsubmit="event.preventDefault(); filterActiveReportTable(); return false;" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <input type="hidden" name="type" id="filterReportTypeInput" value="<?= htmlspecialchars($activeTab) ?>">
+<?php
+$reportCardMeta = [
+    'raw_materials'   => ['title' => 'Raw Materials Stock Report', 'desc' => 'Current stock and reorder levels for raw materials'],
+    'finished_goods'  => ['title' => 'Finished Goods Stock Report', 'desc' => 'Current stock of finished goods ready for sale'],
+    'current_balance' => ['title' => 'Current Inventory Balance', 'desc' => 'Complete stock levels for all raw materials and finished goods'],
+    'bad_products'    => ['title' => 'Bad Products Report', 'desc' => 'List of damaged or defective items (not counted in sellable stock)'],
+];
+$activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'];
+?>
 
-        <!-- Search -->
-        <div class="search-wrap">
-            <span class="search-icon" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-            </span>
-            <input type="text" name="search" class="search-box" aria-label="Search report items" placeholder="Search item code, description, category..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveReportTable()">
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div>
+            <h2 class="card-title" id="reportCardTitle"><?= htmlspecialchars($activeCardMeta['title']) ?></h2>
+            <p class="card-desc" id="reportCardDesc"><?= htmlspecialchars($activeCardMeta['desc']) ?></p>
         </div>
+        <form method="GET" action="index.php" id="reportFilterForm" class="report-filter-form no-print" onsubmit="event.preventDefault(); filterActiveReportTable(); return false;" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <input type="hidden" name="type" id="filterReportTypeInput" value="<?= htmlspecialchars($activeTab) ?>">
 
-        <!-- Health Status Filter -->
-        <select id="reportHealthFilter" class="select-filter" aria-label="Filter by health status" onchange="filterActiveReportTable()">
-            <option value="">All Statuses</option>
-            <option value="optimal">Optimal</option>
-            <option value="low_stock">Low Stock</option>
-            <option value="out_of_stock">Out of Stock</option>
-        </select>
+            <!-- Search -->
+            <div class="search-wrap">
+                <span class="search-icon" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </span>
+                <input type="text" name="search" class="search-box" aria-label="Search report items" placeholder="Search item code, description, category..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveReportTable()">
+            </div>
 
-        <!-- Buttons -->
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="resetInventoryReportFilters()" title="Reset Filters">
-                <span>Reset</span>
-            </button>
-            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                <span>Export CSV</span>
-            </button>
-            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="window.print()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 6 2 18 2 18 9"/>
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                    <rect width="12" height="8" x="6" y="14"/>
-                </svg>
-                <span>Print Report</span>
-            </button>
-        </div>
-    </form>
-</div>
+            <!-- Health Status Filter -->
+            <select id="reportHealthFilter" class="select-filter" aria-label="Filter by health status" onchange="filterActiveReportTable()">
+                <option value="">All Statuses</option>
+                <option value="optimal">In Stock</option>
+                <option value="low_stock">Low Stock</option>
+                <option value="out_of_stock">Out of Stock</option>
+            </select>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="resetInventoryReportFilters()" title="Reset Filters">
+                    <span>Reset</span>
+                </button>
+                <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>Export CSV</span>
+                </button>
+                <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="window.print()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"/>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                        <rect width="12" height="8" x="6" y="14"/>
+                    </svg>
+                    <span>Print Report</span>
+                </button>
+            </div>
+        </form>
+    </div>
 
 <!-- ##################################################################### -->
 <!-- SECTION 1: RAW MATERIALS STOCK REPORT                                 -->
 <!-- ##################################################################### -->
 <div id="pane-raw_materials" class="stock-op-pane" style="display: <?= $activeTab === 'raw_materials' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Raw Materials Stock Report</h2>
-                <p class="card-desc">Current stock and reorder levels for raw materials</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="reportTable_raw_materials">
                 <thead>
@@ -326,7 +333,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                                     <?php elseif ($isLow): ?>
                                         <span class="badge status-pending">Low Stock</span>
                                     <?php else: ?>
-                                        <span class="badge status-optimal">Optimal</span>
+                                        <span class="badge status-optimal">In Stock</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -335,20 +342,12 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ##################################################################### -->
 <!-- SECTION 2: FINISHED GOODS STOCK REPORT                                -->
 <!-- ##################################################################### -->
 <div id="pane-finished_goods" class="stock-op-pane" style="display: <?= $activeTab === 'finished_goods' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Finished Goods Stock Report</h2>
-                <p class="card-desc">Current stock of finished goods ready for sale</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="reportTable_finished_goods">
                 <thead>
@@ -389,7 +388,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                                     <?php elseif ($isLow): ?>
                                         <span class="badge status-pending">Low Stock</span>
                                     <?php else: ?>
-                                        <span class="badge status-optimal">Optimal</span>
+                                        <span class="badge status-optimal">In Stock</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -398,20 +397,12 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ##################################################################### -->
 <!-- SECTION 3: CURRENT INVENTORY BALANCE                                  -->
 <!-- ##################################################################### -->
 <div id="pane-current_balance" class="stock-op-pane" style="display: <?= $activeTab === 'current_balance' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Current Inventory Balance</h2>
-                <p class="card-desc">Complete stock levels for all raw materials and finished goods</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="reportTable_current_balance">
                 <thead>
@@ -454,7 +445,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                                     <?php elseif ($isLow): ?>
                                         <span class="badge status-pending">Low Stock</span>
                                     <?php else: ?>
-                                        <span class="badge status-optimal">Optimal</span>
+                                        <span class="badge status-optimal">In Stock</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -463,20 +454,18 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ##################################################################### -->
 <!-- SECTION 4: BAD PRODUCTS & DAMAGED RETURNS REPORT                      -->
 <!-- ##################################################################### -->
+<style>
+.print-only-col { display: none; }
+@media print {
+    .print-only-col { display: table-cell !important; }
+}
+</style>
 <div id="pane-bad_products" class="stock-op-pane" style="display: <?= $activeTab === 'bad_products' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Bad Products Report</h2>
-                <p class="card-desc">List of damaged or defective items (not counted in sellable stock)</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="reportTable_bad_products">
                 <thead>
@@ -485,20 +474,34 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                         <th>Item Code &amp; Description</th>
                         <th>Classification</th>
                         <th>Source / Origin</th>
-                        <th>Defect Reason / QA Notes</th>
+                        <th class="print-only-col">Defect Reason / QA Notes</th>
                         <th>Verified / Reported By</th>
                         <th>Date Logged</th>
-                        <th class="text-center">Bad Quantity (Non-Salable)</th>
+                        <th class="text-center">Bad Quantity</th>
                         <th class="text-center">Status</th>
+                        <th class="text-center no-print">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($badProductsData)): ?>
-                        <tr><td colspan="9" style="text-align: center; color: var(--gray); padding: 36px;">No bad products recorded for this warehouse.</td></tr>
+                        <tr><td colspan="10" style="text-align: center; color: var(--gray); padding: 36px;">No bad products recorded for this warehouse.</td></tr>
                     <?php else: ?>
                         <?php foreach ($badProductsData as $bp): 
                             $isFg = in_array($bp['item_type'], ['finished_good', 'Finished Good'], true);
                             $isRma = str_contains($bp['source_origin'], 'Customer Return');
+                            $bpPayload = json_encode([
+                                'ref'          => $bp['bad_product_number'],
+                                'item_name'    => $bp['item_name'],
+                                'item_code'    => $bp['item_code'],
+                                'type'         => $isFg ? 'Finished Good' : 'Raw Material',
+                                'source'       => $bp['source_origin'],
+                                'reason'       => $bp['reason'],
+                                'reported_by'  => $bp['reported_by_name'],
+                                'confirmed_by' => $bp['confirmed_by_name'],
+                                'reported_at'  => date('M d, Y H:i', strtotime($bp['reported_at'])),
+                                'quantity'     => formatQty((float)$bp['quantity']) . ' ' . $bp['unit'],
+                                'status'       => $bp['status'] === 'confirmed' ? 'Confirmed Bad Product' : ($bp['status'] === 'disposed' ? 'Disposed' : 'Pending QC'),
+                            ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                         ?>
                             <tr data-health="out_of_stock">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($bp['bad_product_number']) ?></td>
@@ -518,7 +521,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                                         <span class="badge status-alert">Warehouse Write-Off</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="font-size: 12px; color: var(--gray); max-width: 240px;" title="<?= htmlspecialchars($bp['reason']) ?>">
+                                <td class="print-only-col" style="font-size: 12px; color: var(--gray); max-width: 240px;">
                                     <?= htmlspecialchars($bp['reason']) ?>
                                 </td>
                                 <td style="font-size: 12px;"><?= htmlspecialchars($bp['reported_by_name']) ?></td>
@@ -535,16 +538,71 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
                                         <span class="badge status-pending">Pending QC</span>
                                     <?php endif; ?>
                                 </td>
+                                <td class="text-center no-print">
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 4px 10px; font-size: 12px;" onclick='openBadProductDetailModal(<?= $bpPayload ?>)'>View</button>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
+</div>
+</div>
+
+<!-- Modal: Bad Product Detail View -->
+<div id="badProductDetailModal" class="modal-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="bpModalTitle" onclick="if(event.target === this) closeBadProductDetailModal()">
+    <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-header">
+            <div>
+                <h3 id="bpModalTitle" class="card-title">Bad Product Details</h3>
+                <p class="card-desc" id="bpModalRef" style="font-family: monospace; font-weight: 700;"></p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Close modal" onclick="closeBadProductDetailModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F8FAFC; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Item</span><strong id="bpModalItem"></strong></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Bad Quantity</span><strong id="bpModalQty" style="color: #B91C1C;"></strong></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Classification</span><span id="bpModalType"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Source / Origin</span><span id="bpModalSource"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Reported By</span><span id="bpModalReportedBy"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Date Logged</span><span id="bpModalDate"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Confirmed By</span><span id="bpModalConfirmedBy"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Status</span><strong id="bpModalStatus"></strong></div>
+            </div>
+            <div>
+                <span style="font-size: 12px; font-weight: 700; color: var(--panel-ink); display: block; margin-bottom: 6px;">Defect Reason / QA Notes</span>
+                <div id="bpModalReason" style="background: #FFFBEB; border: 1px solid #FDE68A; color: #78350F; padding: 12px; border-radius: 8px; line-height: 1.5; white-space: pre-wrap;"></div>
+            </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeBadProductDetailModal()">Close</button>
+        </div>
     </div>
 </div>
 
 <script>
+function openBadProductDetailModal(bp) {
+    if (!bp) return;
+    document.getElementById('bpModalRef').textContent = bp.ref || '';
+    document.getElementById('bpModalItem').textContent = (bp.item_name || '') + (bp.item_code ? ' (' + bp.item_code + ')' : '');
+    document.getElementById('bpModalQty').textContent = bp.quantity || '';
+    document.getElementById('bpModalType').textContent = bp.type || '';
+    document.getElementById('bpModalSource').textContent = bp.source || '';
+    document.getElementById('bpModalReportedBy').textContent = bp.reported_by || '—';
+    document.getElementById('bpModalDate').textContent = bp.reported_at || '—';
+    document.getElementById('bpModalConfirmedBy').textContent = bp.confirmed_by || '—';
+    document.getElementById('bpModalStatus').textContent = bp.status || '';
+    document.getElementById('bpModalReason').textContent = bp.reason || 'No defect notes provided.';
+    document.getElementById('badProductDetailModal').classList.add('open');
+}
+function closeBadProductDetailModal() {
+    document.getElementById('badProductDetailModal').classList.remove('open');
+}
+
 // =============================================================================
 // UNIFIED INVENTORY REPORTS CONTROLLER (Raw Materials | Finished Goods | Balance | Bad Products)
 // =============================================================================
@@ -556,11 +614,22 @@ const reportTitles = {
     'current_balance': 'Current Inventory Balance',
     'bad_products': 'Bad Products Report'
 };
+const reportDescs = {
+    'raw_materials': 'Current stock and reorder levels for raw materials',
+    'finished_goods': 'Current stock of finished goods ready for sale',
+    'current_balance': 'Complete stock levels for all raw materials and finished goods',
+    'bad_products': 'List of damaged or defective items (not counted in sellable stock)'
+};
 
 function switchReportTab(tabName) {
     const validTabs = ['raw_materials', 'finished_goods', 'current_balance', 'bad_products'];
     if (!validTabs.includes(tabName)) tabName = 'raw_materials';
     currentActiveTab = tabName;
+
+    const cardTitleEl = document.getElementById('reportCardTitle');
+    const cardDescEl  = document.getElementById('reportCardDesc');
+    if (cardTitleEl && reportTitles[tabName]) cardTitleEl.textContent = reportTitles[tabName];
+    if (cardDescEl && reportDescs[tabName])   cardDescEl.textContent  = reportDescs[tabName];
 
     // Update Tab Buttons
     validTabs.forEach(t => {

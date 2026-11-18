@@ -128,192 +128,64 @@ try {
             $pdo->beginTransaction();
             $syncTxnStarted = true;
         }
-    // 1. Sync un-synced external Stock-Ins per (item_id, warehouse_id) from `stock_movements`
-    //    (Only rows with balance_after IS NOT NULL; rows with balance_after IS NULL are handled atomically by trg_sm_after_insert_sync_external_stock)
-    $unsyncedStmt = $pdo->query("
-        SELECT 
-            latest_sm.item_id,
-            latest_sm.warehouse_id AS target_warehouse_id,
-            latest_sm.balance_after AS expected_stock,
-            COALESCE(s.qty_on_hand, 0) AS current_wh_stock,
-            COALESCE(i.reorder_level, 0) AS reorder_level
-        FROM (
-            SELECT sm1.item_id, sm1.warehouse_id, sm1.movement_type, sm1.quantity, sm1.balance_after, sm1.created_at, sm1.department, sm1.source_type
-            FROM stock_movements sm1
-            INNER JOIN (
-                SELECT item_id, warehouse_id, MAX(id) AS max_id
-                FROM stock_movements
-                WHERE status = 'Posted' AND warehouse_id > 0
-                GROUP BY item_id, warehouse_id
-            ) sm2 ON sm1.id = sm2.max_id
-        ) latest_sm
-        JOIN items i ON i.id = latest_sm.item_id
-        LEFT JOIN stock s ON s.item_id = latest_sm.item_id AND s.warehouse_id = latest_sm.warehouse_id
-        WHERE latest_sm.movement_type = 'IN'
-          AND latest_sm.balance_after IS NOT NULL
-          AND (latest_sm.department IS NULL OR LOWER(latest_sm.department) != 'inventory')
-          AND COALESCE(latest_sm.source_type, '') NOT IN ('PRODUCTION_RECEIPT', 'SALES_DELIVERY')
-          AND (s.stock_id IS NULL OR latest_sm.created_at > s.updated_at)
-          AND latest_sm.balance_after > COALESCE(s.qty_on_hand, 0)
-    ");
-    if ($unsyncedStmt) {
-        $upsertStockStmt = $pdo->prepare("
-            INSERT INTO stock (item_id, warehouse_id, qty_on_hand, qty_reserved, reorder_level)
-            VALUES (?, ?, ?, 0.0000, ?)
-            ON DUPLICATE KEY UPDATE qty_on_hand = qty_on_hand + VALUES(qty_on_hand)
-        ");
-        foreach ($unsyncedStmt->fetchAll(PDO::FETCH_ASSOC) as $uRow) {
-            $delta = round((float)$uRow['expected_stock'] - (float)$uRow['current_wh_stock'], 4);
-            if ($delta > 0) {
-                $targetWh = (int)$uRow['target_warehouse_id'];
-                if ($targetWh > 0) {
-                    $upsertStockStmt->execute([(int)$uRow['item_id'], $targetWh, $delta, (float)$uRow['reorder_level']]);
-                }
-            }
-        }
-    }
+    // (Removed Sections 1 & 2 external stock_movements auto-sync so Procurement/Production/Sales require manual Receive/Approve)
 
-    // 2. Sync external Stock-Outs per (item_id, warehouse_id) from `stock_movements`
-    $unsyncedOutStmt = $pdo->query("
-        SELECT 
-            latest_sm.item_id,
-            latest_sm.warehouse_id AS target_warehouse_id,
-            s.qty_on_hand AS current_wh_stock,
-            GREATEST(0, latest_sm.balance_after) AS target_stock
-        FROM (
-            SELECT sm1.item_id, sm1.warehouse_id, sm1.movement_type, sm1.balance_after, sm1.created_at, sm1.department, sm1.source_type
-            FROM stock_movements sm1
-            INNER JOIN (
-                SELECT item_id, warehouse_id, MAX(id) AS max_id
-                FROM stock_movements
-                WHERE status = 'Posted' AND warehouse_id > 0
-                GROUP BY item_id, warehouse_id
-            ) sm2 ON sm1.id = sm2.max_id
-        ) latest_sm
-        INNER JOIN stock s ON s.item_id = latest_sm.item_id AND s.warehouse_id = latest_sm.warehouse_id
-        WHERE latest_sm.movement_type = 'OUT'
-          AND latest_sm.balance_after IS NOT NULL
-          AND (latest_sm.department IS NULL OR LOWER(latest_sm.department) != 'inventory')
-          AND COALESCE(latest_sm.source_type, '') NOT IN ('PRODUCTION_RECEIPT', 'SALES_DELIVERY')
-          AND latest_sm.created_at > s.updated_at
-          AND latest_sm.balance_after < s.qty_on_hand
-    ");
-    if ($unsyncedOutStmt) {
-        $deductWhStmt = $pdo->prepare("
-            UPDATE stock 
-            SET qty_on_hand = GREATEST(0.0000, qty_on_hand - ?) 
-            WHERE item_id = ? AND warehouse_id = ?
-        ");
-        foreach ($unsyncedOutStmt->fetchAll(PDO::FETCH_ASSOC) as $oRow) {
-            $deductDelta = round((float)$oRow['current_wh_stock'] - (float)$oRow['target_stock'], 4);
-            if ($deductDelta > 0) {
-                $targetWh = (int)$oRow['target_warehouse_id'];
-                if ($targetWh > 0) {
-                    $deductWhStmt->execute([$deductDelta, (int)$oRow['item_id'], $targetWh]);
-                }
-            }
-        }
-    }
-
-    // 3. Bridge Sales Team `orders` & `order_items` (Pending Dispatches & Direct Fulfillments)
-    // 3a. Sync unfulfilled Sales Orders into `outbound_orders` queue for Warehouse Fulfillment
-    // 3. Auto-deduct Finished Goods (FG) for active/completed Sales Orders that need FG (including remaining partial shortfalls)
-    $salesFgStmt = $pdo->query("
-        SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes, o.fulfillment_status,
-               oi.item_id,
-               GREATEST(0,
-                   SUM(CASE WHEN o.fulfillment_status = 'Completed' AND oi.quantity_fulfilled > 0 THEN oi.quantity_fulfilled ELSE oi.quantity END)
-                   - COALESCE((
-                       SELECT SUM(sm.quantity) FROM stock_movements sm
-                       WHERE sm.item_id = oi.item_id
-                         AND sm.movement_type IN ('STOCK_OUT', 'OUT')
-                         AND (sm.reference_no = o.order_number OR sm.reference_number = o.order_number OR sm.remarks LIKE CONCAT('%', o.order_number, '%'))
-                   ), 0)
-               ) AS qty_needed
+    // 3. Bridge Sales Team `orders` & `order_items` (Pending Dispatches & Customer Returns)
+    // 3a. Sync unfulfilled Sales Orders into `outbound_orders` (`SALES_DELIVERY`) for manual Warehouse Approval/Dispatch (no auto-deduct)
+    $openSalesStmt = $pdo->query("
+        SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.order_date, o.notes, o.created_by,
+               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
         FROM orders o
-        JOIN order_items oi ON oi.order_id = o.id
-        JOIN items i ON i.item_id = oi.item_id
-        WHERE o.fulfillment_status IN ('Pending', 'Ready for Pickup', 'Completed')
+        LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN outbound_orders oo ON oo.order_number = o.order_number
+        WHERE o.fulfillment_status IN ('Pending', 'Ready for Pickup')
           AND (o.id > 12 OR o.updated_at >= '2026-11-01 00:00:00')
-          AND LOWER(REPLACE(COALESCE(i.item_type, i.type), ' ', '_')) = 'finished_good'
-        GROUP BY o.id, o.order_number, o.warehouse_id, o.created_by, o.notes, o.fulfillment_status, oi.item_id
-        HAVING qty_needed > 0.0001
+          AND oo.outbound_order_id IS NULL
+          AND EXISTS (
+              SELECT 1 FROM order_items oi
+              JOIN items i ON i.item_id = oi.item_id
+              WHERE oi.order_id = o.id
+                AND oi.quantity > COALESCE(oi.quantity_fulfilled, 0)
+                AND LOWER(REPLACE(COALESCE(i.item_type, i.type), ' ', '_')) = 'finished_good'
+          )
     ");
-    if ($salesFgStmt) {
-        $fgRows = $salesFgStmt->fetchAll(PDO::FETCH_ASSOC);
-        if (!empty($fgRows)) {
-            $lockFgStmt = $pdo->prepare("SELECT qty_on_hand, COALESCE(qty_reserved, 0.0000) AS qty_reserved FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE");
-            $deductFgStmt = $pdo->prepare("UPDATE stock SET qty_on_hand = qty_on_hand - ? WHERE item_id = ? AND warehouse_id = ?");
-            $insSmOutStmt = $pdo->prepare("
-                INSERT INTO stock_movements (
-                    item_id, warehouse_id, movement_type, quantity, quantity_delta, balance_after,
-                    source_type, reference_type, reference_no, reference_number, department, remarks, created_by, created_at
-                ) VALUES (?, ?, 'STOCK_OUT', ?, ?, ?, 'SALES_DELIVERY', 'STOCK_OUT', ?, ?, 'Sales', ?, ?, NOW())
-            ");
-            $findOutOrdStmt = $pdo->prepare("SELECT outbound_order_id FROM outbound_orders WHERE order_number = ? LIMIT 1");
-            $updOutItemStmt = $pdo->prepare("UPDATE outbound_order_items SET dispatched_quantity = LEAST(requested_quantity, dispatched_quantity + ?) WHERE outbound_order_id = ? AND item_id = ?");
-            $chkOutTotStmt  = $pdo->prepare("SELECT COALESCE(SUM(requested_quantity), 0) AS tot_req, COALESCE(SUM(dispatched_quantity), 0) AS tot_disp FROM outbound_order_items WHERE outbound_order_id = ?");
-            $updOutOrdStmt  = $pdo->prepare("UPDATE outbound_orders SET status = ?, updated_at = NOW() WHERE outbound_order_id = ?");
-
-            foreach ($fgRows as $sRow) {
-                $qtyNeeded = (float)$sRow['qty_needed'];
-                if ($qtyNeeded <= 0) continue;
-                $whId = (int)$sRow['warehouse_id'] ?: 1;
-                $itemId = (int)$sRow['item_id'];
-
-                $nestedTxn = !$pdo->inTransaction();
-                if ($nestedTxn) {
-                    $pdo->beginTransaction();
-                }
-                try {
-                    $lockFgStmt->execute([$itemId, $whId]);
-                    $stk = $lockFgStmt->fetch(PDO::FETCH_ASSOC);
-                    $onHand = $stk ? (float)$stk['qty_on_hand'] : 0.0;
-                    $reserved = $stk ? (float)$stk['qty_reserved'] : 0.0;
-                    $avail = max(0.0, $onHand - $reserved);
-
-                    if ($avail > 0.0001) {
-                        $deductQty = min($qtyNeeded, $avail);
-                        $deductFgStmt->execute([$deductQty, $itemId, $whId]);
-                        $newBal = max(0.0, $onHand - $deductQty);
-                        $remarks = "[SALES_DELIVERY: {$sRow['order_number']}] Auto-deducted FG for Sales Order" . ($sRow['notes'] ? " — {$sRow['notes']}" : "");
-                        $insSmOutStmt->execute([
-                            $itemId, $whId, $deductQty, -$deductQty, $newBal,
-                            $sRow['order_number'], $sRow['order_number'], $remarks, (int)($sRow['created_by'] ?: 1)
-                        ]);
-
-                        if (!class_exists('AccountabilityService')) {
-                            require_once __DIR__ . '/../../helpers/AccountabilityService.php';
-                        }
-                        AccountabilityService::log([
-                            'user_id'          => (int)($sRow['created_by'] ?: 0) ?: null,
-                            'team'             => 'Sales',
-                            'action_type'      => 'STOCK_OUT',
-                            'channel'          => 'UI',
-                            'item_id'          => $itemId,
-                            'quantity'         => $deductQty,
-                            'warehouse_id'     => $whId,
-                            'reference_number' => $sRow['order_number'],
-                            'notes'            => "Auto-deducted FG for Sales Order {$sRow['order_number']}"
-                        ]);
-
-                        $findOutOrdStmt->execute([$sRow['order_number']]);
-                        $ooId = (int)($findOutOrdStmt->fetchColumn() ?: 0);
-                        if ($ooId > 0) {
-                            $updOutItemStmt->execute([$deductQty, $ooId, $itemId]);
-                            $chkOutTotStmt->execute([$ooId]);
-                            $tot = $chkOutTotStmt->fetch(PDO::FETCH_ASSOC);
-                            $ooStatus = ((float)$tot['tot_disp'] + 0.0001 >= (float)$tot['tot_req']) ? 'dispatched' : 'partially_dispatched';
-                            $updOutOrdStmt->execute([$ooStatus, $ooId]);
-                        }
-                    }
-                    if ($nestedTxn) {
-                        $pdo->commit();
-                    }
-                } catch (Throwable $e) {
-                    if ($nestedTxn && $pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
+    if ($openSalesStmt) {
+        $insSalesOutOrd = $pdo->prepare("
+            INSERT IGNORE INTO outbound_orders (order_number, source_type, entity_name, warehouse_id, required_date, status, notes, created_by)
+            VALUES (?, 'SALES_DELIVERY', ?, ?, ?, 'pending', ?, ?)
+        ");
+        $insSalesOutItem = $pdo->prepare("
+            INSERT IGNORE INTO outbound_order_items (outbound_order_id, item_id, requested_quantity, dispatched_quantity)
+            VALUES (?, ?, ?, ?)
+        ");
+        $selSalesItems = $pdo->prepare("
+            SELECT oi.item_id, SUM(oi.quantity) AS req_qty, SUM(COALESCE(oi.quantity_fulfilled, 0)) AS ful_qty
+            FROM order_items oi
+            JOIN items i ON i.item_id = oi.item_id
+            WHERE oi.order_id = ?
+              AND LOWER(REPLACE(COALESCE(i.item_type, i.type), ' ', '_')) = 'finished_good'
+            GROUP BY oi.item_id
+        ");
+        foreach ($openSalesStmt->fetchAll(PDO::FETCH_ASSOC) as $so) {
+            $reqDate = $so['order_date'] ? date('Y-m-d', strtotime($so['order_date'])) : date('Y-m-d');
+            $insSalesOutOrd->execute([
+                $so['order_number'],
+                trim($so['customer_name']) ?: 'Sales Customer',
+                (int)$so['warehouse_id'] ?: 1,
+                $reqDate,
+                $so['notes'],
+                (int)($so['created_by'] ?: 1)
+            ]);
+            $newOutId = (int)$pdo->lastInsertId();
+            if ($newOutId > 0) {
+                $selSalesItems->execute([(int)$so['order_id']]);
+                foreach ($selSalesItems->fetchAll(PDO::FETCH_ASSOC) as $si) {
+                    $insSalesOutItem->execute([
+                        $newOutId,
+                        (int)$si['item_id'],
+                        (float)$si['req_qty'],
+                        (float)$si['ful_qty']
+                    ]);
                 }
             }
         }
@@ -373,6 +245,49 @@ try {
                             'warehouse_id' => 0
                         ]);
                     } catch (Throwable $e) {}
+                }
+            }
+        }
+    }
+
+    // 3c. Sync Customer Returns recorded by Sales Team in `order_items.quantity_returned > 0` into `inbound_orders` (CUSTOMER_RETURN)
+    //     so returned items go to the Receiving Dock for QA verification (Salable vs. Bad Product) instead of auto-entering salable stock!
+    $returnedSalesStmt = $pdo->query("
+        SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes,
+               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RMA-', o.order_number)
+        WHERE io.inbound_order_id IS NULL
+          AND EXISTS (
+              SELECT 1 FROM order_items oi 
+              WHERE oi.order_id = o.id AND oi.quantity_returned > 0
+          )
+    ");
+    if ($returnedSalesStmt) {
+        $insInbOrd = $pdo->prepare("
+            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            VALUES (?, 'CUSTOMER_RETURN', ?, ?, CURDATE(), 'pending', ?, ?)
+        ");
+        $insInbItem = $pdo->prepare("
+            INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
+            VALUES (?, ?, ?, 0.0000)
+        ");
+        $selRetItems = $pdo->prepare("SELECT item_id, SUM(quantity_returned) AS ret_qty FROM order_items WHERE order_id = ? AND quantity_returned > 0 GROUP BY item_id");
+        foreach ($returnedSalesStmt->fetchAll(PDO::FETCH_ASSOC) as $ro) {
+            $rmaNo = 'RMA-' . $ro['order_number'];
+            $insInbOrd->execute([
+                $rmaNo,
+                trim($ro['customer_name']) ?: 'Sales Customer',
+                (int)$ro['warehouse_id'] ?: 1,
+                "Customer return from Sales Order {$ro['order_number']}" . ($ro['notes'] ? " ({$ro['notes']})" : ""),
+                (int)($ro['created_by'] ?: 1)
+            ]);
+            $newInbId = (int)$pdo->lastInsertId();
+            if ($newInbId > 0) {
+                $selRetItems->execute([(int)$ro['order_id']]);
+                foreach ($selRetItems->fetchAll(PDO::FETCH_ASSOC) as $ri) {
+                    $insInbItem->execute([$newInbId, (int)$ri['item_id'], (float)$ri['ret_qty']]);
                 }
             }
         }
@@ -463,64 +378,171 @@ try {
         }
     }
 
-    // 5. Sync un-logged `production_receipts` into `stock` and `stock_movements` (by receipt_number, even after prior Stock-Outs)
+    // 5. Sync un-logged `production_receipts` into `inbound_orders` (`PRODUCTION_RECEIPT`, `pending`) for manual Warehouse Receiving
     $unsyncedProdRecStmt = $pdo->query("
-        SELECT pr.id, pr.receipt_number, pr.item_id, pr.warehouse_id, pr.qty_received, pr.received_by, pr.received_at, pr.remarks,
-               COALESCE(i.reorder_level, 0) AS reorder_level
+        SELECT pr.id, pr.receipt_number, pr.item_id, pr.warehouse_id, pr.qty_received, pr.received_by, pr.received_at, pr.remarks
         FROM production_receipts pr
-        JOIN items i ON i.id = pr.item_id
+        LEFT JOIN production_orders po ON po.id = pr.prod_order_id
+        LEFT JOIN inbound_orders io ON io.order_number = pr.receipt_number
         WHERE pr.qty_received > 0
+          AND io.inbound_order_id IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM stock_movements sm
               WHERE sm.item_id = pr.item_id
                 AND sm.movement_type IN ('IN', 'STOCK_IN')
-                AND (sm.reference_no = pr.receipt_number OR sm.reference_number = pr.receipt_number OR sm.remarks LIKE CONCAT('%', pr.receipt_number, '%'))
+                AND (
+                    sm.reference_no = pr.receipt_number
+                    OR sm.reference_number = pr.receipt_number
+                    OR sm.remarks LIKE CONCAT('%', pr.receipt_number, '%')
+                    OR sm.reference_no = CONCAT('PROD-', pr.prod_order_id)
+                    OR sm.reference_number = CONCAT('PROD-', pr.prod_order_id)
+                    OR sm.remarks LIKE CONCAT('%PROD-', pr.prod_order_id, '%')
+                    OR (
+                        po.order_number IS NOT NULL
+                        AND (
+                            sm.reference_no = po.order_number
+                            OR sm.reference_number = po.order_number
+                            OR sm.remarks LIKE CONCAT('%', po.order_number, '%')
+                        )
+                    )
+                )
           )
     ");
     if ($unsyncedProdRecStmt) {
-        $upsertProdStockStmt = $pdo->prepare("
-            INSERT INTO stock (item_id, warehouse_id, qty_on_hand, qty_reserved, reorder_level)
-            VALUES (?, ?, ?, 0.0000, ?)
-            ON DUPLICATE KEY UPDATE qty_on_hand = qty_on_hand + VALUES(qty_on_hand)
+        $insProdInbOrd = $pdo->prepare("
+            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            VALUES (?, 'PRODUCTION_RECEIPT', 'Production Team', ?, ?, 'pending', ?, ?)
         ");
-        $balProdStmt = $pdo->prepare("SELECT COALESCE(qty_on_hand, 0.0000) FROM stock WHERE item_id = ? AND warehouse_id = ?");
-        $insProdMovStmt = $pdo->prepare("
-            INSERT INTO stock_movements (
-                item_id, warehouse_id, movement_type, quantity, quantity_delta, balance_after,
-                source_type, reference_type, reference_no, reference_number, department, remarks, created_by, created_at
-            ) VALUES (?, ?, 'IN', ?, ?, ?, 'PRODUCTION_RECEIPT', 'PROD_RECEIPT', ?, ?, 'Production', ?, ?, ?)
+        $insProdInbItem = $pdo->prepare("
+            INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
+            VALUES (?, ?, ?, 0.0000)
         ");
         foreach ($unsyncedProdRecStmt->fetchAll(PDO::FETCH_ASSOC) as $pr) {
             $qtyRec = (float)$pr['qty_received'];
             if ($qtyRec <= 0) continue;
-            $whId = (int)$pr['warehouse_id'] ?: 1;
-            $itemId = (int)$pr['item_id'];
-            $upsertProdStockStmt->execute([$itemId, $whId, $qtyRec, (float)$pr['reorder_level']]);
-            $balProdStmt->execute([$itemId, $whId]);
-            $newBal = (float)$balProdStmt->fetchColumn();
-            $recRemarks = "[PRODUCTION_RECEIPT: {$pr['receipt_number']}] Finished Goods Receipt" . ($pr['remarks'] ? " — {$pr['remarks']}" : "");
-            $insProdMovStmt->execute([
-                $itemId, $whId, $qtyRec, $qtyRec, $newBal,
-                $pr['receipt_number'], $pr['receipt_number'], $recRemarks,
-                (int)($pr['received_by'] ?: 1), $pr['received_at'] ?: date('Y-m-d H:i:s')
+            $expDate = $pr['received_at'] ? date('Y-m-d', strtotime($pr['received_at'])) : date('Y-m-d');
+            $insProdInbOrd->execute([
+                $pr['receipt_number'],
+                (int)$pr['warehouse_id'] ?: 1,
+                $expDate,
+                $pr['remarks'] ?: 'Finished goods from Production',
+                (int)($pr['received_by'] ?: 1)
             ]);
-
-            if (!class_exists('AccountabilityService')) {
-                require_once __DIR__ . '/../../helpers/AccountabilityService.php';
+            $newInbId = (int)$pdo->lastInsertId();
+            if ($newInbId > 0) {
+                $insProdInbItem->execute([$newInbId, (int)$pr['item_id'], $qtyRec]);
             }
-            AccountabilityService::log([
-                'user_id'          => (int)($pr['received_by'] ?: 0) ?: null,
-                'team'             => 'Production',
-                'action_type'      => 'STOCK_IN',
-                'channel'          => 'UI',
-                'item_id'          => $itemId,
-                'quantity'         => $qtyRec,
-                'warehouse_id'     => $whId,
-                'reference_number' => $pr['receipt_number'],
-                'notes'            => $recRemarks
-            ]);
         }
     }
+
+    // 5b. Sync Production Raw Material Returns (`production_materials.returned_qty > 0`) into `inbound_orders` (`PRODUCTION_RETURN`, `pending`)
+    $prodRetStmt = $pdo->query("
+        SELECT po.id, po.order_number, po.warehouse_id, po.created_by, po.remarks
+        FROM production_orders po
+        LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RET-', po.order_number)
+        WHERE io.inbound_order_id IS NULL
+          AND (po.id > 44 OR po.updated_at >= '2026-11-01 00:00:00')
+          AND EXISTS (
+              SELECT 1 FROM production_materials pm
+              WHERE pm.prod_order_id = po.id AND pm.returned_qty > 0
+          )
+    ");
+    if ($prodRetStmt) {
+        $insProdRetOrd = $pdo->prepare("
+            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            VALUES (?, 'PRODUCTION_RETURN', 'Production Team', ?, CURDATE(), 'pending', ?, ?)
+        ");
+        $insProdRetItem = $pdo->prepare("
+            INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
+            VALUES (?, ?, ?, 0.0000)
+        ");
+        $selProdRetMats = $pdo->prepare("
+            SELECT item_id, SUM(returned_qty) AS ret_qty
+            FROM production_materials
+            WHERE prod_order_id = ? AND returned_qty > 0
+            GROUP BY item_id
+        ");
+        foreach ($prodRetStmt->fetchAll(PDO::FETCH_ASSOC) as $prOrd) {
+            $retOrdNo = 'RET-' . $prOrd['order_number'];
+            $insProdRetOrd->execute([
+                $retOrdNo,
+                (int)$prOrd['warehouse_id'] ?: 1,
+                "Raw material return from Production Order {$prOrd['order_number']}" . ($prOrd['remarks'] ? " ({$prOrd['remarks']})" : ""),
+                (int)($prOrd['created_by'] ?: 1)
+            ]);
+            $newInbId = (int)$pdo->lastInsertId();
+            if ($newInbId > 0) {
+                $selProdRetMats->execute([(int)$prOrd['id']]);
+                foreach ($selProdRetMats->fetchAll(PDO::FETCH_ASSOC) as $pmRet) {
+                    $insProdRetItem->execute([$newInbId, (int)$pmRet['item_id'], (float)$pmRet['ret_qty']]);
+                }
+            }
+        }
+    }
+
+    // 5c. Sync Procurement Goods Receipts (`goods_receipts`) into `inbound_orders` (`PURCHASE_ORDER`, `pending`) for manual Warehouse Receiving
+    $procGrStmt = $pdo->query("
+        SELECT gr.id, gr.gr_number, gr.warehouse_id, gr.received_date, gr.received_by, gr.remarks,
+               COALESCE(s.company_name, 'Procurement Supplier') AS supplier_name
+        FROM goods_receipts gr
+        LEFT JOIN suppliers s ON s.id = gr.supplier_id
+        LEFT JOIN inbound_orders io ON io.order_number = gr.gr_number
+        WHERE io.inbound_order_id IS NULL
+          AND gr.status IN ('Pending Inspection', 'Inspected', 'Partially Accepted', 'Completed')
+          AND (gr.id > 7 OR gr.updated_at >= '2026-11-01 00:00:00')
+          AND EXISTS (
+              SELECT 1 FROM goods_receipt_items gri
+              WHERE gri.gr_id = gr.id AND COALESCE(NULLIF(gri.quantity_accepted, 0), gri.quantity_received) > 0
+          )
+    ");
+    if ($procGrStmt) {
+        $insProcInbOrd = $pdo->prepare("
+            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            VALUES (?, 'PURCHASE_ORDER', ?, ?, ?, 'pending', ?, ?)
+        ");
+        $insProcInbItem = $pdo->prepare("
+            INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
+            VALUES (?, ?, ?, 0.0000)
+        ");
+        $selProcGrItems = $pdo->prepare("
+            SELECT item_id, SUM(COALESCE(NULLIF(quantity_accepted, 0), quantity_received)) AS rec_qty
+            FROM goods_receipt_items
+            WHERE gr_id = ? AND COALESCE(NULLIF(quantity_accepted, 0), quantity_received) > 0
+            GROUP BY item_id
+        ");
+        foreach ($procGrStmt->fetchAll(PDO::FETCH_ASSOC) as $gr) {
+            $insProcInbOrd->execute([
+                $gr['gr_number'],
+                trim($gr['supplier_name']) ?: 'Procurement Supplier',
+                (int)$gr['warehouse_id'] ?: 1,
+                $gr['received_date'] ?: date('Y-m-d'),
+                $gr['remarks'] ?: "Procurement delivery {$gr['gr_number']}",
+                (int)($gr['received_by'] ?: 1)
+            ]);
+            $newInbId = (int)$pdo->lastInsertId();
+            if ($newInbId > 0) {
+                $selProcGrItems->execute([(int)$gr['id']]);
+                foreach ($selProcGrItems->fetchAll(PDO::FETCH_ASSOC) as $gri) {
+                    $insProcInbItem->execute([$newInbId, (int)$gri['item_id'], (float)$gri['rec_qty']]);
+                }
+            }
+        }
+    }
+
+    // 6. Auto-inactivate Raw Materials & Finished Goods unused for 2+ months
+    $pdo->exec("
+        UPDATE items i
+        SET i.status = 'Inactive'
+        WHERE i.status = 'Active'
+          AND i.type IN ('Raw Material', 'Finished Good')
+          AND COALESCE(i.updated_at, i.created_at) <= DATE_SUB(NOW(), INTERVAL 2 MONTH)
+          AND NOT EXISTS (
+              SELECT 1 FROM stock_movements sm
+              WHERE sm.item_id = i.id
+                AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 2 MONTH)
+          )
+    ");
+
         if ($syncTxnStarted && $pdo->inTransaction()) {
             $pdo->commit();
         }

@@ -35,9 +35,6 @@ $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 // Compute KPI metrics directly from $inventoryRows (eliminating redundant SQL queries)
 $totalRawMaterials   = 0;
 $totalFinishedGoods  = 0;
-$totalStockPieces    = 0.0;
-$totalStockBulk      = 0.0;
-$totalStock          = 0.0;
 $lowStockCount       = 0;
 
 foreach ($inventoryRows as $row) {
@@ -49,35 +46,13 @@ foreach ($inventoryRows as $row) {
     }
     $qty = (float)($row['quantity'] ?? 0);
     $reorder = (float)($row['default_reorder_level'] ?? 0);
-    $unit = strtolower(trim($row['unit'] ?? ''));
-
-    if ($unit === 'bulk') {
-        $totalStockBulk += $qty;
-    } else {
-        $totalStockPieces += $qty;
-    }
-    $totalStock += $qty;
 
     if ($reorder > 0 && $qty <= $reorder) {
         $lowStockCount++;
     }
 }
 
-// 2. Transfer Done (completed inter-warehouse transfers for assigned warehouse)
-$stmtTransferDone = $pdo->prepare("
-    SELECT 
-        COUNT(st.transfer_id) AS txn_count,
-        COALESCE(SUM(st.quantity), 0) AS total_qty
-    FROM stock_transfers st
-    WHERE (st.source_warehouse_id = :wid1 OR st.destination_warehouse_id = :wid2)
-      AND st.status IN ('received', 'completed')
-");
-$stmtTransferDone->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
-$transferDoneRow = $stmtTransferDone->fetch(PDO::FETCH_ASSOC);
-$transfersDoneCount  = (int)($transferDoneRow['txn_count'] ?? 0);
-$transfersDoneVolume = (float)($transferDoneRow['total_qty'] ?? 0);
-
-// 3. Bad Products List (Active damaged / defective records for assigned warehouse)
+// 2. Bad Products List (Active damaged / defective records for assigned warehouse)
 $stmtBP = $pdo->prepare("
     SELECT 
         COUNT(*) AS record_count,
@@ -138,7 +113,7 @@ $stmtChart = $pdo->prepare("
     SELECT 
         DATE(sm.created_at) AS txn_date,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_in,
         COALESCE(SUM(CASE 
@@ -164,8 +139,13 @@ foreach ($chartDbRows as $row) {
 $totalWeekIn = array_sum(array_column($chartDays, 'inbound'));
 $totalWeekOut = array_sum(array_column($chartDays, 'outbound'));
 
-// --- Recent Warehouse Staff Activity (Warehouse-Scoped, Inventory Team Only) ---
-$stmtWhStaff = $pdo->prepare("
+// --- Recent Warehouse Staff Activity (Super Admin & HR see all; employees see only their own activity) ---
+$canMonitorAllLogins = $isSuperAdmin
+    || strtolower(trim((string)($currentUser['team'] ?? ''))) === 'hr'
+    || strtolower(trim((string)($currentUser['department'] ?? ''))) === 'hr';
+$selfUserId = (int)($currentUser['id'] ?? ($currentUser['user_id'] ?? 0));
+
+$staffSql = "
     SELECT 
         al.log_id,
         al.user_id,
@@ -184,10 +164,15 @@ $stmtWhStaff = $pdo->prepare("
       AND (u.department IS NULL OR LOWER(u.department) IN ('inventory', 'admin'))
       AND LOWER(COALESCE(al.team, 'inventory')) IN ('inventory', 'administration')
       AND al.action IN ('USER_LOGIN', 'STOCK_IN', 'STOCK_OUT', 'TRANSFER_INITIATED', 'TRANSFER_RECEIVED', 'ADJUSTMENT_REQUESTED', 'BAD_PRODUCT', 'USER_CREATED')
-    ORDER BY al.created_at DESC, al.log_id DESC
-    LIMIT 5
-");
-$stmtWhStaff->execute([':wid' => $currentWarehouseId]);
+";
+$staffParams = [':wid' => $currentWarehouseId];
+if (!$canMonitorAllLogins) {
+    $staffSql .= " AND al.user_id = :self_uid";
+    $staffParams[':self_uid'] = $selfUserId;
+}
+$staffSql .= " ORDER BY al.created_at DESC, al.log_id DESC LIMIT 5";
+$stmtWhStaff = $pdo->prepare($staffSql);
+$stmtWhStaff->execute($staffParams);
 $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -202,8 +187,8 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- 6 Core Summary KPI Cards -->
-<div class="stats-grid stats-grid-3">
+<!-- 4 Core Summary KPI Cards -->
+<div class="stats-grid stats-grid-4">
     <!-- 1. Total Raw Materials -->
     <div class="stat-card stat-gold">
         <div class="stat-header">
@@ -218,7 +203,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalRawMaterials) ?></div>
-        <div class="stat-meta">Active Raw Materials</div>
+        <div class="stat-meta">Raw Materials</div>
     </div>
 
     <!-- 2. Total Finished Goods -->
@@ -236,29 +221,10 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalFinishedGoods) ?></div>
-        <div class="stat-meta">Active Finished Goods</div>
+        <div class="stat-meta">Finished Goods</div>
     </div>
 
-    <!-- 3. Total Stock -->
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-label">Total System Stock</span>
-            <div class="stat-icon-wrap" aria-hidden="true">
-                <!-- Lucide Warehouse Icon -->
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="16" height="20" x="4" y="2" rx="2" ry="2"/>
-                    <path d="M9 22v-4h6v4"/>
-                </svg>
-            </div>
-        </div>
-        <div class="stat-value"><?= formatQty($totalStock) ?></div>
-        <div class="stat-meta">
-            <span><strong><?= formatQty($totalStockPieces) ?></strong> Pieces</span> &bull; 
-            <span><strong><?= formatQty($totalStockBulk) ?></strong> Bulk</span>
-        </div>
-    </div>
-
-    <!-- 4. Low Stock Items -->
+    <!-- 3. Low Stock Items -->
     <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>" id="dashboardCardLowStock">
         <div class="stat-header">
             <span class="stat-label">Low Stock Items</span>
@@ -273,33 +239,13 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div class="stat-value" id="dashboardValLowStock"><?= $lowStockCount ?></div>
         <div class="stat-meta" id="dashboardMetaLowStock">
-            <?php if ($lowStockCount > 0): ?>
-                <a href="<?= BASE_URL ?>views/inbound_outbound/index.php" style="color: var(--error); font-weight: 600; text-decoration: underline;">Replenish via Stock In &rarr;</a>
-            <?php else: ?>
+            <?php if ($lowStockCount === 0): ?>
                 All items at healthy levels
             <?php endif; ?>
         </div>
     </div>
 
-    <!-- 5. Transfer Done -->
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-label" data-label="Transfer done">Transfer Done</span><!-- Transfer done -->
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #DBEAFE;">
-                <!-- Lucide ArrowLeftRight Icon -->
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 3 4 7l4 4"/>
-                    <path d="M4 7h16"/>
-                    <path d="m16 21 4-4-4-4"/>
-                    <path d="M20 17H4"/>
-                </svg>
-            </div>
-        </div>
-        <div class="stat-value"><?= formatQty($transfersDoneVolume) ?></div>
-        <div class="stat-meta"><?= $transfersDoneCount ?> completed transfer<?= $transfersDoneCount === 1 ? '' : 's' ?></div>
-    </div>
-
-    <!-- 6. Bad Products List -->
+    <!-- 4. Bad Products List -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Bad Products List</span>
@@ -314,8 +260,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div class="stat-value"><?= formatQty($badProductsVolume) ?></div>
         <div class="stat-meta">
-            <?= $badProductsCount ?> record<?= $badProductsCount === 1 ? '' : 's' ?> &bull;
-            <a href="<?= BASE_URL ?>views/stock_operations/index.php?tab=adjustment#badProductsTable" style="color: #B91C1C; font-weight: 600; text-decoration: underline;">View List &rarr;</a>
+            <?= $badProductsCount ?> record<?= $badProductsCount === 1 ? '' : 's' ?>
         </div>
     </div>
 </div>
@@ -567,9 +512,9 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                             </td>
                             <td class="text-center" style="font-weight: 700; font-size: 13.5px;">
                                 <?php if ($isIncoming): ?>
-                                    <span style="color: #15803D;">+<?= formatQty($act['quantity_in']) ?></span>
+                                    <span style="color: #15803D;"><?= formatQty(abs((float)$act['quantity_in'])) ?></span>
                                 <?php elseif ((float)$act['quantity_out'] > 0): ?>
-                                    <span style="color: #B91C1C;">-<?= formatQty($act['quantity_out']) ?></span>
+                                    <span style="color: #B91C1C;"><?= formatQty(abs((float)$act['quantity_out'])) ?></span>
                                 <?php else: ?>
                                     <span style="color: var(--gray);">0.00</span>
                                 <?php endif; ?>
@@ -670,7 +615,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                             <polyline points="20 6 9 17 4 12"/>
                                         </svg>
-                                        Optimal
+                                        In Stock
                                     </span>
                                 <?php endif; ?>
                             </td>

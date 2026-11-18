@@ -27,6 +27,12 @@ $datePreset   = isset($_GET['preset']) ? trim($_GET['preset']) : '';
 $rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
 $rawEndDate   = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
 
+if ($datePreset === '' && ($rawStartDate !== '' || $rawEndDate !== '')) {
+    $datePreset = 'custom';
+} elseif (!in_array($datePreset, ['today', 'this_month', 'all_time', 'custom'], true)) {
+    $datePreset = 'this_month';
+}
+
 if ($datePreset === 'today') {
     $startDate = date('Y-m-d');
     $endDate   = date('Y-m-d');
@@ -143,6 +149,7 @@ $sqlIn = "
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
+                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
                 WHEN sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
                 WHEN i.type IN ('finished_good', 'Finished Good') THEN 'PRODUCTION_RECEIPT'
                 ELSE 'PURCHASE_ORDER'
@@ -405,85 +412,79 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Transaction Report Filter Card -->
-<div class="card no-print" style="margin-bottom: 20px;">
-    <form method="GET" action="stock_transactions.php" id="reportFilterForm" class="report-filter-form" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <input type="hidden" name="tab" id="filterTabInput" value="<?= htmlspecialchars($activeTab) ?>">
+<?php
+$txnCardMeta = [
+    'movements'   => ['title' => 'Stock Movement Ledger Report', 'desc' => 'History of all stock ins, stock outs, and balance changes'],
+    'inbound'     => ['title' => 'Inbound Stock Receipts', 'desc' => 'Items received from suppliers and production'],
+    'outbound'    => ['title' => 'Outbound Stock Dispatches', 'desc' => 'Items shipped for sales orders and sent to production'],
+    'transfers'   => ['title' => 'Inter-Branch Stock Transfers', 'desc' => 'Stock transfers between warehouses'],
+    'adjustments' => ['title' => 'Stock Adjustments & Variances', 'desc' => 'Stock adjustments made to match physical counts'],
+];
+$activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
+?>
 
-        <!-- Search -->
-        <div class="search-wrap">
-            <span class="search-icon" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-            </span>
-            <input type="text" name="search" class="search-box" aria-label="Search transaction records" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveTransactionTable()" onkeydown="if(event.key==='Enter'){event.preventDefault();filterActiveTransactionTable();}">
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
+        <div>
+            <h2 class="card-title" id="txnCardTitle"><?= htmlspecialchars($activeTxnMeta['title']) ?></h2>
+            <p class="card-desc" id="txnCardDesc"><?= htmlspecialchars($activeTxnMeta['desc']) ?></p>
         </div>
+        <form method="GET" action="stock_transactions.php" id="reportFilterForm" class="report-filter-form no-print" onsubmit="event.preventDefault(); applyTxnFiltersSmooth(); return false;" style="display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap;">
+            <input type="hidden" name="tab" id="filterTabInput" value="<?= htmlspecialchars($activeTab) ?>">
 
-        <!-- Date Presets (FIX-020) -->
-        <div style="display: flex; gap: 4px; align-items: center;">
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=today<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="today" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'today' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">Today</a>
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=this_month<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="this_month" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= ($datePreset === 'this_month' || (empty($datePreset) && empty($rawStartDate) && empty($rawEndDate))) ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">This Month</a>
-            <a href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>&preset=all_time<?= $search !== '' ? '&search=' . urlencode($search) : '' ?>" data-preset="all_time" class="btn btn-secondary date-preset-link" style="height: 38px; padding: 0 10px; font-size: 12px; text-decoration: none; <?= $datePreset === 'all_time' ? 'background: var(--primary, #3B82F6); color: #fff;' : '' ?>">All Time</a>
-        </div>
+            <!-- Search -->
+            <div class="search-wrap">
+                <span class="search-icon" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </span>
+                <input type="text" name="search" class="search-box" aria-label="Search transaction records" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveTransactionTable()" onkeydown="if(event.key==='Enter'){event.preventDefault();filterActiveTransactionTable();}">
+            </div>
 
-        <!-- Date Range -->
-        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <span style="font-size: 12px; color: var(--gray); font-weight: 500;">From</span>
-            <input type="date" name="start_date" aria-label="Start date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($startDate) ?>" onchange="this.form.submit()">
-            <span style="font-size: 12px; color: var(--gray); font-weight: 500;">To</span>
-            <input type="date" name="end_date" aria-label="End date" class="select-filter" style="width: 140px; padding: 0 10px;" value="<?= htmlspecialchars($endDate) ?>" onchange="this.form.submit()">
-        </div>
-
-        <!-- Server-Side Page Size Limit (UI-01) -->
-        <div style="display: flex; align-items: center; gap: 6px;">
-            <span style="font-size: 12px; color: var(--gray); font-weight: 500;">Show</span>
-            <select name="limit" class="select-filter" style="width: 105px; padding: 0 8px;" onchange="this.form.submit()" title="Records limit per query">
-                <option value="50" <?= $limitVal === 50 ? 'selected' : '' ?>>50 rows</option>
-                <option value="100" <?= ($limitVal === 100 && !$isAll) ? 'selected' : '' ?>>100 rows</option>
-                <option value="250" <?= $limitVal === 250 ? 'selected' : '' ?>>250 rows</option>
-                <option value="500" <?= $limitVal === 500 ? 'selected' : '' ?>>500 rows</option>
-                <option value="all" <?= $isAll ? 'selected' : '' ?>>All rows</option>
+            <!-- Date Filter Dropdown -->
+            <select name="preset" id="datePresetSelect" class="select-filter" aria-label="Date range preset" onchange="onTxnPresetChange(this.value)">
+                <option value="today" <?= $datePreset === 'today' ? 'selected' : '' ?>>Today</option>
+                <option value="this_month" <?= $datePreset === 'this_month' ? 'selected' : '' ?>>This Month</option>
+                <option value="all_time" <?= $datePreset === 'all_time' ? 'selected' : '' ?>>All Time</option>
+                <option value="custom" <?= $datePreset === 'custom' ? 'selected' : '' ?>>Custom Date</option>
             </select>
-        </div>
 
-        <!-- Buttons -->
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <a id="resetFilterBtn" href="stock_transactions.php?tab=<?= urlencode($activeTab) ?>" class="btn btn-secondary" style="height: 38px; text-decoration: none;" title="Reset Filters">
-                <span>Reset</span>
-            </a>
-            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="exportReportCsv()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                <span>Export CSV</span>
-            </button>
-            <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="window.print()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 6 2 18 2 18 9"/>
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                    <rect width="12" height="8" x="6" y="14"/>
-                </svg>
-                <span>Print Report</span>
-            </button>
-        </div>
-    </form>
-</div>
+            <!-- Optional Date Range (inline next to dropdown when Custom Date is selected) -->
+            <div id="customDateRangeWrap" style="display: <?= $datePreset === 'custom' ? 'flex' : 'none' ?>; align-items: center; gap: 6px;">
+                <span style="font-size: 12px; color: var(--gray); font-weight: 500;">From</span>
+                <input type="date" name="start_date" id="txnStartDate" aria-label="Start date" class="select-filter" style="width: 132px; padding: 0 8px;" value="<?= htmlspecialchars($startDate) ?>" onchange="applyTxnFiltersSmooth()">
+                <span style="font-size: 12px; color: var(--gray); font-weight: 500;">To</span>
+                <input type="date" name="end_date" id="txnEndDate" aria-label="End date" class="select-filter" style="width: 132px; padding: 0 8px;" value="<?= htmlspecialchars($endDate) ?>" onchange="applyTxnFiltersSmooth()">
+            </div>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-secondary" style="height: 38px; white-space: nowrap;" onclick="exportReportCsv()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>Export CSV</span>
+                </button>
+                <button type="button" class="btn btn-secondary" style="height: 38px; white-space: nowrap;" onclick="window.print()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"/>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                        <rect width="12" height="8" x="6" y="14"/>
+                    </svg>
+                    <span>Print Report</span>
+                </button>
+            </div>
+        </form>
+    </div>
 
 <!-- ######################################################################### -->
 <!-- SECTION 1: STOCK MOVEMENT LEDGER                                          -->
 <!-- ######################################################################### -->
 <div id="pane-movements" class="stock-op-pane" style="display: <?= $activeTab === 'movements' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Stock Movement Ledger Report</h2>
-                <p class="card-desc">History of all stock ins, stock outs, and balance changes</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="table-movements">
                 <thead>
@@ -539,20 +540,12 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ######################################################################### -->
 <!-- SECTION 2: INBOUND STOCK RECEIPTS                                         -->
 <!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Inbound Stock Receipts</h2>
-                <p class="card-desc">Items received from suppliers and production</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="table-inbound">
                 <thead>
@@ -590,20 +583,12 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ######################################################################### -->
 <!-- SECTION 3: OUTBOUND STOCK DISPATCHES                                      -->
 <!-- ######################################################################### -->
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Outbound Stock Dispatches</h2>
-                <p class="card-desc">Items shipped for sales orders and sent to production</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="table-outbound">
                 <thead>
@@ -641,20 +626,12 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ######################################################################### -->
 <!-- SECTION 4: INTER-BRANCH STOCK TRANSFERS                                   -->
 <!-- ######################################################################### -->
 <div id="pane-transfers" class="stock-op-pane" style="display: <?= $activeTab === 'transfers' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Inter-Branch Stock Transfers</h2>
-                <p class="card-desc">Stock transfers between warehouses</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="table-transfers">
                 <thead>
@@ -692,20 +669,12 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
 </div>
 
 <!-- ######################################################################### -->
 <!-- SECTION 5: STOCK ADJUSTMENTS & VARIANCES                                  -->
 <!-- ######################################################################### -->
 <div id="pane-adjustments" class="stock-op-pane" style="display: <?= $activeTab === 'adjustments' ? 'block' : 'none' ?>;">
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h2 class="card-title">Stock Adjustments &amp; Variances</h2>
-                <p class="card-desc">Stock adjustments made to match physical counts</p>
-            </div>
-        </div>
         <div class="table-responsive">
             <table id="table-adjustments">
                 <thead>
@@ -754,7 +723,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         </div>
-    </div>
+</div>
 </div>
 
 <!-- ######################################################################### -->
@@ -771,11 +740,81 @@ const reportTitles = {
     'transfers': 'Inter-Branch Stock Transfers',
     'adjustments': 'Stock Adjustments & Variances'
 };
+const reportDescs = {
+    'movements': 'History of all stock ins, stock outs, and balance changes',
+    'inbound': 'Items received from suppliers and production',
+    'outbound': 'Items shipped for sales orders and sent to production',
+    'transfers': 'Stock transfers between warehouses',
+    'adjustments': 'Stock adjustments made to match physical counts'
+};
+
+function onTxnPresetChange(val) {
+    const wrap = document.getElementById('customDateRangeWrap');
+    if (val === 'custom') {
+        if (wrap) wrap.style.display = 'flex';
+        return;
+    }
+    if (wrap) wrap.style.display = 'none';
+    applyTxnFiltersSmooth();
+}
+
+let txnFilterAbortCtrl = null;
+async function applyTxnFiltersSmooth() {
+    const form = document.getElementById('reportFilterForm');
+    if (!form) return;
+
+    const params = new URLSearchParams(new FormData(form));
+    params.set('tab', currentActiveTab);
+    const targetUrl = 'stock_transactions.php?' + params.toString();
+
+    if (txnFilterAbortCtrl) {
+        txnFilterAbortCtrl.abort();
+    }
+    txnFilterAbortCtrl = new AbortController();
+
+    try {
+        const res = await fetch(targetUrl, { signal: txnFilterAbortCtrl.signal });
+        if (!res.ok) throw new Error('Failed to fetch filtered data');
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+
+        ['movements', 'inbound', 'outbound', 'transfers', 'adjustments'].forEach(t => {
+            const newTbody = doc.querySelector('#table-' + t + ' tbody');
+            const curTbody = document.querySelector('#table-' + t + ' tbody');
+            if (newTbody && curTbody) {
+                curTbody.innerHTML = newTbody.innerHTML;
+            }
+            const curTable = document.getElementById('table-' + t);
+            if (curTable && typeof curTable.paginationUpdate === 'function') {
+                curTable.paginationUpdate(false);
+            }
+        });
+
+        const newStart = doc.getElementById('txnStartDate');
+        const newEnd   = doc.getElementById('txnEndDate');
+        const curStart = document.getElementById('txnStartDate');
+        const curEnd   = document.getElementById('txnEndDate');
+        if (newStart && curStart) curStart.value = newStart.value;
+        if (newEnd && curEnd)     curEnd.value   = newEnd.value;
+
+        window.history.replaceState({ tab: currentActiveTab }, '', targetUrl);
+        filterActiveTransactionTable();
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            form.submit();
+        }
+    }
+}
 
 function switchTransactionTab(tabName) {
     const validTabs = ['movements', 'inbound', 'outbound', 'transfers', 'adjustments'];
     if (!validTabs.includes(tabName)) tabName = 'movements';
     currentActiveTab = tabName;
+
+    const cardTitleEl = document.getElementById('txnCardTitle');
+    const cardDescEl  = document.getElementById('txnCardDesc');
+    if (cardTitleEl && reportTitles[tabName]) cardTitleEl.textContent = reportTitles[tabName];
+    if (cardDescEl && reportDescs[tabName])   cardDescEl.textContent  = reportDescs[tabName];
 
     // Update Tab Buttons
     validTabs.forEach(t => {
@@ -797,21 +836,9 @@ function switchTransactionTab(tabName) {
         }
     });
 
-    // Update Form hidden input, reset button, and date preset links
+    // Update Form hidden input
     const filterInput = document.getElementById('filterTabInput');
     if (filterInput) filterInput.value = tabName;
-    const resetBtn = document.getElementById('resetFilterBtn');
-    if (resetBtn) resetBtn.href = 'stock_transactions.php?tab=' + encodeURIComponent(tabName);
-    document.querySelectorAll('.date-preset-link').forEach(link => {
-        const preset = link.getAttribute('data-preset') || '';
-        const searchInput = document.getElementById('reportSearchInput');
-        const searchVal = searchInput ? searchInput.value.trim() : '';
-        let newHref = 'stock_transactions.php?tab=' + encodeURIComponent(tabName) + '&preset=' + encodeURIComponent(preset);
-        if (searchVal !== '') {
-            newHref += '&search=' + encodeURIComponent(searchVal);
-        }
-        link.href = newHref;
-    });
 
     // Update printable document subtitle
     const printDocTitle = document.getElementById('printDocTitle');

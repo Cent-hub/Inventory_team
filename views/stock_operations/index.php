@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } else {
         $stockService = new StockService();
         $userId       = (int)($currentUser['id'] ?? 1);
@@ -237,12 +237,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 case 'confirm_bad_product':
                     $activeTab = 'adjustment';
+                    if (($currentUser['role'] ?? '') !== 'super_admin') {
+                        throw new DomainException("Access Denied: Only Super Admin can approve bad product requests.");
+                    }
                     $bpId      = (int)($_POST['bad_product_id'] ?? 0);
                     if ($bpId <= 0) {
                         throw new InvalidArgumentException("Invalid defect record ID.");
                     }
                     $result = $stockService->confirmBadProduct($bpId, $userId, $currentUser);
-                    $successMessage = "Defective product write-off " . htmlspecialchars($result['bad_product_number']) . " confirmed by QC / Supervisor.";
+                    $successMessage = "Bad product request " . htmlspecialchars($result['bad_product_number']) . " approved by Super Admin.";
                     break;
 
                 case 'dispose_bad_product':
@@ -765,10 +768,6 @@ if ($selectedItemId > 0) {
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                    <span class="section-badge-recv">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
-                        Inbound
-                    </span>
                     <h3 class="card-title" style="margin: 0; font-size: 16px;">Received from Other Warehouse</h3>
                     <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalReceived ?></span>
                 </div>
@@ -846,7 +845,7 @@ if ($selectedItemId > 0) {
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center" style="font-weight: 700; color: #15803D; white-space: nowrap;">
-                                    +<?= formatQty((float)$row['total_quantity']) ?>
+                                    <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
                                     <?php endif; ?>
@@ -896,10 +895,6 @@ if ($selectedItemId > 0) {
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                    <span class="section-badge-send">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-                        Outbound
-                    </span>
                     <h3 class="card-title" style="margin: 0; font-size: 16px;">Transferred to Other Warehouse</h3>
                     <span class="badge" style="background: #F1F5F9; color: #475569; font-weight: 700;"><?= $totalTransferred ?></span>
                 </div>
@@ -977,7 +972,7 @@ if ($selectedItemId > 0) {
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center" style="font-weight: 700; color: #1D4ED8; white-space: nowrap;">
-                                    -<?= formatQty((float)$row['total_quantity']) ?>
+                                    <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && !empty($row['first_unit'])): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($row['first_unit']) ?></small>
                                     <?php endif; ?>
@@ -1134,7 +1129,7 @@ if ($selectedItemId > 0) {
                                     <strong style="color: var(--panel-ink);"><?= formatQty($row['adjusted_quantity'] ?? 0) ?></strong> <small style="color: var(--gray);"><?= htmlspecialchars($row['unit'] ?? '') ?></small>
                                 </td>
                                 <td class="text-center" style="font-weight: 700; color: <?= $diff >= 0 ? '#15803D' : '#B91C1C' ?>;">
-                                    <?= ($diff >= 0 ? '+' : '') . formatQty($diff) ?>
+                                    <?= formatQty(abs($diff)) ?>
                                 </td>
                                 <td style="max-width: 200px; font-size: 12px; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($row['reason']) ?>">
                                     <?= htmlspecialchars($row['reason']) ?>
@@ -1230,7 +1225,7 @@ if ($selectedItemId > 0) {
                                     </span>
                                 </td>
                                 <td class="text-center" style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
-                                    -<?= formatQty($bp['quantity']) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
+                                    <?= formatQty(abs((float)$bp['quantity'])) ?> <small style="color: var(--gray);"><?= htmlspecialchars($bp['unit']) ?></small>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($bp['reason'] . (!empty($bp['cancellation_reason']) ? ' | Cancelled: ' . $bp['cancellation_reason'] : '')) ?>">
                                     <?= htmlspecialchars($bp['reason']) ?>
@@ -1246,9 +1241,9 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td class="text-center">
                                     <?php if ($bp['status'] === 'reported'): ?>
-                                        <span class="badge status-pending" style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">Pending QC</span>
+                                        <span class="badge status-pending" style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">Pending</span>
                                     <?php elseif ($bp['status'] === 'confirmed'): ?>
-                                        <span class="badge status-approved" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Confirmed Defect</span>
+                                        <span class="badge status-approved" style="background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;">Approved</span>
                                     <?php elseif ($bp['status'] === 'disposed'): ?>
                                         <span class="badge status-completed" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">Disposed</span>
                                     <?php else: ?>
@@ -1257,26 +1252,34 @@ if ($selectedItemId > 0) {
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
                                     <?php if ($bp['status'] === 'reported'): ?>
-                                        <form method="POST" action="index.php?tab=adjustment" style="display: inline; margin: 0;" onsubmit="return confirm('Confirm defect report <?= htmlspecialchars($bp['bad_product_number']) ?> as verified QC write-off?');">
-                                            <?= csrfField() ?>
-                                            <input type="hidden" name="action" value="confirm_bad_product">
-                                            <input type="hidden" name="active_tab" value="adjustment">
-                                            <input type="hidden" name="bad_product_id" value="<?= (int)$bp['bad_product_id'] ?>">
-                                            <button type="submit" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #1E40AF; border-color: #93C5FD; background: #EFF6FF;" title="Verify and confirm defect (QC Inspector)">
-                                                Confirm (QC)
+                                        <?php if ($isSuperAdmin): ?>
+                                            <form method="POST" action="index.php?tab=adjustment" style="display: inline; margin: 0;" onsubmit="return confirm('Approve bad product request <?= htmlspecialchars($bp['bad_product_number']) ?>?');">
+                                                <?= csrfField() ?>
+                                                <input type="hidden" name="action" value="confirm_bad_product">
+                                                <input type="hidden" name="active_tab" value="adjustment">
+                                                <input type="hidden" name="bad_product_id" value="<?= (int)$bp['bad_product_id'] ?>">
+                                                <button type="submit" class="btn btn-primary" style="height: 28px; padding: 0 11px; font-size: 11.5px;" title="Approve bad product request (Super Admin)">
+                                                    Approve
+                                                </button>
+                                            </form>
+                                            <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Cancel request and restore stock">
+                                                Cancel / Restore
                                             </button>
-                                        </form>
-                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #B91C1C; border-color: #FCA5A5;" onclick='openCancelBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Cancel write-off report and restore stock">
-                                            Cancel / Restore
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px;" onclick='openBadDetailModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                            Details
                                         </button>
                                     <?php elseif ($bp['status'] === 'confirmed'): ?>
                                         <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px; color: #7C3AED; border-color: #DDD6FE; background: #F5F3FF;" onclick='openDisposeBadModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Record physical disposal/destruction of defective goods">
                                             Dispose / Discard
                                         </button>
-                                    <?php elseif ($bp['status'] === 'disposed'): ?>
-                                        <span style="font-size: 11.5px; color: var(--gray); font-style: italic;">Disposed</span>
+                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px;" onclick='openBadDetailModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                            Details
+                                        </button>
                                     <?php else: ?>
-                                        <span style="font-size: 11.5px; color: var(--gray); font-style: italic;">Restored</span>
+                                        <button type="button" class="btn btn-secondary" style="height: 28px; padding: 0 9px; font-size: 11.5px;" onclick='openBadDetailModal(<?= json_encode($bp, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                            Details
+                                        </button>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -1366,18 +1369,16 @@ if ($selectedItemId > 0) {
 
             <a href="index.php?tab=stock_card&item_id=<?= $selectedItemId ?>" class="btn btn-secondary" style="height: 38px;">Reset</a>
         </form>
-    </div>
 
-    <!-- Compact Selected Item Header + 4-Card KPI Strip -->
-    <?php if ($selectedItem): ?>
-    <?php
-        $unitLabel = htmlspecialchars($selectedItem['unit']);
-        $reorderLvl = (float)($selectedItem['default_reorder_level'] ?? 0);
-        $isCardOut = $cardCurrentStock <= 0;
-        $isCardLow = !$isCardOut && $cardCurrentStock <= $reorderLvl;
-    ?>
-    <div class="card" style="padding: 16px 22px; margin-bottom: 18px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+        <!-- Compact Selected Item Header (inside the same card) -->
+        <?php if ($selectedItem): ?>
+        <?php
+            $unitLabel = htmlspecialchars($selectedItem['unit']);
+            $reorderLvl = (float)($selectedItem['default_reorder_level'] ?? 0);
+            $isCardOut = $cardCurrentStock <= 0;
+            $isCardLow = !$isCardOut && $cardCurrentStock <= $reorderLvl;
+        ?>
+        <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <span class="badge-type <?= $selectedItem['item_type'] === 'finished_good' ? 'type-fg' : 'type-raw' ?>">
                     <?= $selectedItem['item_type'] === 'finished_good' ? 'Finished Product' : 'Raw Material' ?>
@@ -1398,12 +1399,12 @@ if ($selectedItemId > 0) {
                 <?php elseif ($isCardLow): ?>
                     <span class="badge status-pending">Low Stock</span>
                 <?php else: ?>
-                    <span class="badge status-optimal">Optimal</span>
+                    <span class="badge status-optimal">In Stock</span>
                 <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <!-- Stock Card Ledger Table -->
     <div class="card">
@@ -1429,9 +1430,9 @@ if ($selectedItemId > 0) {
                         <th>Date &amp; Time</th>
                         <th>Reference / Document #</th>
                         <th>Movement Type</th>
-                        <th style="text-align: right;">Stock In (+)</th>
-                        <th style="text-align: right;">Stock Out (-)</th>
-                        <th style="text-align: right;">Balance After</th>
+                        <th style="text-align: center;">Stock In (+)</th>
+                        <th style="text-align: center;">Stock Out (-)</th>
+                        <th style="text-align: center;">Balance After</th>
                         <th>Notes / Reason</th>
                     </tr>
                 </thead>
@@ -1463,13 +1464,13 @@ if ($selectedItemId > 0) {
                                         <?= htmlspecialchars(str_replace('_', ' ', $m['movement_type'])) ?>
                                     </span>
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: #15803D;">
-                                    <?= $qtyIn > 0 ? ('+' . formatQty($qtyIn)) : '—' ?>
+                                <td style="text-align: center; font-weight: 700; color: #15803D;">
+                                    <?= $qtyIn > 0 ? formatQty($qtyIn) : '—' ?>
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: #B91C1C;">
-                                    <?= $qtyOut > 0 ? ('-' . formatQty($qtyOut)) : '—' ?>
+                                <td style="text-align: center; font-weight: 700; color: #B91C1C;">
+                                    <?= $qtyOut > 0 ? formatQty($qtyOut) : '—' ?>
                                 </td>
-                                <td style="text-align: right; font-weight: 800; font-size: 14px; color: var(--panel-ink); background: #F8FAFC;">
+                                <td style="text-align: center; font-weight: 800; font-size: 14px; color: var(--panel-ink); background: #F8FAFC;">
                                     <?= formatQty($m['balance_after'] ?? 0) ?>
                                 </td>
                                 <td style="font-size: 12px; color: var(--gray); max-width: 220px;" title="<?= htmlspecialchars($m['notes']) ?>">
@@ -2036,14 +2037,12 @@ if ($selectedItemId > 0) {
                 </p>
                 <div>
                     <label for="disposeMethodSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">Disposal Method / Action <span style="color: #DC2626;">*</span></label>
-                    <select id="disposeMethodSelect" class="select-filter" style="width: 100%; margin-bottom: 8px;" onchange="onDisposeMethodChange(this.value)">
+                    <select name="disposal_method" id="disposeMethodSelect" class="select-filter" style="width: 100%;" required>
                         <option value="Discarded / Poured Out (Drain Disposal)">Discarded / Poured Out (Drain Disposal)</option>
                         <option value="Glass Crushed &amp; Recycled">Glass Crushed &amp; Recycled</option>
                         <option value="Incinerated / Industrial Waste">Incinerated / Industrial Waste</option>
                         <option value="Returned to Supplier / Scrap Credit">Returned to Supplier / Scrap Credit</option>
-                        <option value="custom">Other (Specify below)...</option>
                     </select>
-                    <input type="text" name="disposal_method" id="disposeMethodInput" class="search-box" style="width: 100%;" value="Discarded / Poured Out (Drain Disposal)" placeholder="Enter disposal details..." required>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -2527,6 +2526,56 @@ function closeCancelBadModal() {
     document.getElementById('confirmCancelBadModal').style.display = 'none';
 }
 
+function openBadDetailModal(row) {
+    if (!row) return;
+    let modal = document.getElementById('badDetailModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'badDetailModal';
+        modal.className = 'modal-overlay';
+        modal.style.cssText = 'display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 9999; align-items: center; justify-content: center; padding: 16px;';
+        modal.onclick = function(e) { if (e.target === modal) closeBadDetailModal(); };
+        modal.innerHTML = `
+            <div class="modal-card" style="background: #fff; border-radius: 12px; max-width: 480px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15); overflow: hidden;">
+                <div class="modal-header" style="padding: 16px 20px; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3 class="card-title" style="margin: 0; font-size: 16px;">Bad Product Request</h3>
+                        <div id="bdRef" style="font-family: monospace; font-size: 12px; color: #64748B; font-weight: 700;"></div>
+                    </div>
+                    <button type="button" onclick="closeBadDetailModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748B;">&times;</button>
+                </div>
+                <div class="modal-body" style="padding: 18px 20px; font-size: 13px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F8FAFC; padding: 12px; border-radius: 8px; border: 1px solid #E2E8F0;">
+                        <div><span style="color: #64748B; font-size: 11px; display: block;">Item</span><strong id="bdItem"></strong></div>
+                        <div><span style="color: #64748B; font-size: 11px; display: block;">Quantity</span><strong id="bdQty" style="color: #B91C1C;"></strong></div>
+                        <div><span style="color: #64748B; font-size: 11px; display: block;">Reported By</span><span id="bdReportedBy"></span></div>
+                        <div><span style="color: #64748B; font-size: 11px; display: block;">Status</span><strong id="bdStatus"></strong></div>
+                    </div>
+                    <div>
+                        <span style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 4px;">Reason / Notes</span>
+                        <div id="bdReason" style="background: #FFFBEB; border: 1px solid #FDE68A; color: #78350F; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid #E2E8F0; display: flex; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeBadDetailModal()">Close</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+    const statusMap = { reported: 'Pending (Waiting Super Admin Approval)', confirmed: 'Approved', disposed: 'Disposed', cancelled: 'Cancelled' };
+    document.getElementById('bdRef').textContent = row.bad_product_number || '';
+    document.getElementById('bdItem').textContent = (row.item_name || '') + (row.item_code ? ' (' + row.item_code + ')' : '');
+    document.getElementById('bdQty').textContent = formatQty(row.quantity) + ' ' + (row.unit || '');
+    document.getElementById('bdReportedBy').textContent = row.reported_by_name || '—';
+    document.getElementById('bdStatus').textContent = statusMap[row.status] || row.status || '';
+    document.getElementById('bdReason').textContent = row.reason || 'No reason provided.';
+    modal.style.display = 'flex';
+}
+function closeBadDetailModal() {
+    const modal = document.getElementById('badDetailModal');
+    if (modal) modal.style.display = 'none';
+}
+
 function openDisposeBadModal(row) {
     if (!row) return;
     document.getElementById('disposeBadId').value = row.bad_product_id;
@@ -2536,16 +2585,6 @@ function openDisposeBadModal(row) {
 }
 function closeDisposeBadModal() {
     document.getElementById('disposeBadModal').style.display = 'none';
-}
-function onDisposeMethodChange(val) {
-    const input = document.getElementById('disposeMethodInput');
-    if (val === 'custom') {
-        input.value = '';
-        input.placeholder = 'Enter custom disposal details...';
-        input.focus();
-    } else {
-        input.value = val;
-    }
 }
 
 let currentDetailAdjRow = null;

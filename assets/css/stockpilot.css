@@ -778,14 +778,20 @@
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
+        .stats-grid-4 {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
         @media (max-width: 992px) {
-            .stats-grid-3 {
+            .stats-grid-3,
+            .stats-grid-4 {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
 
         @media (max-width: 640px) {
-            .stats-grid-3 {
+            .stats-grid-3,
+            .stats-grid-4 {
                 grid-template-columns: 1fr;
             }
         }
@@ -1461,9 +1467,7 @@
             .settings-modal-backdrop,
             .btn,
             .no-print,
-            footer,
-            .card:has(.report-filter-form),
-            .card:has(form) {
+            footer {
                 display: none !important;
             }
 
@@ -1928,41 +1932,6 @@
     flex: 1 1 0%;
     max-width: 48px;
     min-width: 36px;
-}
-
-/* Sortable Table Headers */
-th.sortable-th {
-    cursor: pointer;
-    user-select: none;
-    position: relative;
-    padding-right: 22px;
-    transition: color 0.15s ease, background-color 0.15s ease;
-}
-th.sortable-th:hover {
-    color: var(--amber-bright);
-    background-color: rgba(255, 255, 255, 0.08);
-}
-th.sortable-th::after {
-    content: '↕';
-    position: absolute;
-    right: 7px;
-    top: 50%;
-    transform: translateY(-50%);
-    opacity: 0.45;
-    font-size: 11px;
-    font-weight: 400;
-}
-th.sortable-th.sort-asc::after {
-    content: '↑';
-    opacity: 1;
-    color: var(--amber-bright);
-    font-weight: 700;
-}
-th.sortable-th.sort-desc::after {
-    content: '↓';
-    opacity: 1;
-    color: var(--amber-bright);
-    font-weight: 700;
 }
 
 /* Sticky Right-Most Action Column for Wide Tables */

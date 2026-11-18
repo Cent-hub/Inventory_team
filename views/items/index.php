@@ -20,7 +20,7 @@ $canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((strin
 // Handle Item Approval (Super Admin Only — BR-01)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'approve_item') {
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } elseif (!$isSuperAdmin) {
         $errorMessage = "Access denied: Only Super Admin can approve pending catalog items.";
     } else {
@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // Handle Item Rejection (Super Admin Only — BR-01)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reject_item') {
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } elseif (!$isSuperAdmin) {
         $errorMessage = "Access denied: Only Super Admin can reject pending catalog items.";
     } else {
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // Handle Existing Item Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item') {
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } elseif (!$canManageItems) {
         $errorMessage = "Access denied: Only Administrators can update catalog items.";
     } else {
@@ -346,21 +346,24 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Total Registered Items</span>
+            <span class="stat-label">Total Items</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <div class="stat-meta">
-            <?= $activeSKUs ?> active
-            <?php if ($pendingSKUs > 0): ?>
-                · <span style="color: #D97706; font-weight: 700;"><?= $pendingSKUs ?> pending</span>
-            <?php endif; ?>
-            <?php if ($inactiveSKUs > 0): ?>
-                · <?= $inactiveSKUs ?> inactive
-            <?php endif; ?>
-        </div>
+        <?php
+            $statusParts = [];
+            if ($pendingSKUs > 0) {
+                $statusParts[] = '<span style="color: #D97706; font-weight: 700;">' . $pendingSKUs . ' pending</span>';
+            }
+            if ($inactiveSKUs > 0) {
+                $statusParts[] = $inactiveSKUs . ' inactive';
+            }
+        ?>
+        <?php if (!empty($statusParts)): ?>
+            <div class="stat-meta"><?= implode(' · ', $statusParts) ?></div>
+        <?php endif; ?>
     </div>
 
     <div class="stat-card stat-gold">
@@ -371,7 +374,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
             </div>
         </div>
         <div class="stat-value"><?= $rawSKUs ?></div>
-        <div class="stat-meta">Inbounded only via Procurement</div>
+        <div class="stat-meta">Bought from suppliers</div>
     </div>
 
     <div class="stat-card">
@@ -382,18 +385,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
             </div>
         </div>
         <div class="stat-value"><?= $finishedSKUs ?></div>
-        <div class="stat-meta">Produced &amp; dispatched to Sales</div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-header">
-            <span class="stat-label">Units of Measure</span>
-            <div class="stat-icon-wrap" aria-hidden="true" style="color: #6D28D9; background: #F5F3FF;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><circle cx="12" cy="12" r="4"/></svg>
-            </div>
-        </div>
-        <div class="stat-value"><?= count($uoms) ?></div>
-        <div class="stat-meta">Standard: <?= implode(', ', array_column($uoms, 'uom_code')) ?></div>
+        <div class="stat-meta">Ready for sale</div>
     </div>
 </div>
 

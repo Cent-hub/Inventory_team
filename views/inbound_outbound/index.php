@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if (!validateCsrfToken()) {
-        $errorMessage = "Security validation failed: Invalid or expired CSRF token. Please refresh the page and try again.";
+        $errorMessage = "Your session expired. Please refresh the page and try again.";
     } else {
         $stockService = new StockService();
         $userId       = (int)($currentUser['id'] ?? 1);
@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $orderService = new OrderService($pdo);
                     $res = $orderService->cancelOutboundOrder($orderId, $userId, $reason, $currentUser);
-                    $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " was cancelled successfully. Reserved stock has been released back to available inventory.";
+                    $successMessage = "Order " . htmlspecialchars($res['order_number']) . " has been cancelled.";
                     break;
 
                 case 'cancel_stock_out':
@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new InvalidArgumentException("Invalid Stock Out transaction ID.");
                     }
                     $res = $stockService->cancelStockOut($stockOutId, $reason, $userId, $currentUser);
-                    $successMessage = "Outbound dispatch " . htmlspecialchars($res['transaction_number']) . " has been cancelled and stock restored to inventory.";
+                    $successMessage = "Order dispatch cancelled and stock returned to inventory.";
                     break;
 
                 // -------------------------------------------------------------
@@ -123,18 +123,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($hasSalable) {
                             $resSalable = $stockService->receiveInboundOrder($orderId, $salableToPost, $userId, $remarks ?: null, $currentUser, 'salable');
                             $orderNumber = $resSalable['order_number'];
-                            $parts[] = "Salable stock received (Ref: " . htmlspecialchars($resSalable['transaction_number']) . ")";
+                            $parts[] = "good items added to stock";
                         }
                         if ($hasDamaged) {
                             $resDamaged = $stockService->receiveInboundOrder($orderId, $damagedToPost, $userId, $remarks ?: null, $currentUser, 'damaged');
                             $orderNumber = $resDamaged['order_number'];
-                            $parts[] = "Damaged items routed to Bad Products Discard (Ref: " . htmlspecialchars($resDamaged['transaction_number']) . ")";
+                            $parts[] = "damaged items recorded in Bad Products";
                         }
-                        $successMessage = "Inbound order " . htmlspecialchars($orderNumber) . " processed: " . implode('; ', $parts) . ".";
+                        $successMessage = "Order " . htmlspecialchars($orderNumber) . " received: " . implode(' and ', $parts) . ".";
                     } else {
                         $res = $stockService->receiveInboundOrder($orderId, $receivedQtys, $userId, $remarks ?: null, $currentUser, $condition);
-                        $successMessage = "Inbound order " . htmlspecialchars($res['order_number']) . " received successfully! " . 
-                            ($res['condition'] === 'damaged' ? "Damaged items were routed to Bad Products Discard." : "Transaction ref: " . htmlspecialchars($res['transaction_number']));
+                        $successMessage = "Order " . htmlspecialchars($res['order_number']) . " received! " . 
+                            ($res['condition'] === 'damaged' ? "Damaged items were added to Bad Products." : "Items added to stock.");
                     }
                     break;
 
@@ -150,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new InvalidArgumentException("Invalid outbound order ID.");
                     }
                     $res = $stockService->dispatchOutboundOrder($orderId, $dispatchedQtys, $userId, $remarks ?: null, $currentUser);
-                    $successMessage = "Outbound order " . htmlspecialchars($res['order_number']) . " dispatched successfully! Transaction ref: " . htmlspecialchars($res['transaction_number']);
+                    $successMessage = "Order " . htmlspecialchars($res['order_number']) . " has been approved and dispatched!";
                     break;
 
                 default:
@@ -185,6 +185,7 @@ $stmtIn = $pdo->prepare("
         COALESCE(
             NULLIF(sm.source_type, ''),
             CASE 
+                WHEN sm.remarks LIKE '%CUSTOMER_RETURN%' OR sm.remarks LIKE '%RMA%' OR sm.reference_no LIKE 'RMA-%' OR sm.reference_number LIKE 'RMA-%' THEN 'CUSTOMER_RETURN'
                 WHEN i.type IN ('finished_good', 'Finished Good') OR sm.reference_type = 'PROD_RECEIPT' OR sm.remarks LIKE '%Finished Goods%' THEN 'PRODUCTION_RECEIPT'
                 WHEN sm.remarks LIKE '%PO%' OR sm.remarks LIKE '%PURCHASE%' THEN 'PURCHASE_ORDER'
                 ELSE 'PURCHASE_ORDER'
@@ -431,6 +432,15 @@ foreach ($stmtOutLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
 
 $pendingInboundCount  = count($pendingInboundOrders);
 $pendingOutboundCount = count($pendingOutboundOrders);
+$stmtDamagedRma = $pdo->prepare("
+    SELECT COUNT(*) FROM bad_products 
+    WHERE warehouse_id = :wid 
+      AND status != 'cancelled' 
+      AND (reason LIKE '%Customer Return%' OR reason LIKE '%RMA%')
+");
+$stmtDamagedRma->execute([':wid' => $currentWarehouseId]);
+$damagedRmaCount = (int)$stmtDamagedRma->fetchColumn();
+$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN')) + $damagedRmaCount;
 ?>
 
 <!-- Page Header -->
@@ -504,10 +514,10 @@ $pendingOutboundCount = count($pendingOutboundOrders);
 <!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
     <!-- Inbound KPI Cards -->
-    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-label">Pending Inbounds</span>
+                <span class="stat-label">Waiting to Receive</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #D97706; background: #FEF3C7;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"/>
@@ -516,12 +526,12 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                 </div>
             </div>
             <div class="stat-value"><?= $pendingInboundCount ?></div>
-            <div class="stat-meta">Waiting to be received</div>
+            <div class="stat-meta">Deliveries not yet received</div>
         </div>
 
         <div class="stat-card stat-gold">
             <div class="stat-header">
-                <span class="stat-label">Procurement (Raw Materials)</span>
+                <span class="stat-label">From Suppliers</span>
                 <div class="stat-icon-wrap" aria-hidden="true">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="12 2 2 7 12 12 22 7 12 2"/>
@@ -531,12 +541,12 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                 </div>
             </div>
             <div class="stat-value"><?= $procurementInbounds ?></div>
-            <div class="stat-meta">Raw materials received from suppliers</div>
+            <div class="stat-meta">Raw materials delivered</div>
         </div>
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-label">Production (Finished Goods)</span>
+                <span class="stat-label">From Production</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: var(--accent); background: var(--accent-light);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m16 16 2 2 4-4"/>
@@ -545,7 +555,21 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                 </div>
             </div>
             <div class="stat-value"><?= $productionInbounds ?></div>
-            <div class="stat-meta">Finished goods received from production</div>
+            <div class="stat-meta">Finished goods made</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <span class="stat-label">Customer Returns</span>
+                <div class="stat-icon-wrap" aria-hidden="true" style="color: #7C3AED; background: #F3E8FF;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 14 4 9 9 4"/>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="stat-value"><?= $customerReturnsCount ?></div>
+            <div class="stat-meta">Items sent back by buyers</div>
         </div>
     </div>
 
@@ -559,13 +583,32 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <h2 class="card-title" style="margin: 0;">Incoming Shipments to Receive</h2>
                 </div>
                 <p class="card-desc" style="margin: 4px 0 0 0;">
-                    Select a pending Purchase Order or Production Batch below to check and add items to stock.
+                    Select a pending Purchase Order, Production Batch, or Return below to check and add items to stock.
                 </p>
+            </div>
+            <div class="filter-group">
+                <div class="search-wrap">
+                    <span class="search-icon" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                    </span>
+                    <input type="text" id="pendingInboundSearch" class="search-box" aria-label="Filter pending inbound shipments" placeholder="Filter order #, supplier, item..." oninput="filterPendingInboundTable()">
+                </div>
+
+                <select id="pendingInboundFilter" class="select-filter" aria-label="Filter pending inbound by team and action" onchange="filterPendingInboundTable()">
+                    <option value="">All Incoming</option>
+                    <option value="PURCHASE_ORDER">Receiving Raw Materials (Procurement)</option>
+                    <option value="PRODUCTION_RECEIPT">Receiving Finished Goods (Production)</option>
+                    <option value="PRODUCTION_RETURN">Receiving Raw Material Returns (Production)</option>
+                    <option value="CUSTOMER_RETURN">Receiving Returns (Sales)</option>
+                </select>
             </div>
         </div>
 
         <div class="table-responsive">
-            <table>
+            <table id="pendingInboundTable">
                 <thead>
                     <tr>
                         <th>Order / Tracking #</th>
@@ -588,15 +631,19 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                         <?php foreach ($pendingInboundOrders as $pIn): 
                             $lines = $inboundOrderLines[(int)$pIn['inbound_order_id']] ?? [];
                         ?>
-                            <tr>
+                            <tr data-source="<?= htmlspecialchars($pIn['source_type']) ?>">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                     <?= htmlspecialchars($pIn['order_number']) ?>
                                 </td>
                                 <td>
                                     <?php if ($pIn['source_type'] === 'PURCHASE_ORDER'): ?>
                                         <span class="badge-source-procurement">Purchase Order</span>
-                                    <?php elseif ($pIn['source_type'] === 'PRODUCTION_RECEIPT' || $pIn['source_type'] === 'PRODUCTION_RETURN'): ?>
+                                    <?php elseif ($pIn['source_type'] === 'PRODUCTION_RECEIPT'): ?>
                                         <span class="badge-source-production">Production Batch</span>
+                                    <?php elseif ($pIn['source_type'] === 'PRODUCTION_RETURN'): ?>
+                                        <span class="badge" style="background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A;">Production Return (RM)</span>
+                                    <?php elseif ($pIn['source_type'] === 'CUSTOMER_RETURN'): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (Sales)</span>
                                     <?php else: ?>
                                         <span class="badge-source-manual"><?= htmlspecialchars($pIn['source_type']) ?></span>
                                     <?php endif; ?>
@@ -669,8 +716,10 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                 <!-- Source Filter -->
                 <select id="sourceTypeFilter" class="select-filter" aria-label="Filter by inbound source" onchange="filterStockInTable()">
                     <option value="">All Sources</option>
-                    <option value="PURCHASE_ORDER">Procurement (Purchase Orders)</option>
-                    <option value="PRODUCTION_RECEIPT">Production (Work Orders)</option>
+                    <option value="PURCHASE_ORDER">Receiving Raw Materials (Procurement)</option>
+                    <option value="PRODUCTION_RECEIPT">Receiving Finished Goods (Production)</option>
+                    <option value="PRODUCTION_RETURN">Receiving Raw Material Returns (Production)</option>
+                    <option value="CUSTOMER_RETURN">Receiving Returns (Sales)</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -679,10 +728,6 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <option value="raw_material">Raw Materials</option>
                     <option value="finished_good">Finished Goods</option>
                 </select>
-
-                <button type="button" class="btn btn-secondary" onclick="resetStockInFilters()">
-                    Reset
-                </button>
 
             </div>
         </div>
@@ -716,14 +761,14 @@ $pendingOutboundCount = count($pendingOutboundOrders);
 
                             // Derive item classification
                             $itemType = 'raw_material';
-                            if (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)) {
+                            if ($row['source_type'] === 'PRODUCTION_RECEIPT' || $row['source_type'] === 'CUSTOMER_RETURN') {
                                 $itemType = 'finished_good';
                             } elseif (!empty($lines)) {
                                 $types = array_unique(array_column($lines, 'item_type'));
                                 $itemType = count($types) === 1 ? strtolower(str_replace(' ', '_', $types[0])) : 'mixed';
                             }
                         ?>
-                            <tr data-source="<?= htmlspecialchars($row['source_type'] === 'PRODUCTION_RETURN' ? 'PRODUCTION_RECEIPT' : $row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
+                            <tr data-source="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
                                 <!-- Source -->
                                 <td>
                                     <?php if ($row['source_type'] === 'PURCHASE_ORDER'): ?>
@@ -731,10 +776,18 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
                                             Procurement
                                         </span>
-                                    <?php elseif (in_array($row['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)): ?>
+                                    <?php elseif ($row['source_type'] === 'PRODUCTION_RECEIPT'): ?>
                                         <span class="badge-source-production">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
                                             Production
+                                        </span>
+                                    <?php elseif ($row['source_type'] === 'PRODUCTION_RETURN'): ?>
+                                        <span class="badge" style="background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A;">
+                                            Production Return (RM)
+                                        </span>
+                                    <?php elseif ($row['source_type'] === 'CUSTOMER_RETURN'): ?>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">
+                                            Customer Return
                                         </span>
                                     <?php else: ?>
                                         <span class="badge-source-manual">
@@ -771,7 +824,7 @@ $pendingOutboundCount = count($pendingOutboundOrders);
 
                                 <!-- Quantity -->
                                 <td class="text-center" style="font-weight: 700; color: #15803D; white-space: nowrap;">
-                                    +<?= formatQty((float)$row['total_quantity']) ?>
+                                    <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
                                     <?php endif; ?>
@@ -943,13 +996,30 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <h2 class="card-title" style="margin: 0;">Pending Outbound Orders</h2>
                 </div>
                 <p class="card-desc" style="margin: 4px 0 0 0;">
-                    Select a pending Sales Order or Material Requisition below to pack and ship.
+                    Select a pending Sales Order or Raw Material Request below to pack and ship.
                 </p>
+            </div>
+            <div class="filter-group">
+                <div class="search-wrap">
+                    <span class="search-icon" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                    </span>
+                    <input type="text" id="pendingOutboundSearch" class="search-box" aria-label="Filter pending outbound orders" placeholder="Filter order #, customer, item..." oninput="filterPendingOutboundTable()">
+                </div>
+
+                <select id="pendingOutboundFilter" class="select-filter" aria-label="Filter pending outbound by team and action" onchange="filterPendingOutboundTable()">
+                    <option value="">All Pending Outbound</option>
+                    <option value="SALES_DELIVERY">Dispatching Finished Goods (Sales)</option>
+                    <option value="MATERIAL_REQUEST">Dispatching Raw Materials (Production)</option>
+                </select>
             </div>
         </div>
 
         <div class="table-responsive">
-            <table>
+            <table id="pendingOutboundTable">
                 <thead>
                     <tr>
                         <th>Order / Requisition #</th>
@@ -972,7 +1042,7 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                         <?php foreach ($pendingOutboundOrders as $pOut): 
                             $lines = $outboundOrderLines[(int)$pOut['outbound_order_id']] ?? [];
                         ?>
-                            <tr>
+                            <tr data-source="<?= htmlspecialchars($pOut['source_type']) ?>">
                                 <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                     <?= htmlspecialchars($pOut['order_number']) ?>
                                 </td>
@@ -980,7 +1050,7 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                                     <?php if ($pOut['source_type'] === 'SALES_DELIVERY'): ?>
                                         <span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>
                                     <?php elseif ($pOut['source_type'] === 'MATERIAL_REQUEST'): ?>
-                                        <span class="badge-source-production">Material Requisition</span>
+                                        <span class="badge-source-production">Raw Material Request</span>
                                     <?php else: ?>
                                         <span class="badge-source-manual"><?= htmlspecialchars($pOut['source_type']) ?></span>
                                     <?php endif; ?>
@@ -1056,8 +1126,8 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                 <!-- Destination Filter -->
                 <select id="stockOutDestFilter" class="select-filter" aria-label="Filter by outbound destination" onchange="filterStockOutTable()">
                     <option value="">All Destinations</option>
-                    <option value="SALES_DELIVERY">Sales (Sales Deliveries)</option>
-                    <option value="MATERIAL_REQUEST">Production (Material Requests)</option>
+                    <option value="SALES_DELIVERY">Dispatching Finished Goods (Sales)</option>
+                    <option value="MATERIAL_REQUEST">Dispatching Raw Materials (Production)</option>
                 </select>
 
                 <!-- Item Type Filter -->
@@ -1066,11 +1136,6 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <option value="finished_good">Finished Goods</option>
                     <option value="raw_material">Raw Materials</option>
                 </select>
-
-                <button type="button" class="btn btn-secondary" onclick="resetStockOutFilters()">
-                    Reset
-                </button>
-
             </div>
         </div>
 
@@ -1158,7 +1223,7 @@ $pendingOutboundCount = count($pendingOutboundOrders);
 
                                 <!-- Quantity -->
                                 <td class="text-center" style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
-                                    -<?= formatQty((float)$row['total_quantity']) ?>
+                                    <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <small style="color: var(--gray); font-weight: normal;"><?= htmlspecialchars($firstLine['unit']) ?></small>
                                     <?php endif; ?>
@@ -1403,13 +1468,13 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <div class="table-responsive" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
                         <table style="width: 100%; font-size: 12.5px; margin: 0;">
                             <thead>
-                                <tr style="background: #F8FAFC;">
+                                <tr>
                                     <th>Item Code &amp; Name</th>
                                     <th style="text-align: right;">Expected</th>
                                     <th style="text-align: right;">Received</th>
                                     <th style="text-align: right;">Remaining</th>
                                     <th id="receiveQtyHeaderCol" style="width: 130px; text-align: right;">Receive Qty</th>
-                                    <th id="receiveDamagedHeaderCol" style="width: 120px; text-align: right; display: none; color: #B91C1C;">Damaged Qty</th>
+                                    <th id="receiveDamagedHeaderCol" style="width: 120px; text-align: right; display: none; color: #FCA5A5;">Damaged Qty</th>
                                 </tr>
                             </thead>
                             <tbody id="receiveOrderLinesTbody">
@@ -1485,7 +1550,7 @@ $pendingOutboundCount = count($pendingOutboundOrders);
                     <div class="table-responsive" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
                         <table style="width: 100%; font-size: 12.5px; margin: 0;">
                             <thead>
-                                <tr style="background: #F8FAFC;">
+                                <tr>
                                     <th>Item Code &amp; Name</th>
                                     <th style="text-align: right;">Available Stock</th>
                                     <th style="text-align: right;">Requested</th>
@@ -1684,6 +1749,50 @@ function resetStockInFilters() {
     filterStockInTable();
 }
 
+function filterPendingInboundTable() {
+    const term = (document.getElementById('pendingInboundSearch')?.value || '').toLowerCase().trim();
+    const sourceFilter = document.getElementById('pendingInboundFilter')?.value || '';
+    const table = document.getElementById('pendingInboundTable');
+    if (!table) return;
+    table.querySelectorAll('tbody tr').forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
+        const text = row.textContent.toLowerCase();
+        const rowSource = row.getAttribute('data-source') || '';
+        const matches = text.includes(term) && (!sourceFilter || rowSource === sourceFilter);
+        row.style.display = matches ? '' : 'none';
+    });
+}
+
+function resetPendingInboundFilters() {
+    const search = document.getElementById('pendingInboundSearch');
+    const source = document.getElementById('pendingInboundFilter');
+    if (search) search.value = '';
+    if (source) source.value = '';
+    filterPendingInboundTable();
+}
+
+function filterPendingOutboundTable() {
+    const term = (document.getElementById('pendingOutboundSearch')?.value || '').toLowerCase().trim();
+    const sourceFilter = document.getElementById('pendingOutboundFilter')?.value || '';
+    const table = document.getElementById('pendingOutboundTable');
+    if (!table) return;
+    table.querySelectorAll('tbody tr').forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
+        const text = row.textContent.toLowerCase();
+        const rowSource = row.getAttribute('data-source') || '';
+        const matches = text.includes(term) && (!sourceFilter || rowSource === sourceFilter);
+        row.style.display = matches ? '' : 'none';
+    });
+}
+
+function resetPendingOutboundFilters() {
+    const search = document.getElementById('pendingOutboundSearch');
+    const source = document.getElementById('pendingOutboundFilter');
+    if (search) search.value = '';
+    if (source) source.value = '';
+    filterPendingOutboundTable();
+}
+
 // =============================================================================
 // SECTION 2: OUTBOUND SCRIPTS
 // =============================================================================
@@ -1866,8 +1975,12 @@ function openReceiveOrderModal(id) {
     let badgeHtml = '';
     if (order.source_type === 'PURCHASE_ORDER') {
         badgeHtml = '<span class="badge-source-procurement">Purchase Order</span>';
-    } else if (order.source_type === 'PRODUCTION_RECEIPT' || order.source_type === 'PRODUCTION_RETURN') {
+    } else if (order.source_type === 'PRODUCTION_RECEIPT') {
         badgeHtml = '<span class="badge-source-production">Production Batch</span>';
+    } else if (order.source_type === 'PRODUCTION_RETURN') {
+        badgeHtml = '<span class="badge" style="background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A;">Production Return (RM)</span>';
+    } else if (order.source_type === 'CUSTOMER_RETURN') {
+        badgeHtml = '<span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (Sales)</span>';
     } else {
         badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
     }
@@ -1880,11 +1993,19 @@ function openReceiveOrderModal(id) {
     const condHint   = document.getElementById('recConditionHint');
     const submitBtn  = document.getElementById('btnConfirmReceive');
 
-    condSelect.value = 'salable';
-    condHint.textContent = 'Salable items will increase current inventory balance.';
-    submitBtn.textContent = 'Confirm & Receive Shipment';
-    submitBtn.style.background = '#15803D';
-    submitBtn.style.borderColor = '#15803D';
+    if (order.source_type === 'CUSTOMER_RETURN') {
+        condSelect.value = 'salable';
+        condHint.textContent = 'Customer returns: Select whether returned items passed QA for restock or should be discarded.';
+        submitBtn.textContent = 'Confirm & Receive Return';
+        submitBtn.style.background = '#6D28D9';
+        submitBtn.style.borderColor = '#6D28D9';
+    } else {
+        condSelect.value = 'salable';
+        condHint.textContent = 'Salable items will increase current inventory balance.';
+        submitBtn.textContent = 'Confirm & Receive Shipment';
+        submitBtn.style.background = '#15803D';
+        submitBtn.style.borderColor = '#15803D';
+    }
 
     const tbody = document.getElementById('receiveOrderLinesTbody');
     tbody.innerHTML = '';
@@ -1998,7 +2119,7 @@ function openDispatchOrderModal(id) {
     if (order.source_type === 'SALES_DELIVERY') {
         badgeHtml = '<span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>';
     } else if (order.source_type === 'MATERIAL_REQUEST') {
-        badgeHtml = '<span class="badge-source-production">Material Requisition</span>';
+        badgeHtml = '<span class="badge-source-production">Raw Material Request</span>';
     } else {
         badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
     }

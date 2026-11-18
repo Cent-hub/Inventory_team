@@ -25,6 +25,7 @@ $stmt = $pdo->prepare("
         i.item_id,
         i.code AS item_code,
         i.name AS item_name,
+        i.status AS item_status,
         :cat_name AS category_name,
         i.unit,
         COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level) AS default_reorder_level,
@@ -54,7 +55,7 @@ $stmt = $pdo->prepare("
             GROUP BY item_id
         ) latest_m ON sm.movement_id = latest_m.max_m_id
     ) latest_mov ON latest_mov.item_id = i.item_id
-    WHERE (i.type = :item_type OR i.type = :item_type_title) AND (LOWER(i.status) = 'active')
+    WHERE (i.type = :item_type OR i.type = :item_type_title) AND (LOWER(i.status) IN ('active', 'inactive'))
     ORDER BY i.name ASC, w.code ASC
 ");
 $titleType = ($itemType === 'raw_material') ? 'Raw Material' : 'Finished Good';
@@ -70,11 +71,18 @@ $stmt->execute([
 $categoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Metrics scoped strictly to assigned warehouse
-$totalSKUs = count($categoryItems);
-$totalQty  = 0.0;
+$totalSKUs     = 0;
+$inactiveCount = 0;
+$totalQty      = 0.0;
 $lowStockCount = 0;
 
 foreach ($categoryItems as $row) {
+    $isInactiveRow = (strtolower((string)($row['item_status'] ?? 'active')) === 'inactive');
+    if ($isInactiveRow) {
+        $inactiveCount++;
+        continue;
+    }
+    $totalSKUs++;
     $qty = (float)($row['current_stock'] ?? 0);
     $reorder = (float)($row['default_reorder_level'] ?? 0);
     $totalQty += $qty;
@@ -96,7 +104,7 @@ foreach ($categoryItems as $row) {
 </div>
 
 <!-- KPI Summary Cards -->
-<div class="stats-grid">
+<div class="stats-grid stats-grid-4">
     <div class="<?= htmlspecialchars($cfg['stat_card_class'] ?? 'stat-card') ?>">
         <div class="stat-header">
             <span class="stat-label"><?= htmlspecialchars($categoryLabel) ?></span>
@@ -118,7 +126,7 @@ foreach ($categoryItems as $row) {
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <div class="stat-meta">Active catalog items</div>
+        <div class="stat-meta">Total active items</div>
     </div>
 
     <div class="stat-card">
@@ -132,7 +140,7 @@ foreach ($categoryItems as $row) {
             </div>
         </div>
         <div class="stat-value"><?= formatQty($totalQty) ?></div>
-        <div class="stat-meta">Stock currently in warehouses</div>
+        <div class="stat-meta">Total quantity on hand</div>
     </div>
 
     <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>">
@@ -149,6 +157,20 @@ foreach ($categoryItems as $row) {
         <div class="stat-value"><?= $lowStockCount ?></div>
         <div class="stat-meta"><?= $lowStockCount > 0 ? htmlspecialchars($cfg['alert_meta_active'] ?? '') : htmlspecialchars($cfg['alert_meta_idle'] ?? '') ?></div>
     </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Inactive Products</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #64748B; background: #F1F5F9;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+            </div>
+        </div>
+        <div class="stat-value"><?= $inactiveCount ?></div>
+        <div class="stat-meta">Not used for 2+ months</div>
+    </div>
 </div>
 
 <!-- Main Inventory Card -->
@@ -159,6 +181,11 @@ foreach ($categoryItems as $row) {
             <p class="card-desc"><?= htmlspecialchars($cfg['card_desc'] ?? '') ?></p>
         </div>
         <div class="filter-group">
+            <?php
+                $searchElemId = htmlspecialchars($cfg['search_id'] ?? 'invSearch');
+                $tableElemId  = htmlspecialchars($cfg['table_id'] ?? 'invTable');
+                $statusElemId = $searchElemId . 'Status';
+            ?>
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -166,8 +193,13 @@ foreach ($categoryItems as $row) {
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                 </span>
-                <input type="text" id="<?= htmlspecialchars($cfg['search_id'] ?? 'invSearch') ?>" class="search-box" aria-label="Filter items" placeholder="<?= htmlspecialchars($cfg['search_placeholder'] ?? 'Filter items...') ?>" oninput="filterTable('<?= htmlspecialchars($cfg['search_id'] ?? 'invSearch') ?>', '<?= htmlspecialchars($cfg['table_id'] ?? 'invTable') ?>')">
+                <input type="text" id="<?= $searchElemId ?>" class="search-box" aria-label="Filter items" placeholder="<?= htmlspecialchars($cfg['search_placeholder'] ?? 'Filter items...') ?>" oninput="filterCategoryInventoryTable('<?= $searchElemId ?>', '<?= $statusElemId ?>', '<?= $tableElemId ?>')">
             </div>
+            <select id="<?= $statusElemId ?>" class="select-filter" aria-label="Filter by product status" onchange="filterCategoryInventoryTable('<?= $searchElemId ?>', '<?= $statusElemId ?>', '<?= $tableElemId ?>')">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
         </div>
     </div>
 
@@ -193,10 +225,11 @@ foreach ($categoryItems as $row) {
                 <?php else: ?>
                     <?php foreach ($categoryItems as $item): ?>
                         <?php 
+                            $isInactive  = (strtolower((string)($item['item_status'] ?? 'active')) === 'inactive');
                             $isAvailable = (float)$item['current_stock'] > 0;
                             $isReorder   = (float)$item['default_reorder_level'] > 0 && (float)$item['current_stock'] <= (float)$item['default_reorder_level'];
                         ?>
-                        <tr data-warehouse="<?= htmlspecialchars($item['warehouse_code'] ?? '') ?>">
+                        <tr data-warehouse="<?= htmlspecialchars($item['warehouse_code'] ?? '') ?>" data-status="<?= $isInactive ? 'inactive' : 'active' ?>">
                             <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                 <?= htmlspecialchars($item['item_code']) ?>
                             </td>
@@ -223,21 +256,23 @@ foreach ($categoryItems as $row) {
                                         <small style="color: #15803D;">(+<?= formatQty($item['latest_qty']) ?>)</small>
                                     <?php endif; ?>
                                 <?php elseif ($isAvailable): ?>
-                                    <span style="color: var(--gray);">Initial Stock</span>
+                                    <span style="color: var(--gray);">Starting stock</span>
                                 <?php else: ?>
-                                    <span style="color: var(--gray);">No Receipts Yet</span>
+                                    <span style="color: var(--gray);">None</span>
                                 <?php endif; ?>
                             </td>
                             <td style="font-size: 12px; color: var(--gray); white-space: nowrap;">
-                                <?= !empty($item['latest_date']) ? date('M d, Y', strtotime($item['latest_date'])) : ($isAvailable ? 'System Setup' : '—') ?>
+                                <?= !empty($item['latest_date']) ? date('M d, Y', strtotime($item['latest_date'])) : '—' ?>
                             </td>
                             <td class="text-center">
-                                <?php if (!$isAvailable): ?>
+                                <?php if ($isInactive): ?>
+                                    <span class="badge status-cancelled">Inactive</span>
+                                <?php elseif (!$isAvailable): ?>
                                     <span class="badge status-alert">Out of Stock</span>
                                 <?php elseif ($isReorder): ?>
                                     <span class="badge status-pending">Low Stock</span>
                                 <?php else: ?>
-                                    <span class="badge status-optimal">Optimal</span>
+                                    <span class="badge status-optimal">In Stock</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -247,5 +282,23 @@ foreach ($categoryItems as $row) {
         </table>
     </div>
 </div>
+
+<script>
+function filterCategoryInventoryTable(searchId, statusId, tableId) {
+    const query = (document.getElementById(searchId)?.value || '').toLowerCase().trim();
+    const statusFilter = (document.getElementById(statusId)?.value || '').toLowerCase().trim();
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
+        const text = (row.textContent || '').toLowerCase();
+        const rowStatus = (row.getAttribute('data-status') || '').toLowerCase();
+        const matchesQuery = !query || text.includes(query);
+        const matchesStatus = !statusFilter || rowStatus === statusFilter;
+        row.style.display = (matchesQuery && matchesStatus) ? '' : 'none';
+    });
+}
+</script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>
