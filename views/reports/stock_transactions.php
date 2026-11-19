@@ -1,14 +1,8 @@
 <?php
-/**
- * View: Stock Transaction Reports (Unified Transaction Ledger Hub)
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Unifies 5 core inventory transaction and movement reports into one page with 5 tabs:
- * 1. Stock Movement Ledger
- * 2. Inbound Stock Receipts
- * 3. Outbound Stock Dispatches
- * 4. Inter-Branch Stock Transfers
- * 5. Stock Adjustments & Variances
+/*
+ * Stock transaction reports page. Shows detailed ledgers for stock movements,
+ * inbound receipts, outbound dispatches, warehouse transfers, and stock
+ * adjustments.
  */
 
 $pageTitle   = 'Stock Transaction Reports — InventoryTeam';
@@ -19,10 +13,8 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// Fetch Warehouses
 $warehouses = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name FROM warehouses WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Filters (FIX-020)
 $datePreset   = isset($_GET['preset']) ? trim($_GET['preset']) : '';
 $rawStartDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
 $rawEndDate   = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
@@ -56,7 +48,6 @@ $limitParam   = $_GET['limit'] ?? '';
 $isAll        = ($limitParam === 'all' || (isset($_GET['export']) && $_GET['export'] === 'csv' && empty($_GET['limit'])));
 $limitVal     = $isAll ? 0 : max(10, min(1000, (int)($limitParam ?: 100)));
 
-// Active Tab Mapping
 $tabMap = [
     'movements'        => 'movements',
     'stock_movements'  => 'movements',
@@ -73,11 +64,6 @@ $tabMap = [
 $requestedTab = $_GET['tab'] ?? $_GET['type'] ?? 'movements';
 $activeTab = $tabMap[$requestedTab] ?? 'movements';
 
-// =============================================================================
-// DATA QUERIES: 5 TRANSACTION LEDGERS
-// =============================================================================
-
-// 1. Stock Movement Ledger
 $sqlM = "
     WITH movement_base AS (
         SELECT 
@@ -141,7 +127,6 @@ $stmtM = $pdo->prepare($sqlM);
 $stmtM->execute($paramsM);
 $movementData = $stmtM->fetchAll(PDO::FETCH_ASSOC);
 
-// 2. Inbound Stock Receipts
 $sqlIn = "
     SELECT 
         sm.movement_id AS stock_in_id,
@@ -198,7 +183,6 @@ $stmtIn = $pdo->prepare($sqlIn);
 $stmtIn->execute($paramsIn);
 $inboundData = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Outbound Stock Dispatches
 $sqlOut = "
     SELECT 
         sm.movement_id AS stock_out_id,
@@ -249,7 +233,6 @@ $stmtOut = $pdo->prepare($sqlOut);
 $stmtOut->execute($paramsOut);
 $outboundData = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
 
-// 4. Inter-Branch Stock Transfers
 $sqlTr = "
     SELECT 
         st.transfer_id AS stock_transfer_id,
@@ -286,7 +269,6 @@ $stmtTr = $pdo->prepare($sqlTr);
 $stmtTr->execute($paramsTr);
 $transferData = $stmtTr->fetchAll(PDO::FETCH_ASSOC);
 
-// 5. Stock Adjustments & Variances
 $sqlAdj = "
     SELECT 
         sa.adjustment_id AS stock_adjustment_id,
@@ -325,7 +307,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 
-<!-- Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Transaction Reports</h1>
@@ -338,7 +319,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Print-Only Official Document Header -->
 <div class="print-banner">
     <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div>
@@ -353,9 +333,6 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- NAVIGATION SWITCHER: 5 TABS                                               -->
-<!-- ========================================================================= -->
 <div class="stock-ops-nav-wrapper">
     <div class="stock-ops-nav-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -432,7 +409,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         <form method="GET" action="stock_transactions.php" id="reportFilterForm" class="report-filter-form no-print" onsubmit="event.preventDefault(); applyTxnFiltersSmooth(); return false;" style="display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap;">
             <input type="hidden" name="tab" id="filterTabInput" value="<?= htmlspecialchars($activeTab) ?>">
 
-            <!-- Search -->
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -443,7 +419,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                 <input type="text" name="search" class="search-box" aria-label="Search transaction records" placeholder="Search reference, item, operator..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveTransactionTable()" onkeydown="if(event.key==='Enter'){event.preventDefault();filterActiveTransactionTable();}">
             </div>
 
-            <!-- Date Filter Dropdown -->
             <select name="preset" id="datePresetSelect" class="select-filter" aria-label="Date range preset" onchange="onTxnPresetChange(this.value)">
                 <option value="today" <?= $datePreset === 'today' ? 'selected' : '' ?>>Today</option>
                 <option value="this_month" <?= $datePreset === 'this_month' ? 'selected' : '' ?>>This Month</option>
@@ -451,7 +426,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                 <option value="custom" <?= $datePreset === 'custom' ? 'selected' : '' ?>>Custom Date</option>
             </select>
 
-            <!-- Optional Date Range (inline next to dropdown when Custom Date is selected) -->
             <div id="customDateRangeWrap" style="display: <?= $datePreset === 'custom' ? 'flex' : 'none' ?>; align-items: center; gap: 6px;">
                 <span style="font-size: 12px; color: var(--gray); font-weight: 500;">From</span>
                 <input type="date" name="start_date" id="txnStartDate" aria-label="Start date" class="select-filter" style="width: 132px; padding: 0 8px;" value="<?= htmlspecialchars($startDate) ?>" onchange="applyTxnFiltersSmooth()">
@@ -459,7 +433,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                 <input type="date" name="end_date" id="txnEndDate" aria-label="End date" class="select-filter" style="width: 132px; padding: 0 8px;" value="<?= htmlspecialchars($endDate) ?>" onchange="applyTxnFiltersSmooth()">
             </div>
 
-            <!-- Buttons -->
             <div style="display: flex; gap: 8px;">
                 <button type="button" class="btn btn-secondary" style="height: 38px; white-space: nowrap;" onclick="exportReportCsv()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -481,9 +454,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         </form>
     </div>
 
-<!-- ######################################################################### -->
-<!-- SECTION 1: STOCK MOVEMENT LEDGER                                          -->
-<!-- ######################################################################### -->
 <div id="pane-movements" class="stock-op-pane" style="display: <?= $activeTab === 'movements' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="table-movements">
@@ -542,9 +512,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         </div>
 </div>
 
-<!-- ######################################################################### -->
-<!-- SECTION 2: INBOUND STOCK RECEIPTS                                         -->
-<!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="table-inbound">
@@ -585,9 +552,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         </div>
 </div>
 
-<!-- ######################################################################### -->
-<!-- SECTION 3: OUTBOUND STOCK DISPATCHES                                      -->
-<!-- ######################################################################### -->
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="table-outbound">
@@ -628,9 +592,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         </div>
 </div>
 
-<!-- ######################################################################### -->
-<!-- SECTION 4: INTER-BRANCH STOCK TRANSFERS                                   -->
-<!-- ######################################################################### -->
 <div id="pane-transfers" class="stock-op-pane" style="display: <?= $activeTab === 'transfers' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="table-transfers">
@@ -671,9 +632,6 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
         </div>
 </div>
 
-<!-- ######################################################################### -->
-<!-- SECTION 5: STOCK ADJUSTMENTS & VARIANCES                                  -->
-<!-- ######################################################################### -->
 <div id="pane-adjustments" class="stock-op-pane" style="display: <?= $activeTab === 'adjustments' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="table-adjustments">
@@ -726,11 +684,8 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
 </div>
 </div>
 
-<!-- ######################################################################### -->
 <script>
-// =============================================================================
-// TRANSACTION REPORTS TAB SWITCHER (Movements | Inbound | Outbound | Transfers | Adjustments)
-// =============================================================================
+
 let currentActiveTab = '<?= $activeTab ?>';
 
 const reportTitles = {
@@ -816,7 +771,6 @@ function switchTransactionTab(tabName) {
     if (cardTitleEl && reportTitles[tabName]) cardTitleEl.textContent = reportTitles[tabName];
     if (cardDescEl && reportDescs[tabName])   cardDescEl.textContent  = reportDescs[tabName];
 
-    // Update Tab Buttons
     validTabs.forEach(t => {
         const btn = document.getElementById('tab-btn-' + t);
         if (btn) {
@@ -828,7 +782,6 @@ function switchTransactionTab(tabName) {
         }
     });
 
-    // Update Tab Panes
     validTabs.forEach(t => {
         const pane = document.getElementById('pane-' + t);
         if (pane) {
@@ -836,40 +789,33 @@ function switchTransactionTab(tabName) {
         }
     });
 
-    // Update Form hidden input
     const filterInput = document.getElementById('filterTabInput');
     if (filterInput) filterInput.value = tabName;
 
-    // Update printable document subtitle
     const printDocTitle = document.getElementById('printDocTitle');
     if (printDocTitle && reportTitles[tabName]) {
         printDocTitle.textContent = reportTitles[tabName];
     }
 
-    // Sync URL without reloading
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tabName);
     url.searchParams.delete('type');
     window.history.replaceState({ tab: tabName }, '', url.toString());
 
-    // Update search on the newly active table
     filterActiveTransactionTable();
 
-    // Trigger pagination re-calculation on active table
     const activeTable = document.getElementById('table-' + tabName);
     if (activeTable && typeof activeTable.paginationUpdate === 'function') {
         activeTable.paginationUpdate(false);
     }
 }
 
-// Support browser back/forward buttons
 window.addEventListener('popstate', function() {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') || params.get('type') || 'movements';
     switchTransactionTab(tab);
 });
 
-// Instant live search across the active transaction table
 function filterActiveTransactionTable() {
     const input = document.getElementById('reportSearchInput');
     if (!input) return;
@@ -891,7 +837,6 @@ function filterActiveTransactionTable() {
     }
 }
 
-// Export active report table as CSV (delegates to global exportTableToCsv in footer.php)
 function exportReportCsv() {
     exportTableToCsv('table-' + currentActiveTab, currentActiveTab);
 }

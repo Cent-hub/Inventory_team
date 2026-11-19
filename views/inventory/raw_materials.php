@@ -1,7 +1,7 @@
 <?php
-/**
- * View: Raw Materials (Procurement Inbound Monitoring)
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Raw Materials inventory page. Configures the page labels and loads the shared
+ * inventory category view for raw materials.
  */
 
 $categoryConfig = [

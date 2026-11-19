@@ -1,7 +1,7 @@
 <?php
-/**
- * View: Master Item Catalog & SKU Management
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Item catalog management page. Lets authorized users view, create, edit,
+ * approve, and manage inventory items and SKUs.
  */
 
 $pageTitle   = 'Item Catalog — InventoryTeam';
@@ -17,7 +17,6 @@ $errorMessage   = null;
 $isSuperAdmin   = (($currentUser['role'] ?? '') === 'super_admin');
 $canManageItems = empty($currentUser['role']) || in_array(strtolower(trim((string)$currentUser['role'])), ['super_admin', 'admin'], true);
 
-// Handle Item Approval (Super Admin Only — BR-01)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'approve_item') {
     if (!validateCsrfToken()) {
         $errorMessage = "Your session expired. Please refresh the page and try again.";
@@ -44,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $stmtAppr = $pdo->prepare("UPDATE items SET status = 'Active' WHERE id = ?");
                     $stmtAppr->execute([$itemId]);
 
-                    // Preserve any initial quantity set by Procurement in the primary warehouse before seeding remaining warehouses
                     $stmtSeedPrimary = $pdo->prepare("
                         INSERT INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
                         VALUES (?, ?, ?, ?)
@@ -52,7 +50,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     ");
                     $stmtSeedPrimary->execute([$itemId, $seedWarehouseId, $initialStockQty, (float)$itemRow['reorder_level']]);
 
-                    // Seed warehouse stock snapshot rows for newly activated item
                     $stmtSeedInv = $pdo->prepare("
                         INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
                         SELECT ?, warehouse_id, 0.00, ?
@@ -82,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Handle Item Rejection (Super Admin Only — BR-01)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reject_item') {
     if (!validateCsrfToken()) {
         $errorMessage = "Your session expired. Please refresh the page and try again.";
@@ -127,7 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Handle Existing Item Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item') {
     if (!validateCsrfToken()) {
         $errorMessage = "Your session expired. Please refresh the page and try again.";
@@ -176,7 +171,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $itemType = $existingNormalizedType;
                         }
 
-                        // Catalog Item Lock: Disallow mutating items.type if historical transactions or active stock exist for that SKU
                         if ($itemType !== $existingNormalizedType) {
                             $stmtTxCheck = $pdo->prepare("
                                 SELECT 
@@ -217,8 +211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 $itemId
                             ]);
 
-
-                        // Keep warehouse stock reorder levels synchronized with master catalog
                         $stmtSyncInv = $pdo->prepare("
                             UPDATE stock
                             SET reorder_level = ?
@@ -226,7 +218,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ");
                         $stmtSyncInv->execute([round($reorderLevel, 3), $itemId]);
 
-                        // Preserve any existing current_stock in the primary warehouse before seeding missing warehouse rows
                         $existingStockQty = max(0.0, (float)($existingItem['current_stock'] ?? 0));
                         $seedWarehouseId  = $currentWarehouseId ?: 1;
                         $stmtSeedPrimary  = $pdo->prepare("
@@ -236,7 +227,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ");
                         $stmtSeedPrimary->execute([$itemId, $seedWarehouseId, $existingStockQty, round($reorderLevel, 3)]);
 
-                        // Ensure all active warehouses have a stock row for this item
                         $stmtSeedMissing = $pdo->prepare("
                             INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
                             SELECT ?, warehouse_id, 0.00, ?
@@ -269,7 +259,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Fetch active units of measure
 $uoms = $pdo->query("SELECT uom_code, uom_name FROM units_of_measure ORDER BY uom_code ASC")->fetchAll(PDO::FETCH_ASSOC);
 if (empty($uoms)) {
     $uoms = [
@@ -278,7 +267,6 @@ if (empty($uoms)) {
     ];
 }
 
-// Fetch items list from team_inventory_local.items
 $stmtItems = $pdo->query("
     SELECT    
         i.item_id,
@@ -300,7 +288,6 @@ $stmtItems = $pdo->query("
 ");
 $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
-// KPI metrics
 $totalSKUs    = count($itemsList);
 $pendingSKUs  = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? '') === 'pending'));
 $activeSKUs   = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? 'active') === 'active'));
@@ -309,7 +296,6 @@ $rawSKUs      = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
 $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['finished_good', 'finished'], true) && strtolower($x['status'] ?? 'active') === 'active'));
 ?>
 
-<!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title">Item Catalog</h1>
@@ -320,8 +306,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 </div>
 
-
-<!-- Flash Alerts -->
 <?php if ($successMessage): ?>
     <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -342,7 +326,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 <?php endif; ?>
 
-<!-- KPI Metrics Grid -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header">
@@ -389,7 +372,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 </div>
 
-<!-- Main Items Table Card -->
 <div class="card">
     <div class="card-header">
         <div>
@@ -535,7 +517,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 </div>
 
-<!-- Modal: Edit Existing Item -->
 <div id="editItemModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editItemModalTitle" onclick="if(event.target === this) closeEditItemModal()">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php" onsubmit="if(document.getElementById('editItemType')) document.getElementById('editItemType').disabled = false;">
@@ -567,7 +548,6 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                     </div>
                 </div>
 
-                <!-- Classification -->
                 <div>
                     <label for="editItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Classification <span style="color: #DC2626;">*</span>

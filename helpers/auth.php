@@ -1,12 +1,9 @@
 <?php
-/**
- * Team & Role Helper
- * Normalizes user department/team assignments across ERP modules.
+/*
+ * User team and role helper. Standardizes department and team names across the
+ * application.
  */
 
-/**
- * Resolve user team with explicit normalization and heuristic fallback
- */
 function resolveUserTeam(?string $team, ?string $email = ''): string {
     $cleanTeam = trim((string)$team);
     if ($cleanTeam !== '') {

@@ -1,7 +1,7 @@
 <?php
-/**
- * View: Users & Account Administration
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * User administration page. Allows super admins to view user accounts, manage
+ * roles and warehouse assignments, and update account status.
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
@@ -16,7 +16,6 @@ if (!$auth->isAuthenticated()) {
 $currentUser = $auth->getCurrentUser();
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 
-// SEC-01: Enforce Super Admin authorization for User Directory & Account Administration
 if (!$isSuperAdmin) {
     http_response_code(403);
     $deniedDetail = 'Access Denied: Only Super Administrators are authorized to view or manage the User Directory and Account Administration.';
@@ -40,7 +39,6 @@ $successMessage     = null;
 $errorMessage       = null;
 $generatedTokenInfo = null;
 
-// Handle User Creation & Updates (Super Admin only)
 if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!validateCsrfToken()) {
         $errorMessage = "Your session expired. Please refresh the page and try again.";
@@ -286,12 +284,10 @@ if ($isSuperAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
     }
 }
 
-// Filters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $roleFilter = isset($_GET['role']) ? trim($_GET['role']) : '';
 $statusFilter = isset($_GET['status']) ? trim($_GET['status']) : '';
 
-// Assigned branch for current session
 $currentBranch = $assignedWarehouse 
     ? ($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')')
     : 'WH-MAIN (Main Warehouse - Laguna)';
@@ -306,7 +302,6 @@ $totalWarehouses = 0;
 if ($isSuperAdmin) {
     $warehousesList = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-    // Query users from database with assigned warehouse & linked employee data (Super Admin only)
     $sql = "
         SELECT 
             u.user_id,
@@ -349,7 +344,6 @@ if ($isSuperAdmin) {
     $stmt->execute($params);
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Metrics
     $totalUsers = count($users);
     foreach ($users as $u) {
         if (strtolower($u['status'] ?? '') === 'active') $activeCount++;
@@ -359,7 +353,6 @@ if ($isSuperAdmin) {
     $totalWarehouses = count($warehousesList);
 }
 
-// Map functional department/team using official ERP rulebook (helpers/auth.php::resolveUserTeam)
 function getTeamAssignment($email, $role, $teamColumn = '') {
     if ($role === 'super_admin' && (empty($teamColumn) || strcasecmp($teamColumn, 'inventory') === 0)) {
         return 'Administration';
@@ -383,7 +376,6 @@ function getFacilityAssignment($user) {
 }
 ?>
 
-<!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title"><?= $isSuperAdmin ? 'Users & Account Management' : 'My Account' ?></h1>
@@ -416,7 +408,7 @@ function getFacilityAssignment($user) {
 <?php endif; ?>
 
 <?php if (!empty($generatedTokenInfo)): ?>
-    <!-- F-24: Dedicated persistent token card that is not auto-dismissed by footer.php timers -->
+
     <div id="persistentTokenCard" class="card" style="margin-bottom: 24px; border: 2px solid #0284C7; background: #F0F9FF; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);">
         <div class="card-body" style="padding: 20px;">
             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
@@ -479,7 +471,6 @@ function getFacilityAssignment($user) {
     </div>
 <?php endif; ?>
 
-<!-- My Profile Spotlight Card -->
 <div class="card mb-6" id="my-account" style="border-left: 4px solid #1F7A6C;">
     <div class="card-body">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
@@ -533,7 +524,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php else: ?>
-<!-- Summary Metrics -->
+
 <div class="kpi-grid mb-6">
     <div class="kpi-card">
         <div class="kpi-icon navy">
@@ -595,10 +586,9 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Filters Card -->
 <div class="card">
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <!-- Search -->
+
         <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -609,14 +599,12 @@ document.addEventListener('DOMContentLoaded', function() {
             <input type="text" name="search" class="search-box" aria-label="Search user accounts by name or email" placeholder="Search by name, email, or facility..." value="<?= htmlspecialchars($search) ?>" id="userSearchInput" oninput="filterUsersDirectoryTable()">
         </div>
 
-        <!-- Role Filter -->
         <select name="role" id="userRoleFilter" class="select-filter" aria-label="Filter users by security role" onchange="filterUsersDirectoryTable()">
             <option value="">All Roles</option>
             <option value="super_admin" <?= $roleFilter === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
             <option value="admin" <?= $roleFilter === 'admin' ? 'selected' : '' ?>>Admin</option>
         </select>
 
-        <!-- Action Buttons -->
         <div style="display: flex; gap: 8px;">
             <button type="button" class="btn btn-secondary" style="height: 38px; display: inline-flex; align-items: center;" onclick="resetUsersDirectoryFilters()" title="Reset Filters">
                 <span>Reset</span>
@@ -625,7 +613,6 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Users Table Card -->
 <div class="card">
     <div class="card-header">
         <div class="flex items-center gap-3">
@@ -753,7 +740,6 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Modal Drawer for User Account Details -->
 <div id="userModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalUserName" aria-hidden="true" onclick="if(event.target === this) closeUserModal()">
     <div class="modal-card" style="max-width: 520px;">
         <div class="modal-header">
@@ -817,7 +803,6 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Modal: Create New User Account -->
 <div id="createUserModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="createUserModalTitle" onclick="if(event.target === this) closeCreateUserModal()">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php">
@@ -920,7 +905,6 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Modal: Edit Existing User Account -->
 <div id="editUserModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editUserModalTitle" onclick="if(event.target === this) closeEditUserModal()">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php">
@@ -1125,6 +1109,6 @@ function closeUserModal() {
     }
 }
 </script>
-<?php endif; // $isSuperAdmin ?>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

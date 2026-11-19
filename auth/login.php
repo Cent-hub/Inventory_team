@@ -1,14 +1,14 @@
 <?php
-/**
- * InventoryTeam Login UI
- * Connected to AuthController & Secure Session Engine
+/*
+ * Login page and authentication handler. Lets users sign in, reset a forgotten
+ * password with an OTP code, and processes background requests from the login
+ * and settings forms.
  */
 
 require_once __DIR__ . '/../controllers/AuthController.php';
 
 $auth = new AuthController();
 
-// Compute clean BASE_URL for redirects
 $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
 $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
 $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
@@ -17,7 +17,6 @@ if (!defined('BASE_URL')) {
     define('BASE_URL', $projectRoot . '/');
 }
 
-// Handle JSON POST submission (sent by async fetch for Login, OTP Reset, Support & Settings Modals)
 $rawInput = file_get_contents('php://input');
 if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false) {
     $input = json_decode($rawInput, true);
@@ -211,7 +210,6 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
                         exit;
                     }
 
-                    // submit_support
                     $subject  = trim((string)($input['subject'] ?? ''));
                     $category = trim((string)($input['category'] ?? 'general'));
                     $message  = trim((string)($input['message'] ?? ''));
@@ -286,13 +284,11 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
     }
 }
 
-// If already authenticated, redirect straight to dashboard
 if ($auth->isAuthenticated()) {
     header('Location: ' . $auth->getDashboardRedirectUrl());
     exit;
 }
 
-// Handle classic HTTP POST submission (fallback / no-JS)
 $error = '';
 $rateLimited = false;
 $retryAfter = 0;
@@ -317,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = $result['error'] ?? 'Invalid email or password.';
     }
 } else {
-    // Check if client IP is currently rate-limited on page load
+
     $initialCheck = $auth->checkLoginRateLimit();
     if (!$initialCheck['allowed']) {
         $rateLimited = true;
@@ -378,14 +374,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             overflow: hidden;
         }
 
-        /* Ambient Scatter Dots */
         .dot {
             position: absolute;
             border-radius: 50%;
             pointer-events: none;
         }
 
-        /* Centered Floating Card */
         .card {
             position: relative;
             z-index: 1;
@@ -398,7 +392,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin: auto;
         }
 
-        /* Form Panel */
         .panel-white {
             width: 100%;
             display: flex;
@@ -416,7 +409,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             align-items: center;
         }
 
-        /* Brand Logo Row */
         .logo-row {
             display: flex;
             flex-direction: column;
@@ -456,7 +448,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-transform: uppercase;
         }
 
-        /* Alert Banners */
         .alert {
             width: 100%;
             padding: 10px 14px;
@@ -502,7 +493,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             transform: translateY(-6px);
         }
 
-        /* Form & Inputs */
         .form {
             width: 100%;
             display: flex;
@@ -569,7 +559,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--panel-ink);
         }
 
-        /* Submit Button */
         .login-btn {
             margin-top: 4px;
             width: 100%;
@@ -612,7 +601,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to { transform: rotate(360deg); }
         }
 
-        /* Remember Me & Forgot Password Row */
         .row-between {
             display: flex;
             align-items: center;
@@ -649,7 +637,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-decoration: underline;
         }
 
-        /* Helper Footer */
         .helper {
             text-align: center;
             font-size: 13px;
@@ -679,7 +666,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--accent-hover);
         }
 
-        /* Responsive Breakpoints */
         @media (max-width: 480px) {
             .login-root {
                 padding: 24px 14px;
@@ -699,7 +685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-root">
-        <!-- Ambient Scatter Dots -->
+
         <span class="dot" style="top: 5.2%; left: 28.3%; width: 6px; height: 6px; background: #7FB3A6; opacity: 0.5;"></span>
         <span class="dot" style="top: 6.6%; left: 72.4%; width: 6px; height: 6px; background: #7FB3A6; opacity: 0.45;"></span>
         <span class="dot" style="top: 5.4%; left: 92.2%; width: 5px; height: 5px; background: #B7C1D1; opacity: 0.55;"></span>
@@ -711,14 +697,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <span class="dot" style="top: 75.6%; left: 9.1%; width: 5px; height: 5px; background: #B7C1D1; opacity: 0.5;"></span>
         <span class="dot" style="top: 78.4%; left: 88.0%; width: 5px; height: 5px; background: #B7C1D1; opacity: 0.5;"></span>
 
-        <!-- Floating Card Container -->
         <div class="card">
 
-
-            <!-- Right Interactive White Panel -->
             <div class="panel-white">
                 <div class="form-shell">
-                    <!-- Brand Logo Row -->
+
                     <div class="logo-row">
                         <span class="logo-mark" aria-hidden="true">
                             <img src="<?= BASE_URL ?>assets/images/logo.png" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; display: block;">
@@ -726,10 +709,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span class="logo-text">Inventory<span>Team</span></span>
                     </div>
 
-                    <!-- Login Title -->
                     <h2 class="login-title">LOGIN</h2>
 
-                    <!-- Pre-rendered Flash / Status Alerts with Auto-Dismiss -->
                     <?php if (isset($_GET['logged_out'])): ?>
                         <div class="alert alert-success" role="alert">
                             <svg class="alert-icon" viewBox="0 0 20 20" fill="currentColor">
@@ -760,7 +741,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     <?php endif; ?>
 
-                    <!-- Dynamic Error Message Area -->
                     <div id="alert-box" class="alert alert-danger" style="display: <?= !empty($error) ? 'flex' : 'none' ?>;" role="alert">
                         <svg class="alert-icon" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
@@ -768,9 +748,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div id="alert-content" class="alert-content"><?= htmlspecialchars($error) ?></div>
                     </div>
 
-                    <!-- Interactive Login Form -->
                     <form id="login-form" class="form" method="POST" action="login.php" novalidate>
-                        <!-- Email Address Field -->
+
                         <div class="field">
                             <label class="label" for="login_input">Email Address or Username</label>
                             <div class="input-wrap">
@@ -789,7 +768,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <p id="error-email" class="error-text" style="display: none;"></p>
                         </div>
 
-                        <!-- Password Field with Toggle -->
                         <div class="field">
                             <label class="label" for="password">Password</label>
                             <div class="input-wrap">
@@ -803,12 +781,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     required
                                 />
                                 <button type="button" id="btn-toggle-password" class="toggle-eye" aria-label="Show password">
-                                    <!-- Lucide Eye Icon -->
+
                                     <svg id="eye-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
                                         <circle cx="12" cy="12" r="3"/>
                                     </svg>
-                                    <!-- Lucide EyeOff Icon -->
+
                                     <svg id="eye-off-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
                                         <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
                                         <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
@@ -820,9 +798,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <p id="error-password" class="error-text" style="display: none;"></p>
                         </div>
 
-                        <!-- Login Submit Button -->
                         <button type="submit" id="btn-submit" class="login-btn">
-                            <!-- Lucide LogIn Icon -->
+
                             <svg id="btn-login-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
                                 <polyline points="10 17 15 12 10 7"/>
@@ -832,7 +809,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span id="btn-text">Login</span>
                         </button>
 
-                        <!-- Options Row: Remember Me & Forgot Password -->
                         <div class="row-between">
                             <label class="remember-row">
                                 <input type="checkbox" id="remember_me" name="remember">
@@ -842,7 +818,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </form>
 
-                    <!-- Helper Footer with Contact Support Button -->
                     <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
                         <span style="color: var(--gray); font-size: 12.5px;">Having trouble signing in or need account access?</span>
                         <button type="button" id="btn-login-support" onclick="openLoginSupportModal()" style="background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.25); color: #7C3AED; font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 20px; transition: all 0.15s ease;" onmouseover="this.style.background='rgba(124, 58, 237, 0.14)';" onmouseout="this.style.background='rgba(124, 58, 237, 0.08)';">
@@ -859,10 +834,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Forgot Password 3-Step OTP Modal -->
     <div id="forgot-pwd-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="forgotModalTitle" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
         <div class="modal-card" style="width:100%; max-width:440px; background:#ffffff; border-radius:24px; padding:32px 28px; box-shadow:0 25px 50px -12px rgba(15,23,42,0.35); position:relative; overflow:hidden;">
-            <!-- Modal Header with Close Button -->
+
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
                 <div style="display:flex; align-items:center; gap:9px;">
                     <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:10px; background:rgba(31,122,108,0.1); color:var(--accent);">
@@ -878,21 +852,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </button>
             </div>
 
-            <!-- Step Indicator Pills -->
             <div id="otp-step-pills" style="display:flex; gap:6px; margin-bottom:20px;">
                 <div id="pill-step-1" style="flex:1; height:4px; border-radius:2px; background:var(--accent); transition:background 0.2s ease;"></div>
                 <div id="pill-step-2" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
                 <div id="pill-step-3" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
             </div>
 
-            <!-- Dynamic Modal Alert Box -->
             <div id="otp-modal-alert" role="status" aria-live="polite" style="display:none; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px;"></div>
 
-            <!-- STEP 1: Enter Email -->
             <div id="otp-step-1" style="display:block;">
                 <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
                 <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your Gmail inbox.</p>
-                
+
                 <form id="form-otp-step-1">
                     <div class="field" style="margin-bottom:18px;">
                         <label class="label" for="otp-input-email">Email Address</label>
@@ -907,7 +878,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
-            <!-- STEP 2: Enter 6-Digit Code -->
             <div id="otp-step-2" style="display:none;">
                 <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Enter 6-Digit Code</h3>
                 <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 16px 0;">
@@ -915,7 +885,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
 
                 <form id="form-otp-step-2">
-                    <!-- 6-digit OTP Box Inputs -->
+
                     <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:16px;">
                         <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="0" aria-label="Verification code digit 1" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
                         <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-box" data-index="1" aria-label="Verification code digit 2" style="flex:1; max-width:48px; min-width:36px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
@@ -937,7 +907,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
-            <!-- STEP 3: Set New Password -->
             <div id="otp-step-3" style="display:none;">
                 <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Create New Password</h3>
                 <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Code verified! Enter your new password below (minimum 6 characters).</p>
@@ -972,7 +941,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
-            <!-- STEP 4: Success View -->
             <div id="otp-step-success" style="display:none; text-align:center; padding:12px 0;">
                 <div style="width:60px; height:60px; border-radius:50%; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; margin:0 auto 16px auto;">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -990,10 +958,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Contact Support Modal for Login Page (Direct to Super Admin) -->
     <div id="login-support-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="loginSupportModalTitle" style="display:none; opacity:0; pointer-events:none; position:fixed; inset:0; background:rgba(15,23,42,0.68); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:16px; transition:opacity 0.22s ease;">
         <div class="modal-card" style="width:100%; max-width:500px; background:#ffffff; border-radius:24px; padding:28px 26px; box-shadow:0 25px 50px -12px rgba(15,23,42,0.35); position:relative; overflow:hidden; max-height:92vh; overflow-y:auto;">
-            <!-- Header -->
+
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span style="display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; background:rgba(124,58,237,0.1); color:#7C3AED;">
@@ -1013,7 +980,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </button>
             </div>
 
-            <!-- Dynamic Feedback Alert (shown upon simulated send) -->
             <div id="login-support-feedback" style="display:none; background:#dcfce7; border:1px solid #bbf7d0; border-radius:12px; padding:12px 14px; margin-bottom:16px;">
                 <div style="display:flex; align-items:flex-start; gap:10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;">
@@ -1026,9 +992,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- Compose Form -->
             <form id="login-support-form" onsubmit="event.preventDefault(); handleSimulateLoginSupportSend();">
-                <!-- Recipient Info Capsule -->
+
                 <div style="margin-bottom:14px;">
                     <label class="label" style="margin-bottom:5px; font-size:12px;">Recipient</label>
                     <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px; background:#F8FAFC; border:1px solid var(--border); border-radius:10px; font-size:12.5px;">
@@ -1050,7 +1015,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Your Email Address -->
                 <div class="field" style="margin-bottom:12px;">
                     <label class="label" for="login-support-email" style="font-size:12px;">Your Email Address <span style="color:var(--error);">*</span></label>
                     <div class="input-wrap">
@@ -1058,7 +1022,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Inquiry Topic / Category -->
                 <div class="field" style="margin-bottom:12px;">
                     <label class="label" for="login-support-category" style="font-size:12px;">Inquiry Topic</label>
                     <div class="input-wrap">
@@ -1072,7 +1035,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Subject -->
                 <div class="field" style="margin-bottom:12px;">
                     <label class="label" for="login-support-subject" style="font-size:12px;">Subject <span style="color:var(--error);">*</span></label>
                     <div class="input-wrap">
@@ -1080,7 +1042,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Message Body -->
                 <div class="field" style="margin-bottom:16px;">
                     <label class="label" for="login-support-message" style="font-size:12px;">Message <span style="color:var(--error);">*</span></label>
                     <div class="input-wrap">
@@ -1088,7 +1049,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Action Buttons: Cancel and Send Message -->
                 <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding-top:12px; border-top:1px solid var(--border);">
                     <button type="button" onclick="closeLoginSupportModal()" style="background:#F1F5F9; border:1px solid #CBD5E1; color:var(--panel-ink); font-family:var(--font-body); font-size:13px; font-weight:600; padding:9px 18px; border-radius:10px; cursor:pointer; transition:all 0.15s ease;" onmouseover="this.style.background='#E2E8F0';" onmouseout="this.style.background='#F1F5F9';">
                         Cancel
@@ -1225,7 +1185,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const errorEmail = document.getElementById('error-email');
         const errorPassword = document.getElementById('error-password');
 
-        // Restore remembered email/username from localStorage
         try {
             const savedUsername = localStorage.getItem('stockpilot_remembered_username') || localStorage.getItem('stockline_remembered_username');
             if (savedUsername) {
@@ -1234,12 +1193,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 passwordInput.focus();
             }
         } catch (e) {
-            // LocalStorage inaccessible
+
         }
 
         let alertTimer = null;
 
-        // Dismiss alert helper with smooth fade-out
         function dismissAlert(el) {
             if (!el) return;
             el.classList.add('alert-fadeout');
@@ -1249,7 +1207,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, 350);
         }
 
-        // Auto-dismiss any pre-rendered status alerts after 5 seconds
         const initialAlerts = document.querySelectorAll('.alert:not(#alert-box)');
         initialAlerts.forEach(function (alertEl) {
             setTimeout(function () {
@@ -1257,21 +1214,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, 5000);
         });
 
-        // Clean up URL query parameters (e.g. ?logged_out=1) after 5 seconds
         if (window.location.search) {
             setTimeout(function () {
                 window.history.replaceState({}, document.title, window.location.pathname);
             }, 5000);
         }
 
-        // Force reload if restored from browser back-forward cache to ensure fresh authentication state
         window.addEventListener('pageshow', function (event) {
             if (event.persisted || (window.performance && window.performance.navigation && window.performance.navigation.type === 2) || (window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType('navigation')[0] && window.performance.getEntriesByType('navigation')[0].type === 'back_forward')) {
                 window.location.reload();
             }
         });
 
-        // Show/Hide Password Toggle
         toggleBtn.addEventListener('click', function () {
             const isPassword = passwordInput.type === 'password';
             passwordInput.type = isPassword ? 'text' : 'password';
@@ -1281,7 +1235,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             passwordInput.focus();
         });
 
-        // Helper to display alert banners (danger, success, info)
         function showAlert(type, message, persist = false) {
             if (alertTimer) clearTimeout(alertTimer);
             alertBox.className = 'alert alert-' + type;
@@ -1301,7 +1254,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             alertBox.classList.remove('alert-fadeout');
         }
 
-        // Real-time lockout countdown timer
         let lockoutTimer = null;
         let lockoutRemaining = 0;
 
@@ -1337,7 +1289,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, 1000);
         }
 
-        // Clear field validation state on input
         loginInput.addEventListener('input', function () {
             if (loginInput.classList.contains('input-error')) {
                 loginInput.classList.remove('input-error');
@@ -1352,7 +1303,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
 
-        // Set Loading State
         function setLoading(isLoading) {
             submitBtn.disabled = isLoading;
             if (isLoading) {
@@ -1366,10 +1316,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Form Submit Handler
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
-            if (lockoutTimer) return; // Prevent submission while locked out
+            if (lockoutTimer) return; 
             hideAlert();
 
             const emailVal = loginInput.value.trim();
@@ -1428,7 +1377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    // Save or remove remembered email based on checkbox
+
                     try {
                         if (rememberMeCheckbox && rememberMeCheckbox.checked) {
                             localStorage.setItem('stockpilot_remembered_username', emailVal);
@@ -1457,9 +1406,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
 
-        // =========================================================================
-        // 3-STEP 6-DIGIT OTP FORGOT PASSWORD MODAL CONTROLLER
-        // =========================================================================
         const modalBackdrop   = document.getElementById('forgot-pwd-modal-backdrop');
         const linkForgotPwd   = document.getElementById('link-forgot-pwd');
         const btnCloseModal   = document.getElementById('btn-close-forgot-modal');
@@ -1549,7 +1495,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (step2View) step2View.style.display = 'block';
                 if (step3View) step3View.style.display = 'none';
                 if (stepSuccessView) stepSuccessView.style.display = 'none';
-                // Clear and focus first OTP box
+
                 otpBoxes.forEach(b => b.value = '');
                 setTimeout(() => otpBoxes[0] && otpBoxes[0].focus(), 100);
             } else if (step === 3) {
@@ -1571,7 +1517,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         function openForgotModal() {
             if (!modalBackdrop) return;
-            // Pre-fill email from login field if entered
+
             if (inputEmail && loginInput && loginInput.value.includes('@')) {
                 inputEmail.value = loginInput.value.trim();
             }
@@ -1623,7 +1569,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, 1000);
         }
 
-        // Open modal click handler
         if (linkForgotPwd) {
             linkForgotPwd.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -1631,7 +1576,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // Close handlers
         if (btnCloseModal) btnCloseModal.addEventListener('click', closeForgotModal);
         if (modalBackdrop) {
             modalBackdrop.addEventListener('click', function (e) {
@@ -1655,14 +1599,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
 
-        // Change email handler
         if (btnChangeEmail) {
             btnChangeEmail.addEventListener('click', function () {
                 setOtpStep(1);
             });
         }
 
-        // Resend code handler
         if (btnResendCode) {
             btnResendCode.addEventListener('click', function () {
                 if (resendCountdown > 0 || !currentResetEmail) return;
@@ -1691,7 +1633,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // OTP Box Input Group Logic (Auto-Advance, Backspace, Paste)
         otpBoxes.forEach((box, idx) => {
             box.addEventListener('focus', function () {
                 box.style.borderColor = 'var(--accent)';
@@ -1735,7 +1676,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         });
 
-        // Password visibility toggles in modal
         function setupToggle(btn, input) {
             if (!btn || !input) return;
             btn.addEventListener('click', function () {
@@ -1750,9 +1690,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setupToggle(btnTogglePwd1, inputPwd);
         setupToggle(btnTogglePwd2, inputConfirmPwd);
 
-        // =========================================================
-        // FORM SUBMISSION: STEP 1 (Send Code)
-        // =========================================================
         if (formStep1) {
             formStep1.addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -1805,9 +1742,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // =========================================================
-        // FORM SUBMISSION: STEP 2 (Verify Code)
-        // =========================================================
         if (formStep2) {
             formStep2.addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -1862,9 +1796,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // =========================================================
-        // FORM SUBMISSION: STEP 3 (Save New Password)
-        // =========================================================
         if (formStep3) {
             formStep3.addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -1929,7 +1860,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // Success screen "Sign In" button
         if (btnSuccessLogin) {
             btnSuccessLogin.addEventListener('click', function () {
                 closeForgotModal();
@@ -1944,7 +1874,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
 
-        // Auto-open modal if URL has ?forgot=1 or #forgot
         if (window.location.search.includes('forgot=1') || window.location.hash === '#forgot') {
             setTimeout(openForgotModal, 150);
         }
@@ -1952,7 +1881,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setTimeout(openLoginSupportModal, 150);
         }
 
-        // Trigger lockout countdown if loaded in a rate-limited state
         <?php if (!empty($rateLimited) && !empty($retryAfter)): ?>
         startLockoutCountdown(<?= (int)$retryAfter ?>);
         <?php endif; ?>

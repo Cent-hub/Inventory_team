@@ -1,10 +1,7 @@
 <?php
-/**
- * Layout Component: iOS-Inspired Grouped Settings Modal
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Follows the clean inset-group visual structure of modern iOS settings,
- * faithfully adapted to the InventoryTeam deep navy, teal, and bronze palette.
+/*
+ * Settings modal layout. Renders the user profile, password change, display
+ * preferences, and support sections inside a popup dialog.
  */
 
 $currentUser = $currentUser ?? ($auth ? $auth->getCurrentUser() : []);
@@ -52,7 +49,7 @@ if ($userTeamRaw === '' && isset($pdo) && !empty($currentUser['id'])) {
             $_SESSION['user_team'] = $dbTeam;
         }
     } catch (Throwable $e) {
-        // Fallback to session/default team
+
     }
 }
 if ($userTeamRaw === '') {
@@ -68,11 +65,9 @@ $userTeamDisplay  = htmlspecialchars($userTeamRaw . ' Team');
 $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTeamRaw . ' Department'));
 ?>
 
-<!-- Settings Master Modal -->
 <div id="settingsModal" class="settings-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle" onclick="if(event.target === this) closeSettingsModal()">
     <div class="settings-modal-card">
-        
-        <!-- Dynamic Modal Header with Back Button and Close Button -->
+
         <div class="settings-modal-header">
             <div class="settings-modal-title-wrap">
                 <button type="button" id="settingsBtnBack" class="settings-btn-back" style="display: none;" onclick="switchSettingsView('main')" aria-label="Back to Settings">
@@ -91,15 +86,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
             </button>
         </div>
 
-        <!-- Scrollable Modal Canvas Body -->
         <div class="settings-modal-body">
 
-            <!-- ========================================================== -->
-            <!-- VIEW: MAIN SETTINGS OVERVIEW (iOS Grouped Layout)         -->
-            <!-- ========================================================== -->
             <div id="view-settings-main" class="settings-view active">
-                
-                <!-- Group 1: Profile & Identity (Static Display) -->
+
                 <div class="settings-group">
                     <div class="settings-row static">
                         <div class="settings-row-left">
@@ -118,14 +108,12 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     </div>
                 </div>
 
-                <!-- Group 2: Core Submenus (Inset Group with Squircle Icons) -->
                 <div class="settings-group">
-                    
-                    <!-- 1. My Account -->
+
                     <div class="settings-row" onclick="switchSettingsView('account')" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle teal">
-                                <!-- Lucide User Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
                                     <circle cx="12" cy="7" r="4"/>
@@ -146,11 +134,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- 2. Change Password -->
                     <div class="settings-row" onclick="switchSettingsView('password')" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle bronze">
-                                <!-- Lucide Key Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="7.5" cy="15.5" r="5.5"/>
                                     <path d="m21 2-9.6 9.6"/>
@@ -171,11 +158,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- 3. Notifications -->
                     <div class="settings-row" onclick="switchSettingsView('notifications')" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle amber">
-                                <!-- Lucide Bell Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                                     <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
@@ -196,11 +182,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- 4. Accountability -->
                     <div class="settings-row" onclick="window.location.href='<?= BASE_URL ?>views/settings/accountability.php'" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle navy">
-                                <!-- Lucide ClipboardList / History Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                                     <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
@@ -222,11 +207,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- 7. Contact Support -->
                     <div class="settings-row" onclick="switchSettingsView('contact_support')" role="button" tabindex="0">
                         <div class="settings-row-left">
                             <div class="settings-squircle purple">
-                                <!-- Lucide MessageSquare / Headset Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                     <line x1="8" y1="10" x2="16" y2="10"/>
@@ -250,11 +234,8 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 1 — MY ACCOUNT                               -->
-            <!-- ========================================================== -->
             <div id="view-settings-account" class="settings-view">
-                
+
                 <div class="settings-group">
                     <div style="padding: 20px 16px; display: flex; align-items: center; gap: 16px; background: #ffffff;">
                         <div id="settingsAccountAvatar" class="user-avatar" style="width: 58px; height: 58px; font-size: 24px; background: #14213D; color: #FFFFFF; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">
@@ -337,14 +318,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     </div>
                 </div>
 
-               
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 2 — CHANGE PASSWORD                          -->
-            <!-- ========================================================== -->
             <div id="view-settings-password" class="settings-view">
-                
+
                 <div id="settingsPwdFeedbackBanner" role="status" aria-live="polite" style="display: none; padding: 11px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600;"></div>
 
                 <div class="settings-group">
@@ -393,12 +370,9 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 2B — FORGOT PASSWORD (Login Page Design)     -->
-            <!-- ========================================================== -->
             <div id="view-settings-forgot-password" class="settings-view">
                 <div style="width:100%; background:#ffffff; border-radius:24px; padding:28px 24px; box-shadow:0 10px 30px -10px rgba(15,23,42,0.12); border:1px solid var(--border); position:relative; overflow:hidden;">
-                    <!-- Header with Icon & Title (Matches Login Page Forgot Password Modal) -->
+
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
                         <div style="display:flex; align-items:center; gap:9px;">
                             <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:10px; background:rgba(31,122,108,0.1); color:var(--accent);">
@@ -411,17 +385,14 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </div>
                     </div>
 
-                    <!-- Step Indicator Pills -->
                     <div id="settings-otp-step-pills" style="display:flex; gap:6px; margin-bottom:20px;">
                         <div id="settings-pill-step-1" style="flex:1; height:4px; border-radius:2px; background:var(--accent); transition:background 0.2s ease;"></div>
                         <div id="settings-pill-step-2" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
                         <div id="settings-pill-step-3" style="flex:1; height:4px; border-radius:2px; background:var(--border); transition:background 0.2s ease;"></div>
                     </div>
 
-                    <!-- Dynamic Alert Box -->
                     <div id="settings-otp-alert" style="display:none; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600; line-height:1.4; margin-bottom:16px;"></div>
 
-                    <!-- STEP 1: Enter Email -->
                     <div id="settings-otp-step-1" style="display:block;">
                         <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Forgot your password?</h3>
                         <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Enter your account email below. We'll send a 6-digit verification code to your Gmail inbox.</p>
@@ -439,7 +410,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </form>
                     </div>
 
-                    <!-- STEP 2: Enter 6-Digit Code -->
                     <div id="settings-otp-step-2" style="display:none;">
                         <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Enter 6-Digit Code</h3>
                         <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 16px 0;">
@@ -447,7 +417,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </p>
 
                         <form id="settings-form-otp-step-2" onsubmit="event.preventDefault(); handleSettingsOtpStep2();">
-                            <!-- 6-digit OTP Box Inputs -->
+
                             <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:16px;">
                                 <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="0" aria-label="Verification code digit 1" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
                                 <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="settings-otp-box" data-index="1" aria-label="Verification code digit 2" style="width:48px; height:54px; text-align:center; font-size:22px; font-weight:700; font-family:var(--font-display); border:1.5px solid var(--border); border-radius:12px; outline:none; background:#F8FAFC; transition:all 0.15s ease;" />
@@ -468,7 +438,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </form>
                     </div>
 
-                    <!-- STEP 3: Set New Password -->
                     <div id="settings-otp-step-3" style="display:none;">
                         <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--panel-ink); margin:0 0 6px 0;">Create New Password</h3>
                         <p style="font-size:13px; color:var(--gray); line-height:1.5; margin:0 0 18px 0;">Code verified! Enter your new password below (minimum 6 characters).</p>
@@ -502,7 +471,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </form>
                     </div>
 
-                    <!-- STEP 4: Success View -->
                     <div id="settings-otp-step-success" style="display:none; text-align:center; padding:12px 0;">
                         <div style="width:60px; height:60px; border-radius:50%; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; margin:0 auto 16px auto;">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -520,17 +488,13 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                 </div>
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 3 — NOTIFICATIONS (With iOS Toggles)         -->
-            <!-- ========================================================== -->
             <div id="view-settings-notifications" class="settings-view">
-                
+
                 <div id="notifFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); color: #14532D; border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 500;"></div>
 
                 <span class="settings-group-label">Replenishment &amp; Movement Alerts</span>
                 <div class="settings-group">
-                    
-                    <!-- Row 2: Inbound Dispatches -->
+
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle teal">
@@ -555,7 +519,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- Row 3: Outbound Alerts -->
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle rose">
@@ -580,7 +543,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- Row 4: Daily Stock Balance Digest -->
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle blue">
@@ -608,12 +570,11 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                 <span class="settings-group-label">Real-Time Alerts &amp; Audio Preferences</span>
                 <div class="settings-group">
-                    
-                    <!-- Alert Sound Chimes -->
+
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle amber">
-                                <!-- Volume2 Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
                                     <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
@@ -636,11 +597,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- Floating Toast Popups -->
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle teal">
-                                <!-- MessageSquare Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                 </svg>
@@ -660,11 +620,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                     <div class="settings-divider"></div>
 
-                    <!-- Silence When Inactive -->
                     <div class="settings-row static">
                         <div class="settings-row-left">
                             <div class="settings-squircle navy">
-                                <!-- BellOff Icon -->
+
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <line x1="2" y1="2" x2="22" y2="22"/>
                                     <path d="M18.85 18.85A1.94 1.94 0 0 1 10.3 21a1.94 1.94 0 0 1-3.4 0"/>
@@ -712,12 +671,8 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 6 — CONTACT SUPPORT (Message to Super Admin) -->
-            <!-- ========================================================== -->
             <div id="view-settings-contact-support" class="settings-view">
-                
-                <!-- Info Capsule -->
+
                 <div style="background: rgba(124, 58, 237, 0.07); border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 12px; padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px;">
                     <div style="width: 32px; height: 32px; border-radius: 8px; background: #7C3AED; color: #ffffff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -731,7 +686,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     </div>
                 </div>
 
-                <!-- Feedback Banner -->
                 <div id="supportFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); border-radius: 10px; padding: 12px 16px; align-items: center; gap: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success); flex-shrink: 0;">
                         <polyline points="20 6 9 17 4 12"/>
@@ -741,11 +695,9 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     </div>
                 </div>
 
-                <!-- Compose Message Panel -->
                 <div class="settings-group">
                     <form id="contactSupportForm" onsubmit="event.preventDefault(); handleSimulateSupportSend();" style="padding: 18px; display: flex; flex-direction: column; gap: 14px;">
-                        
-                        <!-- Recipient Field (Fixed to Super Admin) -->
+
                         <div>
                             <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Recipient
@@ -778,7 +730,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             </small>
                         </div>
 
-                        <!-- Subject Field -->
                         <div>
                             <label for="supportSubject" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Subject <span style="color: var(--error);">*</span>
@@ -786,7 +737,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             <input type="text" id="supportSubject" class="search-box" style="width: 100%; padding: 0 14px;" placeholder="e.g., Stock In Request Discrepancy — Main Warehouse" required>
                         </div>
 
-                        <!-- Inquiry Category -->
                         <div>
                             <label for="supportCategory" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Inquiry Category
@@ -800,7 +750,6 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             </select>
                         </div>
 
-                        <!-- Message Body -->
                         <div>
                             <label for="supportMessage" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); display: block; margin-bottom: 6px;">
                                 Message <span style="color: var(--error);">*</span>
@@ -808,13 +757,12 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             <textarea id="supportMessage" rows="5" class="search-box" style="width: 100%; height: auto; min-height: 110px; padding: 10px 14px; resize: vertical; line-height: 1.45;" placeholder="Describe your inquiry, affected raw materials, finished goods, or warehouse details..." required></textarea>
                         </div>
 
-                        <!-- Buttons: Send Message + Cancel -->
                         <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border);">
                             <button type="button" class="btn btn-secondary" onclick="switchSettingsView('main')">
                                 Cancel
                             </button>
                             <button type="submit" class="btn btn-primary" style="background: #7C3AED; border-color: #7C3AED;">
-                                <!-- Lucide Send Icon -->
+
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <line x1="22" y1="2" x2="11" y2="13"/>
                                     <polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -828,12 +776,8 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
             </div>
 
-            <!-- ========================================================== -->
-            <!-- VIEW: SECTION 7 — ACCOUNTABILITY (Cross-Team Audit Ledger)  -->
-            <!-- ========================================================== -->
             <div id="view-settings-accountability" class="settings-view">
-                
-                <!-- Accountability Hub Summary Card (Phase 3 UX Consolidation) -->
+
                 <div class="settings-group" style="padding: 20px; text-align: left; display: flex; flex-direction: column; gap: 14px;">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <div class="settings-squircle navy" style="width: 40px; height: 40px;">
@@ -899,8 +843,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
             </div>
 
-        </div><!-- /.settings-modal-body -->
+        </div>
 
     </div>
 </div>
-

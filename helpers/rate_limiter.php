@@ -1,8 +1,7 @@
 <?php
-/**
- * API Rate Limiter
- * Implements sliding window rate limiting per API token or client IP.
- * Uses transient local cache file without querying deprecated api_rate_limits table.
+/*
+ * Request rate limiter. Limits how many requests a user or IP address can make
+ * within a short time window using a local cache file.
  */
 
 if (!function_exists('jsonResponse')) {
@@ -22,7 +21,7 @@ function checkRateLimit(
     int $windowSeconds = 60,
     ?string $clientIdentifier = null
 ): void {
-    // Derive client key (Token hash preferred, fallback to client IP)
+
     if (empty($clientIdentifier)) {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $clientKey = 'ip_' . hash('sha256', $ip);
@@ -57,7 +56,6 @@ function checkRateLimit(
         @file_put_contents($cacheFile, (string)$currentCount, LOCK_EX);
     }
 
-    // Opportunistic garbage collection: 1 in 100 requests purges expired temp files (SEC-03)
     if (mt_rand(1, 100) === 1) {
         pruneExpiredRateLimits(3600);
     }
@@ -90,9 +88,6 @@ function checkRateLimit(
     }
 }
 
-/**
- * Automated opportunistic pruning for expired rate limit files.
- */
 function pruneExpiredRateLimits(int $maxAgeSeconds = 3600): int {
     $count = 0;
     $files = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_api_rl_*.txt');

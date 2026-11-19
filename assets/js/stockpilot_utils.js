@@ -1,17 +1,11 @@
-/**
- * StockPilot Utilities
- * InventoryTeam — Liquor Business Inventory Management System
- * Shared client-side helpers for formatting, escaping, and clipboard actions.
+/*
+ * Shared browser utility functions for safely escaping HTML, formatting values,
+ * and copying text to the clipboard.
  */
 
 (function (window, document) {
     'use strict';
 
-    /**
-     * Safely escapes HTML special characters to prevent XSS.
-     * @param {*} str
-     * @returns {string}
-     */
     function escapeHtml(str) {
         if (str === null || str === undefined) return '';
         return String(str).replace(/[&<>"']/g, function (m) {
@@ -25,13 +19,6 @@
         });
     }
 
-    /**
-     * Formats a quantity value as a whole integer without decimals.
-     * Matches the server-side formatQty() helper in header.php.
-     * @param {*} val
-     * @param {number} [decimals=0]
-     * @returns {string}
-     */
     function formatQty(val, decimals = 0) {
         if (val === null || val === undefined || val === '') return '0';
         const cleaned = typeof val === 'string' ? val.replace(/,/g, '').trim() : val;
@@ -43,12 +30,6 @@
         });
     }
 
-    /**
-     * Copies text to system clipboard with modern and legacy fallbacks.
-     * @param {string} text
-     * @param {Function} [onSuccess]
-     * @param {Function} [onError]
-     */
     function copyToClipboard(text, onSuccess, onError) {
         if (!text) return;
         if (navigator.clipboard && window.isSecureContext) {
@@ -81,13 +62,6 @@
         }
     }
 
-
-    /**
-     * Highlights matched search queries inside a text string.
-     * @param {string} text
-     * @param {string} query
-     * @returns {string}
-     */
     function highlightMatches(text, query) {
         if (!query || !text) return escapeHtml(text || '');
         const escapedText = escapeHtml(text);
@@ -98,22 +72,6 @@
 
     let activeAutocomplete = null;
 
-    /**
-     * Initializes a searchable item autocomplete dropdown.
-     * Supports real-time filtering, keyword highlighting, ARIA accessibility,
-     * keyboard navigation (ArrowUp, ArrowDown, Enter, Escape), and form submission.
-     *
-     * @param {Object} options
-     * @param {Array<Object>} options.items - Array of item objects {id, code, name, type, unit}
-     * @param {string} [options.inputId='itemSearchInput']
-     * @param {string} [options.hiddenId='selectedItemId']
-     * @param {string} [options.dropdownId='itemDropdownList']
-     * @param {string} [options.clearBtnId='clearItemSearchBtn']
-     * @param {string} [options.wrapperId='itemSearchWrapper']
-     * @param {string} [options.formId='stockCardForm']
-     * @param {Function} [options.onSelect] - Optional custom select callback(item)
-     * @returns {Object}
-     */
     function initItemAutocomplete(options) {
         if (!options || !Array.isArray(options.items)) return null;
 
@@ -298,7 +256,6 @@
 
         activeAutocomplete = instance;
 
-        // Click outside listener for item search dropdown
         document.addEventListener('click', function(e) {
             if (wrapper && !wrapper.contains(e.target)) {
                 if (list && list.style.display === 'block') {
@@ -311,7 +268,6 @@
         return instance;
     }
 
-    // Global delegates routing to activeAutocomplete
     function highlightMatchesGlobal(text, query) { return highlightMatches(text, query); }
     function renderItemDropdown(matches, query) { if (activeAutocomplete) activeAutocomplete.render(matches, query); }
     function filterItemDropdown(query) { if (activeAutocomplete) activeAutocomplete.filter(query); }
@@ -323,7 +279,6 @@
     function handleItemDropdownKeydown(e) { if (activeAutocomplete) activeAutocomplete.handleKeydown(e); }
     function updateHighlightedRow() { if (activeAutocomplete) activeAutocomplete.updateHighlighted(); }
 
-    // Expose helpers globally
     window.escapeHtml = escapeHtml;
     window.formatQty = formatQty;
     window.copyToClipboard = copyToClipboard;
@@ -339,7 +294,6 @@
     window.handleItemDropdownKeydown = handleItemDropdownKeydown;
     window.updateHighlightedRow = updateHighlightedRow;
 
-    // Attach to StockPilot namespace
     window.StockPilot = window.StockPilot || {};
     window.StockPilot.escapeHtml = escapeHtml;
     window.StockPilot.formatQty = formatQty;

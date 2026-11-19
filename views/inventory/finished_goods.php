@@ -1,7 +1,7 @@
 <?php
-/**
- * View: Finished Goods (Production Output Monitoring)
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Finished Goods inventory page. Configures the page labels and loads the shared
+ * inventory category view for finished products.
  */
 
 $categoryConfig = [

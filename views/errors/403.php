@@ -1,7 +1,7 @@
 <?php
-/**
- * View: 403 Forbidden - Warehouse Access Denied
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Access denied (403) error page. Shown when a user tries to view or modify data
+ * belonging to a warehouse or section they are not allowed to access.
  */
 
 if (!headers_sent()) {

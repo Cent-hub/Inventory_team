@@ -1,17 +1,14 @@
 <?php
-/**
- * NotificationService.php
- * Unified notification feed service for Inventory ERP (F-22, F-35).
- * Shared by views/layouts/notification_bell.php and api/inventory/notifications_poll.php.
+/*
+ * Notification feed helper. Builds and formats inventory alerts and recent
+ * activity notifications for the header bell menu.
  */
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/StockService.php';
 
 class NotificationService {
-    /**
-     * Compute human-readable relative time string.
-     */
+
     public static function getTimeAgo($datetime): string {
         if (empty($datetime)) {
             return 'Just now';
@@ -37,9 +34,6 @@ class NotificationService {
         return $mo . ($mo === 1 ? ' month ago' : ' months ago');
     }
 
-    /**
-     * Categorize notification into New, Today, or Earlier.
-     */
     public static function getCategory($datetime, bool $isRead = false): string {
         if (empty($datetime)) {
             return 'New';
@@ -61,17 +55,6 @@ class NotificationService {
         return 'Earlier';
     }
 
-    /**
-     * Generate the complete notification feed for a user and warehouse facility.
-     *
-     * @param PDO $pdo Active database connection
-     * @param int $warehouseId Target warehouse ID
-     * @param array $currentUser Authenticated user record
-     * @param array $readNotificationIds Array of notification IDs previously marked as read
-     * @param string $baseUrl Base URL for hyperlinks
-     * @param string $lastKnownId Client's last known notification ID for new alert detection
-     * @return array Unified feed payload
-     */
     public static function getFeed(
         PDO $pdo,
         int $warehouseId,
@@ -88,7 +71,6 @@ class NotificationService {
             $warehouseId = 1;
         }
 
-        // 1. Low Stock Alerts (F-22: strictly NULLIF(s.reorder_level, 0) and reorder > 0)
         $stmtExactLow = $pdo->prepare("
             SELECT COUNT(*) AS total_low
             FROM items i
@@ -142,7 +124,6 @@ class NotificationService {
             ];
         }
 
-        // 2. Pending Stock Adjustments (F-11: scoped to warehouse for non-super_admin)
         if ($isSuperAdmin) {
             $stmtPendingAdj = $pdo->query("SELECT COUNT(*) AS total_count, UNIX_TIMESTAMP(MAX(requested_at)) AS latest_epoch FROM stock_adjustments WHERE status = 'pending'");
         } else {
@@ -170,7 +151,6 @@ class NotificationService {
             ];
         }
 
-        // 3. Pending Inbound Transfers
         $stmtPendingTrans = $pdo->prepare("SELECT COUNT(*) AS total_count, UNIX_TIMESTAMP(MAX(requested_at)) AS latest_epoch FROM stock_transfers WHERE destination_warehouse_id = :wid AND status IN ('pending', 'in_transit')");
         $stmtPendingTrans->execute([':wid' => $warehouseId]);
         $transRow = $stmtPendingTrans->fetch(PDO::FETCH_ASSOC);
@@ -194,7 +174,6 @@ class NotificationService {
             ];
         }
 
-        // 3b. Pending Catalog Items awaiting Super Admin review (BR-01)
         $pendingItemCount = 0;
         if ($isSuperAdmin) {
             $stmtPendingItems = $pdo->query("SELECT COUNT(*) AS total_count, UNIX_TIMESTAMP(MAX(created_at)) AS latest_epoch FROM items WHERE status = 'pending'");
@@ -220,7 +199,6 @@ class NotificationService {
             }
         }
 
-        // 4. Super Admin Stock Actions (audited inventory actions)
         $stmtAdminActs = $pdo->prepare("
             SELECT 
                 al.log_id,
@@ -300,7 +278,6 @@ class NotificationService {
             ];
         }
 
-        // 5. Support Inquiries & Messages (F-11: restricted to super_admin or owning user)
         if ($isSuperAdmin) {
             $stmtSupport = $pdo->query("
                 SELECT 
@@ -385,7 +362,6 @@ class NotificationService {
             ];
         }
 
-        // Sort feed newest first
         usort($notificationList, function($a, $b) {
             return ($b['timestamp'] ?? 0) <=> ($a['timestamp'] ?? 0);
         });

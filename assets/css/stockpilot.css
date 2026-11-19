@@ -1,8 +1,7 @@
-/**
- * InventoryTeam — Core Master Stylesheet
- * Extracted from views/layouts/header.php
+/*
+ * Main stylesheet for the application. Defines the color theme, layout,
+ * navigation, tables, cards, modals, and responsive rules.
  */
-
 
         :root {
             --maroon-deep: #2b0e0e;
@@ -73,14 +72,12 @@
             overflow-x: clip;
         }
 
-        /* App Master Layout */
         .app-shell {
             display: flex;
             min-height: 100vh;
             width: 100%;
         }
 
-        /* Fixed Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -124,7 +121,6 @@
             color: #ffffff;
         }
 
-        /* Standalone Sidebar Minimize / Toggle Icon in Expanded State */
         .sidebar-toggle-btn {
             display: inline-flex;
             align-items: center;
@@ -210,7 +206,6 @@
             margin-top: 2px;
         }
 
-        /* Sidebar Navigation Scroll Area */
         .sidebar-nav {
             flex: 1;
             overflow-y: auto;
@@ -241,7 +236,6 @@
             padding: 14px 12px 6px 12px;
         }
 
-        /* Nav Item & Link */
         .nav-item {
             display: block;
             width: 100%;
@@ -284,7 +278,6 @@
             stroke-width: 2px;
         }
 
-        /* Accordion Group (Expandable) */
         .nav-group {
             margin-bottom: 2px;
         }
@@ -407,7 +400,6 @@
             opacity: 1;
         }
 
-        /* Sidebar Footer / Quick User */
         .sidebar-footer {
             padding: 14px 16px;
             border-top: 1px solid rgba(255, 165, 74, 0.14);
@@ -481,7 +473,6 @@
             background: rgba(239, 68, 68, 0.15);
         }
 
-        /* Main Content Container */
         .main-content {
             margin-left: 260px;
             width: calc(100% - 260px);
@@ -492,7 +483,6 @@
             transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* Top Navbar */
         .navbar {
             height: 60px;
             background: #ffffff;
@@ -562,7 +552,6 @@
             box-shadow: 0 0 0 2px rgba(31, 122, 108, 0.25);
         }
 
-        /* Page Container */
         .content-body {
             flex: 1;
             padding: 28px;
@@ -571,7 +560,6 @@
             margin: 0 auto;
         }
 
-        /* Page Header (Sticky Maroon Dashboard Card) */
         .page-header {
             position: sticky;
             top: 16px;
@@ -660,7 +648,6 @@
             transform: translateY(-1px);
         }
 
-        /* Standard Button Design System */
         .btn {
             height: 38px;
             padding: 0 16px;
@@ -731,7 +718,6 @@
             border-color: var(--gold-hover);
         }
 
-        /* Cards & Panels */
         .card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -766,7 +752,6 @@
             margin-top: 2px;
         }
 
-        /* KPI Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -877,7 +862,6 @@
             margin-top: 6px;
         }
 
-        /* Filter Toolbar */
         .filter-bar {
             display: flex;
             align-items: center;
@@ -946,7 +930,6 @@
             border-color: var(--amber);
         }
 
-        /* Tables */
         .table-responsive {
             width: 100%;
             overflow-x: auto;
@@ -996,7 +979,6 @@
             background: #FDF4EB;
         }
 
-        /* Status & Classification Badges */
         .badge {
             display: inline-flex;
             align-items: center;
@@ -1115,7 +1097,6 @@
             border: 1px solid #FDE68A;
         }
 
-        /* Table Pagination System */
         .table-pagination {
             display: flex;
             align-items: center;
@@ -1212,7 +1193,6 @@
             font-weight: 600;
         }
 
-        /* Tab Navigation Bar (Horizontal Section Tabs) */
         .tab-bar,
         .stock-ops-tabs {
             display: flex;
@@ -1324,7 +1304,6 @@
             }
         }
 
-        /* Detail Modal */
         .modal-backdrop {
             display: none;
             position: fixed;
@@ -1378,7 +1357,6 @@
             gap: 10px;
         }
 
-        /* Mobile Drawer Backdrop */
         .sidebar-backdrop {
             display: none;
             position: fixed;
@@ -1387,7 +1365,6 @@
             z-index: 999;
         }
 
-        /* Responsive Layout Breakpoints */
         @media (max-width: 992px) {
             .sidebar {
                 transform: translateX(-260px);
@@ -1428,7 +1405,7 @@
 
         @media (max-width: 640px) {
             .page-header {
-                top: 68px; /* F-38: Prevents header clipping under 60px navbar */
+                top: 68px; 
                 padding: 16px 18px;
                 align-items: flex-start;
             }
@@ -1442,16 +1419,13 @@
             }
         }
 
-                /* ========================================================
-           Print Mode Styles (Unified Landscape High-Density Ledger)
-           ======================================================== */
         @page {
             size: landscape;
             margin: 8mm 6mm;
         }
 
         @media print {
-            /* Hide all navigational chrome, headers, filters, buttons, pagination & popups */
+
             .sidebar,
             .navbar,
             .page-header,
@@ -1471,7 +1445,6 @@
                 display: none !important;
             }
 
-            /* Print Header Official Banner */
             .print-banner {
                 display: block !important;
                 padding: 0 0 10px 0 !important;
@@ -1479,7 +1452,6 @@
                 border-bottom: 2px solid #0F172A !important;
             }
 
-            /* Unclip containers to utilize full landscape sheet without cropping */
             html, body {
                 background: #FFFFFF !important;
                 color: #0F172A !important;
@@ -1511,7 +1483,6 @@
                 display: none !important;
             }
 
-            /* High-Density Printable Ledger Table */
             table {
                 width: 100% !important;
                 max-width: 100% !important;
@@ -1522,7 +1493,7 @@
             }
 
             thead {
-                display: table-header-group !important; /* Repeats table column headers across all printed pages */
+                display: table-header-group !important; 
                 background: #F1F5F9 !important;
             }
 
@@ -1555,7 +1526,6 @@
                 print-color-adjust: exact !important;
             }
 
-            /* Badges & Status Pills in Print */
             .badge, .badge-type, .badge-wh, .badge-action, .badge-team {
                 display: inline-block !important;
                 padding: 1px 4px !important;
@@ -1575,11 +1545,6 @@
             }
         }
 
-/* Settings Modal & Section styles modularized into assets/css/settings_modal.css */
-
-/* ==========================================================================
-   User Management & Summary KPI Cards / Badges (InventoryTeam)
-   ========================================================================== */
 .kpi-grid,
 .summary-grid {
     display: grid;
@@ -1664,7 +1629,6 @@
     margin-top: 4px;
 }
 
-/* Role & Status Badges */
 .badge-teal {
     background: var(--accent-light);
     color: var(--accent);
@@ -1695,7 +1659,6 @@
     border: 1px solid var(--error-border);
 }
 
-/* Layout & Typography Utilities */
 .mb-6 { margin-bottom: 24px; }
 .mt-1 { margin-top: 4px; }
 .mr-1 { margin-right: 4px; }
@@ -1728,7 +1691,6 @@
     .md\:items-center { align-items: center; }
 }
 
-/* Shared Operations & Reports Tab Panes, Badges, Autocomplete & Print Banner */
 .stock-op-pane {
     animation: fadeIn 0.18s ease-in-out;
 }
@@ -1896,7 +1858,6 @@
     border-bottom: 2px solid var(--panel-ink);
 }
 
-/* Standardized Modal Close Button */
 .modal-close {
     width: 32px;
     height: 32px;
@@ -1918,7 +1879,6 @@
     color: var(--panel-ink);
 }
 
-/* Responsive 2-Column Grid Utility */
 .form-grid-2,
 .grid-2-responsive {
     display: grid;
@@ -1926,7 +1886,6 @@
     gap: 14px;
 }
 
-/* OTP Box Responsive Scaling */
 .otp-box,
 .settings-otp-box {
     flex: 1 1 0%;
@@ -1934,7 +1893,6 @@
     min-width: 36px;
 }
 
-/* Sticky Right-Most Action Column for Wide Tables */
 .table-sticky-actions th:last-child,
 .table-sticky-actions td:last-child {
     position: sticky;
@@ -1968,8 +1926,6 @@
     }
 }
 
-/* Print mode consolidated into unified @page & @media print rules above */
-
         @media (min-width: 993px) {
             body.sidebar-collapsed .sidebar {
                 width: 72px;
@@ -1981,7 +1937,6 @@
                 width: calc(100% - 72px);
             }
 
-            /* Brand Header in Collapsed Mode */
             body.sidebar-collapsed .sidebar-brand {
                 padding: 16px 0;
                 justify-content: center;
@@ -1996,7 +1951,6 @@
                 display: none !important;
             }
 
-            /* Toggle Button in Collapsed Mode: Overlays logo and shows up when cursor hovers */
             body.sidebar-collapsed .logo-mark {
                 border-radius: 50%;
                 width: 54px;
@@ -2024,7 +1978,6 @@
                 transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease, border-color 0.15s ease;
             }
 
-            /* When cursor hovers over the logo side, the toggle button shows up */
             body.sidebar-collapsed .sidebar-brand:hover .sidebar-toggle-btn,
             body.sidebar-collapsed .sidebar-toggle-btn:focus-visible {
                 opacity: 1;
@@ -2044,7 +1997,6 @@
                 box-shadow: 0 6px 18px rgba(255, 165, 74, 0.65);
             }
 
-            /* Navigation list in Collapsed Mode: vertically centered icons with comfortable spacing */
             body.sidebar-collapsed .sidebar-nav {
                 padding: 20px 0;
                 gap: 14px;
@@ -2091,14 +2043,12 @@
                 color: #ffffff;
             }
 
-            /* Active Icon Highlight (matching reference image pill styling) */
             body.sidebar-collapsed .nav-link.active {
                 background: linear-gradient(135deg, var(--amber) 0%, #D4761A 100%);
                 color: #ffffff;
                 box-shadow: 0 4px 14px rgba(232, 140, 46, 0.45);
             }
 
-            /* Dropdown Groups in Collapsed Mode */
             body.sidebar-collapsed .nav-group {
                 width: 100%;
                 display: flex;
@@ -2150,7 +2100,6 @@
                 box-shadow: 0 4px 14px rgba(232, 140, 46, 0.45);
             }
 
-            /* Collapsed Sub-menu: Flyout popover on hover */
             body.sidebar-collapsed .nav-sub-list {
                 display: none !important;
                 position: absolute;
@@ -2168,7 +2117,6 @@
                 margin: 0;
             }
 
-            /* Hover bridge preventing premature menu close */
             body.sidebar-collapsed .nav-sub-list::before {
                 content: '';
                 position: absolute;
@@ -2237,7 +2185,6 @@
                 font-weight: 600;
             }
 
-            /* Tooltips for navigation icons in Collapsed Mode */
             body.sidebar-collapsed .nav-item[data-tooltip]:hover::after {
                 content: attr(data-tooltip);
                 position: absolute;
@@ -2281,7 +2228,6 @@
                 }
             }
 
-            /* Collapsed Sidebar Footer */
             body.sidebar-collapsed .sidebar-footer {
                 padding: 14px 0;
                 flex-direction: column;
@@ -2375,7 +2321,6 @@
             }
         }
 
-        /* Mobile drawer safety: viewport <= 992px */
         @media (max-width: 992px) {
             body.sidebar-collapsed .sidebar {
                 width: 260px !important;
@@ -2393,9 +2338,6 @@
             }
         }
 
-/* ========================================================
-   HEADER NOTIFICATION BELL & DROPDOWN (Top-Right Navy Card)
-   ======================================================== */
 .notification-bell-wrapper {
     position: relative;
     display: inline-flex;
@@ -2448,7 +2390,6 @@
     transform: rotate(12deg);
 }
 
-/* Small High-Contrast Unread Badge */
 .notification-badge {
     position: absolute;
     top: -4px;
@@ -2480,7 +2421,6 @@
     }
 }
 
-/* Notifications Tooltip on Hover */
 .header-notification-btn::after {
     content: attr(data-tooltip);
     position: absolute;
@@ -2525,13 +2465,11 @@
     opacity: 1;
 }
 
-/* Hide tooltip when dropdown is open */
 .notification-bell-wrapper.open .header-notification-btn::after,
 .notification-bell-wrapper.open .header-notification-btn::before {
     display: none !important;
 }
 
-/* Notification Dropdown Panel (Clean White Modal Surface) */
 .notification-dropdown {
     display: none;
     position: absolute;
@@ -2548,7 +2486,6 @@
     animation: notifSlideDown 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* F-38: Elevate .page-header above content when notification dropdown is open */
 .page-header:has(.notification-bell-wrapper.open),
 .page-header.dropdown-open {
     z-index: 1050 !important;
@@ -2646,7 +2583,6 @@
     border-radius: 4px;
 }
 
-/* Section categorization (New, Today, Earlier) */
 .notif-section {
     display: flex;
     flex-direction: column;
@@ -2745,7 +2681,6 @@
     color: #94A3B8;
 }
 
-/* Action button for marking single notification read */
 .notif-mark-btn {
     display: inline-flex;
     align-items: center;
@@ -2774,7 +2709,6 @@
     outline-offset: 1px;
 }
 
-/* Unread dot indicator */
 .notif-unread-dot {
     width: 8px;
     height: 8px;
@@ -2789,7 +2723,6 @@
     display: none;
 }
 
-/* Hovering mark button on unread item reveals checkmark */
 .notif-item.unread .notif-mark-btn:hover .notif-unread-dot {
     display: none;
 }
@@ -2799,7 +2732,6 @@
     color: #0D9488;
 }
 
-/* When marked read, unread dot is gone, check icon is subtle */
 .notif-item.read .notif-unread-dot {
     display: none;
 }
@@ -2999,10 +2931,6 @@
     text-decoration: underline;
 }
 
-
-/* ==========================================================================
-   Segmented Notification Filter Controls (Clean, Evenly Spaced Group)
-   ========================================================================== */
 .notif-tabs {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -3095,7 +3023,6 @@
     color: #FFFFFF;
 }
 
-/* Empty State for Filter */
 .notif-filter-empty {
     padding: 32px 18px;
     text-align: center;
@@ -3113,7 +3040,6 @@
     color: #64748B;
 }
 
-/* Real-time Bell Pulse Animation */
 @keyframes notifBellPulse {
     0% { transform: scale(1); }
     15% { transform: scale(1.15) rotate(-6deg); }
@@ -3130,7 +3056,6 @@
     background: rgba(31, 122, 108, 0.25) !important;
 }
 
-/* Toast Alert Container & Notifications */
 .notif-toast-container {
     position: fixed;
     bottom: 24px;
@@ -3293,7 +3218,6 @@
     to { width: 0%; }
 }
 
-/* Real-Time Dashboard KPI Live Value Flash */
 @keyframes statValuePulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.18); color: var(--error); }
@@ -3305,7 +3229,6 @@
     display: inline-block;
 }
 
-/* Dashboard 2-Column Analytics Grid (Flow Velocity Chart + Warehouse Staff Logins) */
 .dashboard-analytics-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);

@@ -1,11 +1,9 @@
-/**
- * Settings Modal Controller
- * InventoryTeam — Liquor Business Inventory Management System
- * Modular client-side controller for iOS-style grouped settings modal,
- * OTP verification, password change, preferences, and support inquiries.
+/*
+ * Client-side logic for the settings modal. Handles opening and closing the
+ * modal, saving preferences, changing passwords, verifying OTP codes, and
+ * sending support messages.
  */
 
-// Helper to resolve BASE_URL cleanly
 function getSettingsBaseUrl() {
     if (typeof window.BASE_URL === 'string' && window.BASE_URL !== '') {
         return window.BASE_URL;
@@ -17,20 +15,15 @@ function getSettingsBaseUrl() {
     return '/';
 }
 
-// Helper to resolve CSRF token
 function getSettingsCsrfToken() {
     const metaCsrf = document.querySelector('meta[name="csrf-token"]');
     return metaCsrf ? (metaCsrf.getAttribute('content') || '') : '';
 }
 
-/**
- * Settings Modal Navigation Controller
- */
 function openSettingsModal(section = 'main') {
     const modal = document.getElementById('settingsModal');
     if (!modal) return;
-    
-    // Close mobile sidebar if open
+
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
     if (sidebar && sidebar.classList.contains('open')) {
@@ -48,7 +41,7 @@ function openSettingsModal(section = 'main') {
 function closeSettingsModal() {
     const modal = document.getElementById('settingsModal');
     if (!modal) return;
-    
+
     modal.classList.remove('open');
     document.body.style.overflow = '';
 }
@@ -66,16 +59,13 @@ function switchSettingsView(sectionId) {
 
     const target = views[sectionId] || views['main'];
 
-    // Hide all views
     document.querySelectorAll('.settings-view').forEach(v => v.classList.remove('active'));
 
-    // Show target view
     const targetEl = document.getElementById(target.id);
     if (targetEl) {
         targetEl.classList.add('active');
     }
 
-    // Adjust modal width for wide table views if needed
     const modalCard = document.querySelector('.settings-modal-card');
     if (modalCard) {
         if (target.wide) {
@@ -85,13 +75,11 @@ function switchSettingsView(sectionId) {
         }
     }
 
-    // Update title
     const titleEl = document.getElementById('settingsModalTitle');
     if (titleEl) {
         titleEl.textContent = target.title;
     }
 
-    // Toggle Back Button
     const backBtn = document.getElementById('settingsBtnBack');
     if (backBtn) {
         backBtn.style.display = target.showBack ? 'inline-flex' : 'none';
@@ -100,16 +88,12 @@ function switchSettingsView(sectionId) {
         if (backSpan) backSpan.textContent = target.backLabel || 'Settings';
     }
 
-    // Scroll body back to top
     const modalBody = document.querySelector('.settings-modal-body');
     if (modalBody) {
         modalBody.scrollTop = 0;
     }
 }
 
-// =========================================================================
-// 3-STEP 6-DIGIT OTP FORGOT PASSWORD CONTROLLER (Matches Login Page Design)
-// =========================================================================
 let settingsResetEmail = '';
 let settingsResetToken = '';
 let settingsResendCountdown = 0;
@@ -622,7 +606,6 @@ function toggleNotificationFeedback(checkbox, prefKey, label) {
     .catch(() => {});
 }
 
-// Global escape key listener to dismiss Settings modal
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         const modal = document.getElementById('settingsModal');
@@ -632,9 +615,8 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Auto-open settings modal if URL hash or query parameter requests it
 document.addEventListener('DOMContentLoaded', function() {
-    // Hydrate saved toggle switches from localStorage if customized in browser
+
     document.querySelectorAll('input[type="checkbox"][data-pref-key]').forEach(cb => {
         const key = cb.getAttribute('data-pref-key');
         try {
@@ -645,7 +627,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (e) {}
     });
 
-    // Enable keyboard Enter / Space activation on clickable .settings-row[role="button"] items
     document.querySelectorAll('.settings-row[role="button"]').forEach(row => {
         row.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -655,7 +636,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // OTP Box Input Group Logic (Auto-Advance, Backspace, Paste)
     const settingsOtpBoxes = Array.from(document.querySelectorAll('.settings-otp-box'));
     settingsOtpBoxes.forEach((box, idx) => {
         box.addEventListener('focus', function () {
@@ -699,7 +679,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const hash = window.location.hash;
     const urlParams = new URLSearchParams(window.location.search);
-    
+
     if (hash === '#settings' || urlParams.get('settings') === '1' || urlParams.get('modal') === 'settings') {
         const section = urlParams.get('section') || 'main';
         openSettingsModal(section);

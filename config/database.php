@@ -1,7 +1,7 @@
 <?php
-/**
- * Database Connection Manager (PDO)
- * Target: team_inventory_local
+/*
+ * Database connection manager. Creates and shares a single PDO connection to the
+ * database using settings from the environment file.
  */
 
 require_once __DIR__ . '/bootstrap.php';
@@ -11,7 +11,7 @@ class Database {
 
     public static function getConnection(): PDO {
         if (self::$instance === null) {
-            // .env is loaded eagerly by config/bootstrap.php (F-09)
+
             $host = getenv('DB_HOST') ?: '127.0.0.1';
             $port = getenv('DB_PORT') ?: '3306';
             $dbname = getenv('DB_NAME') ?: 'erp_db';
@@ -29,9 +29,9 @@ class Database {
 
             try {
                 self::$instance = new PDO($dsn, $username, $password, $options);
-                // F-25: align MariaDB session clock with PHP business timezone (Asia/Manila => +08:00)
+
                 self::$instance->exec("SET time_zone = " . self::$instance->quote(getDbTimezoneOffset()));
-                // F-30: enforce STRICT_TRANS_TABLES so numeric overflows & invalid ENUMs fail instead of clamping
+
                 self::$instance->exec("SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, 'STRICT_TRANS_TABLES')");
             } catch (PDOException $e) {
                 error_log("Database connection error: " . $e->getMessage());

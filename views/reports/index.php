@@ -1,28 +1,18 @@
 <?php
-/**
- * View: Comprehensive Inventory Reports Suite
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Restructured Unified Hub for Core Inventory Reports:
- * Section 1: Raw Materials Stock Report
- * Section 2: Finished Goods Stock Report
- * Section 3: Current Inventory Balance
- * 
- * Also preserves transaction reports (Movement, Inbounds, Outbounds, Transfers, Adjustments).
+/*
+ * Inventory reports page. Displays stock reports for raw materials, finished
+ * goods, and current inventory balances, with filtering and export options.
  */
 
-// Selected Report Identifier
 $requestedType = isset($_GET['type']) ? trim($_GET['type']) : (isset($_GET['tab']) ? trim($_GET['tab']) : '');
 if ($requestedType === 'current_stock') {
     $requestedType = 'current_balance';
 }
 
-// Check if this is a transaction ledger report (Group 2)
 $isTransactionReport = in_array($requestedType, [
     'stock_movements', 'stock_ins', 'stock_outs', 'stock_transfers', 'stock_adjustments'
 ], true);
 
-// Forward transaction report requests to the unified Stock Transaction Reports hub
 if ($isTransactionReport) {
     if (php_sapi_name() !== 'cli' && (!defined('IN_UNIT_TEST') || !IN_UNIT_TEST)) {
         $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
@@ -54,15 +44,11 @@ require_once __DIR__ . '/../layouts/navbar.php';
 
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Active Tab for Unified Inventory Reports (Default: raw_materials)
 $activeTab = 'raw_materials';
 if (in_array($requestedType, ['raw_materials', 'finished_goods', 'current_balance', 'bad_products'], true)) {
     $activeTab = $requestedType;
 }
 
-// =============================================================================
-// DATA RETRIEVAL: UNIFIED INVENTORY REPORTS
-// =============================================================================
 $sql = "
     SELECT 
         i.item_id,
@@ -102,7 +88,6 @@ $rawMaterialsData   = array_values(array_filter($allInventoryData, fn($r) => in_
 $finishedGoodsData  = array_values(array_filter($allInventoryData, fn($r) => in_array($r['item_type'], ['finished_good', 'Finished Good'], true)));
 $currentBalanceData = $allInventoryData;
 
-// Bad Products Report Data (Defective & Damaged Write-Offs — excluded from salable stock)
 $sqlBad = "
     SELECT 
         bp.bad_product_id,
@@ -142,7 +127,6 @@ $stmtBad->execute($paramsBad);
 $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<!-- Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title" id="pageTitleHeading">Inventory Reports</h1>
@@ -155,7 +139,6 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Print-Only Official Document Header -->
 <div class="print-banner">
     <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div>
@@ -171,9 +154,6 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- ===================================================================== -->
-<!-- SECTION NAVIGATION TABS: RAW MATERIALS | FINISHED GOODS | BALANCE    -->
-<!-- ===================================================================== -->
 <div class="stock-ops-nav-wrapper">
     <div class="stock-ops-nav-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -245,7 +225,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
         <form method="GET" action="index.php" id="reportFilterForm" class="report-filter-form no-print" onsubmit="event.preventDefault(); filterActiveReportTable(); return false;" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <input type="hidden" name="type" id="filterReportTypeInput" value="<?= htmlspecialchars($activeTab) ?>">
 
-            <!-- Search -->
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -256,7 +235,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                 <input type="text" name="search" class="search-box" aria-label="Search report items" placeholder="Search item code, description, category..." value="<?= htmlspecialchars($search) ?>" id="reportSearchInput" oninput="filterActiveReportTable()">
             </div>
 
-            <!-- Health Status Filter -->
             <select id="reportHealthFilter" class="select-filter" aria-label="Filter by health status" onchange="filterActiveReportTable()">
                 <option value="">All Statuses</option>
                 <option value="optimal">In Stock</option>
@@ -264,7 +242,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                 <option value="out_of_stock">Out of Stock</option>
             </select>
 
-            <!-- Buttons -->
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button type="button" class="btn btn-secondary" style="height: 38px;" onclick="resetInventoryReportFilters()" title="Reset Filters">
                     <span>Reset</span>
@@ -289,9 +266,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
         </form>
     </div>
 
-<!-- ##################################################################### -->
-<!-- SECTION 1: RAW MATERIALS STOCK REPORT                                 -->
-<!-- ##################################################################### -->
 <div id="pane-raw_materials" class="stock-op-pane" style="display: <?= $activeTab === 'raw_materials' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="reportTable_raw_materials">
@@ -344,9 +318,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
         </div>
 </div>
 
-<!-- ##################################################################### -->
-<!-- SECTION 2: FINISHED GOODS STOCK REPORT                                -->
-<!-- ##################################################################### -->
 <div id="pane-finished_goods" class="stock-op-pane" style="display: <?= $activeTab === 'finished_goods' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="reportTable_finished_goods">
@@ -399,9 +370,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
         </div>
 </div>
 
-<!-- ##################################################################### -->
-<!-- SECTION 3: CURRENT INVENTORY BALANCE                                  -->
-<!-- ##################################################################### -->
 <div id="pane-current_balance" class="stock-op-pane" style="display: <?= $activeTab === 'current_balance' ? 'block' : 'none' ?>;">
         <div class="table-responsive">
             <table id="reportTable_current_balance">
@@ -456,9 +424,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
         </div>
 </div>
 
-<!-- ##################################################################### -->
-<!-- SECTION 4: BAD PRODUCTS & DAMAGED RETURNS REPORT                      -->
-<!-- ##################################################################### -->
 <style>
 .print-only-col { display: none; }
 @media print {
@@ -550,7 +515,6 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
 </div>
 </div>
 
-<!-- Modal: Bad Product Detail View -->
 <div id="badProductDetailModal" class="modal-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="bpModalTitle" onclick="if(event.target === this) closeBadProductDetailModal()">
     <div class="modal-card" style="max-width: 520px;">
         <div class="modal-header">
@@ -603,9 +567,6 @@ function closeBadProductDetailModal() {
     document.getElementById('badProductDetailModal').classList.remove('open');
 }
 
-// =============================================================================
-// UNIFIED INVENTORY REPORTS CONTROLLER (Raw Materials | Finished Goods | Balance | Bad Products)
-// =============================================================================
 let currentActiveTab = '<?= $activeTab ?>';
 
 const reportTitles = {
@@ -631,7 +592,6 @@ function switchReportTab(tabName) {
     if (cardTitleEl && reportTitles[tabName]) cardTitleEl.textContent = reportTitles[tabName];
     if (cardDescEl && reportDescs[tabName])   cardDescEl.textContent  = reportDescs[tabName];
 
-    // Update Tab Buttons
     validTabs.forEach(t => {
         const btn = document.getElementById('tab-btn-' + t);
         if (btn) {
@@ -643,7 +603,6 @@ function switchReportTab(tabName) {
         }
     });
 
-    // Update Tab Panes
     validTabs.forEach(t => {
         const pane = document.getElementById('pane-' + t);
         if (pane) {
@@ -651,33 +610,27 @@ function switchReportTab(tabName) {
         }
     });
 
-    // Update Form hidden type input
     const filterInput = document.getElementById('filterReportTypeInput');
     if (filterInput) filterInput.value = tabName;
 
-    // Update printable document subtitle
     const printSubtitle = document.getElementById('printDocTitle');
     if (printSubtitle && reportTitles[tabName]) {
         printSubtitle.textContent = reportTitles[tabName];
     }
 
-    // Sync URL without reloading
     const url = new URL(window.location.href);
     url.searchParams.set('type', tabName);
     url.searchParams.delete('tab');
     window.history.replaceState({ tab: tabName }, '', url.toString());
 
-    // Update instant filter on the newly active table
     filterActiveReportTable();
 
-    // Trigger pagination re-calculation on active table
     const activeTable = document.getElementById('reportTable_' + tabName);
     if (activeTable && typeof activeTable.paginationUpdate === 'function') {
         activeTable.paginationUpdate(false);
     }
 }
 
-// Support browser back/forward buttons
 window.addEventListener('popstate', function() {
     const params = new URLSearchParams(window.location.search);
     let tab = params.get('type') || params.get('tab') || 'raw_materials';
@@ -685,7 +638,6 @@ window.addEventListener('popstate', function() {
     switchReportTab(tab);
 });
 
-// Instant live search and health status filter across all report tables
 function filterActiveReportTable() {
     const input = document.getElementById('reportSearchInput');
     const healthSelect = document.getElementById('reportHealthFilter');
@@ -755,7 +707,6 @@ function resetInventoryReportFilters() {
     filterActiveReportTable();
 }
 
-// Export active report table as CSV (delegates to global exportTableToCsv in footer.php)
 function exportReportCsv() {
     exportTableToCsv('reportTable_' + currentActiveTab, currentActiveTab);
 }

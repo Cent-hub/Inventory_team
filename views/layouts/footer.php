@@ -1,12 +1,11 @@
 <?php
-/**
- * Layout: Footer & Global Scripts
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Shared page footer layout. Closes the main page wrapper and loads global
+ * JavaScript helpers and modals.
  */
 ?>
     </main>
 
-    <!-- App Bottom Footer -->
     <footer style="background: #ffffff; border-top: 1px solid var(--border); padding: 16px 28px; text-align: center; font-size: 12.5px; color: var(--gray); margin-top: auto;">
         <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1540px; margin: 0 auto; flex-wrap: wrap; gap: 12px;">
             <span>&copy; <?= date('Y') ?> InventoryTeam &middot; Liquor Business Inventory Management System</span>
@@ -16,8 +15,8 @@
             </span>
         </div>
     </footer>
-</div><!-- /.main-content -->
-</div><!-- /.app-shell -->
+</div>
+</div>
 
 <?php require_once __DIR__ . '/settings_modal.php'; ?>
 <script src="<?= BASE_URL ?>assets/js/settings_modal.js?v=<?= file_exists(__DIR__ . '/../../assets/js/settings_modal.js') ? filemtime(__DIR__ . '/../../assets/js/settings_modal.js') : time() ?>"></script>
@@ -25,7 +24,6 @@
 <script>
 const APP_BASE_URL = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
-// Toggle Desktop Sidebar Collapse / Expand
 function toggleSidebarCollapse() {
     const isCollapsed = document.body.classList.toggle('sidebar-collapsed');
     try {
@@ -33,12 +31,10 @@ function toggleSidebarCollapse() {
         document.cookie = "inventory_sidebar_collapsed=" + (isCollapsed ? "true" : "false") + "; path=/; max-age=31536000";
     } catch(e) {}
 
-    // Close any lingering flyouts
     document.querySelectorAll('.nav-group.flyout-open').forEach(g => g.classList.remove('flyout-open'));
 
     updateSidebarToggleAttributes();
 
-    // Trigger window resize event so responsive charts, grids, and tables reflow smoothly
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -52,7 +48,6 @@ function updateSidebarToggleAttributes() {
     }
 }
 
-// Toggle Accordion Nav Group (Supports both Accordion in expanded state and Flyout in collapsed state)
 function toggleNavGroup(groupId) {
     const group = document.getElementById(groupId);
     if (!group) return;
@@ -74,7 +69,6 @@ function toggleNavGroup(groupId) {
     }
 }
 
-// Close open flyout popovers when clicking outside
 document.addEventListener('click', function(e) {
     if (document.body.classList.contains('sidebar-collapsed')) {
         if (!e.target.closest('.nav-group')) {
@@ -85,7 +79,6 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Keyboard shortcut: Ctrl+B or Cmd+B toggles sidebar collapse
 document.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
         const tag = (e.target.tagName || '').toLowerCase();
@@ -96,12 +89,10 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Initialize toggle button state on DOM load
 document.addEventListener('DOMContentLoaded', function() {
     updateSidebarToggleAttributes();
 });
 
-// Header Notification Bell Dropdown Toggle
 function toggleNotificationDropdown(e) {
     if (e) {
         e.preventDefault();
@@ -115,7 +106,6 @@ function toggleNotificationDropdown(e) {
     btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
 }
 
-// Storage helpers for individual notification read states
 function getStoredReadNotifications() {
     try {
         const stored = localStorage.getItem('inventory_read_notifications');
@@ -150,14 +140,11 @@ function removeNotificationFromReadList(notifId) {
     saveReadNotifications(readIds);
 }
 
-// Notification Filter State
 let currentNotificationFilter = 'all';
 
-// Universal Filter for Notification Dropdown Tabs (All, Unread, Stock, Messages)
 function filterNotifications(filter, btn) {
     currentNotificationFilter = filter || 'all';
 
-    // Update active tab buttons visual state
     const tabs = document.querySelectorAll('.notif-tabs .notif-tab');
     tabs.forEach(function(t) {
         const isCurrent = (t === btn || t.getAttribute('data-filter') === currentNotificationFilter);
@@ -187,7 +174,6 @@ function filterNotifications(filter, btn) {
         if (show) visibleCount++;
     });
 
-    // Toggle category section headers based on whether any child item is visible
     const sections = document.querySelectorAll('#notifListContainer .notif-section');
     sections.forEach(function(sec) {
         const hasVisibleChild = Array.from(sec.querySelectorAll('.notif-item')).some(function(item) {
@@ -196,7 +182,6 @@ function filterNotifications(filter, btn) {
         sec.style.display = hasVisibleChild ? '' : 'none';
     });
 
-    // Toggle filter empty state
     const filterEmpty = document.getElementById('notifFilterEmpty');
     if (filterEmpty) {
         if (items.length > 0 && visibleCount === 0) {
@@ -207,7 +192,6 @@ function filterNotifications(filter, btn) {
     }
 }
 
-// Update notification badge, dropdown counter, and accessibility labels
 function updateNotificationBadgeDisplay(count) {
     const badge = document.getElementById('notificationBadge');
     const countTag = document.getElementById('notifHeaderCount');
@@ -251,24 +235,20 @@ function updateNotificationBadgeDisplay(count) {
         }
     }
 
-    // If currently filtered by unread, re-evaluate item visibility
     if (currentNotificationFilter === 'unread') {
         filterNotifications('unread');
     }
 }
 
-// Handle tapping a single notification message link (decreases count & navigates)
 function handleNotificationClick(e, item) {
     if (!item) return;
     const notifId = item.getAttribute('data-notif-id');
     if (!notifId) return;
 
-    // If already read, permit navigation without decrementing
     if (item.classList.contains('read') && !item.classList.contains('unread')) {
         return;
     }
 
-    // Mark visual state in DOM immediately
     item.classList.remove('unread');
     item.classList.add('read');
 
@@ -279,15 +259,12 @@ function handleNotificationClick(e, item) {
         markBtn.setAttribute('aria-label', 'Mark as unread');
     }
 
-    // Synchronously persist read status in localStorage and Cookie
     addNotificationToReadList(notifId);
 
-    // Decrement unread counter immediately
     const remainingUnread = document.querySelectorAll('#notifListContainer .notif-item.unread').length;
     updateNotificationBadgeDisplay(remainingUnread);
 }
 
-// Toggle read/unread state on dot button without navigating away
 function toggleSingleNotificationRead(e, item) {
     if (e) {
         e.preventDefault();
@@ -301,7 +278,7 @@ function toggleSingleNotificationRead(e, item) {
     const markBtn = item.querySelector('.notif-mark-btn');
 
     if (isCurrentlyRead) {
-        // Toggle back to unread
+
         item.classList.remove('read');
         item.classList.add('unread');
         if (markBtn) {
@@ -311,7 +288,7 @@ function toggleSingleNotificationRead(e, item) {
         }
         removeNotificationFromReadList(notifId);
     } else {
-        // Mark as read
+
         item.classList.remove('unread');
         item.classList.add('read');
         if (markBtn) {
@@ -326,7 +303,6 @@ function toggleSingleNotificationRead(e, item) {
     updateNotificationBadgeDisplay(remainingUnread);
 }
 
-// Mark all notifications as read
 function markAllNotificationsRead(e) {
     if (e) {
         e.preventDefault();
@@ -354,10 +330,9 @@ function markAllNotificationsRead(e) {
     updateNotificationBadgeDisplay(0);
 }
 
-// Sync notification visual states from localStorage on DOMContentLoaded
 function syncNotificationStateFromStorage() {
     try {
-        // Clean up deprecated legacy flag if present
+
         if (localStorage.getItem('inventory_notifications_read')) {
             localStorage.removeItem('inventory_notifications_read');
         }
@@ -391,7 +366,6 @@ function syncNotificationStateFromStorage() {
         }
     });
 
-    // Prune stale IDs from storage if any alerts are no longer present
     if (activeDomIds.length > 0 && readIds.length > 0) {
         const pruned = readIds.filter(function(id) { return activeDomIds.includes(id); });
         if (pruned.length !== readIds.length) {
@@ -402,7 +376,6 @@ function syncNotificationStateFromStorage() {
     updateNotificationBadgeDisplay(unreadCount);
 }
 
-// Close notification dropdown when clicking outside
 document.addEventListener('click', function(e) {
     const wrapper = document.getElementById('headerNotificationWrapper');
     if (wrapper && wrapper.classList.contains('open')) {
@@ -414,7 +387,6 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Close notification dropdown on Escape key
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         const wrapper = document.getElementById('headerNotificationWrapper');
@@ -428,7 +400,6 @@ document.addEventListener('keydown', function(e) {
         }
     }
 
-    // Keyboard navigation for notification filter tabs (Arrow keys, Home, End)
     const activeTab = document.activeElement;
     if (activeTab && activeTab.classList.contains('notif-tab')) {
         const tabs = Array.from(document.querySelectorAll('.notif-tabs .notif-tab'));
@@ -453,11 +424,10 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Web Audio API Synthesized Chime (Crisp 2-Tone Notification Chime)
 function playNotificationChime(force) {
     try {
         if (!force) {
-            // Check sound preferences
+
             const soundPref = localStorage.getItem('inventoryteam_pref_notif_sound');
             if (soundPref === '0') return;
 
@@ -470,7 +440,6 @@ function playNotificationChime(force) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
 
-        // F-43: Reuse singleton AudioContext to prevent browser 6-instance limit exhaustion
         if (!window._appAudioContext || window._appAudioContext.state === 'closed') {
             window._appAudioContext = new AudioContextClass();
         }
@@ -481,7 +450,6 @@ function playNotificationChime(force) {
 
         const now = ctx.currentTime;
 
-        // Tone 1: D5 (587.33 Hz)
         const osc1 = ctx.createOscillator();
         const gain1 = ctx.createGain();
         osc1.type = 'sine';
@@ -493,7 +461,6 @@ function playNotificationChime(force) {
         osc1.start(now);
         osc1.stop(now + 0.35);
 
-        // Tone 2: A5 (880 Hz)
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
         osc2.type = 'sine';
@@ -505,16 +472,15 @@ function playNotificationChime(force) {
         osc2.start(now + 0.12);
         osc2.stop(now + 0.6);
     } catch (e) {
-        // AudioContext could be blocked by browser autoplay policy before user interaction
+
     }
 }
 
-// Trigger Header Bell Icon Pulse
 function pulseNotificationBell() {
     const bellBtn = document.getElementById('notificationBellBtn');
     if (bellBtn) {
         bellBtn.classList.remove('pulse');
-        void bellBtn.offsetWidth; // Force CSS reflow
+        void bellBtn.offsetWidth; 
         bellBtn.classList.add('pulse');
         setTimeout(function() {
             bellBtn.classList.remove('pulse');
@@ -522,7 +488,6 @@ function pulseNotificationBell() {
     }
 }
 
-// Synchronize Real-Time Dashboard KPI Cards (e.g. Low Stock Items count)
 function updateDashboardKpi(kpi) {
     if (!kpi) return;
     const valLowStock = document.getElementById('dashboardValLowStock');
@@ -536,7 +501,7 @@ function updateDashboardKpi(kpi) {
         if (oldCount !== count) {
             valLowStock.textContent = count;
             valLowStock.classList.remove('stat-value-pulse');
-            void valLowStock.offsetWidth; // Force CSS reflow
+            void valLowStock.offsetWidth; 
             valLowStock.classList.add('stat-value-pulse');
             setTimeout(function() {
                 valLowStock.classList.remove('stat-value-pulse');
@@ -562,7 +527,6 @@ function updateDashboardKpi(kpi) {
     }
 }
 
-// Dismiss a toast alert with fade/slide animation
 function dismissNotificationToast(toast) {
     if (!toast) return;
     toast.classList.add('hiding');
@@ -573,15 +537,12 @@ function dismissNotificationToast(toast) {
     }, 280);
 }
 
-// Display real-time toast alert pop-up at bottom-right
 function showNotificationToast(alert) {
     if (!alert || !alert.title) return;
 
-    // Check toast alert preference
     const toastPref = localStorage.getItem('inventoryteam_pref_toast_alerts');
     const allowToast = (toastPref !== '0');
 
-    // Trigger audio chime & bell pulse
     playNotificationChime(false);
     pulseNotificationBell();
 
@@ -603,7 +564,6 @@ function showNotificationToast(alert) {
     toast.className = 'notif-toast';
     toast.setAttribute('data-toast-id', String(alert.id || ''));
 
-    // Icon SVG based on severity
     let iconSvg = '';
     if (sev === 'critical') {
         iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
@@ -664,13 +624,11 @@ function showNotificationToast(alert) {
 
     container.appendChild(toast);
 
-    // Auto dismiss after 6 seconds
     setTimeout(function() {
         dismissNotificationToast(toast);
     }, 6000);
 }
 
-// Header Notifications (rendered server-side on page load)
 let lastKnownNotifId = '';
 let notifPollInterval = null;
 
@@ -682,13 +640,11 @@ function initNotificationPolling() {
     if (notifPollInterval) clearInterval(notifPollInterval);
 }
 
-// Sync notifications on DOM load
 document.addEventListener('DOMContentLoaded', function() {
     syncNotificationStateFromStorage();
     initNotificationPolling();
 });
 
-// Toggle Mobile Responsive Sidebar
 function toggleMobileSidebar() {
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
@@ -701,10 +657,8 @@ function toggleSidebar() {
     toggleMobileSidebar();
 }
 
-// Shared HTML-escaping helper (delegates to StockPilot utility in stockpilot_utils.js)
 window.escapeHtml = window.escapeHtml || (window.StockPilot && window.StockPilot.escapeHtml);
 
-// Universal Client-side Table Filter with Pagination Integration
 function filterTable(inputId, tableId) {
     const input = document.getElementById(inputId);
     const table = document.getElementById(tableId);
@@ -729,7 +683,6 @@ function filterTable(inputId, tableId) {
     }
 }
 
-// Universal Client-side HTML Table to CSV Exporter
 function exportTableToCsv(tableId, filenamePrefix) {
     const table = document.getElementById(tableId);
     if (!table) return;
@@ -748,7 +701,7 @@ function exportTableToCsv(tableId, filenamePrefix) {
         const row = [];
         for (let j = 0; j < cols.length; j++) {
             let text = (cols[j].textContent || '').replace(/(\r\n|\n|\r)/gm, ' ').replace(/\s+/g, ' ').trim();
-            // F-29: Prepend ' to prevent CSV formula injection if cell begins with =, +, -, @, tab, or CR
+
             if (/^[=+\-@\t\r]/.test(text)) {
                 text = "'" + text;
             }
@@ -776,7 +729,6 @@ function exportTableToCsv(tableId, filenamePrefix) {
     }, 1500);
 }
 
-// Universal Client-side Column Sorting Engine
 function initTableSorting(table) {
     if (!table || table.classList.contains('no-sort')) return;
     const thead = table.querySelector('thead');
@@ -847,7 +799,6 @@ function initTableSorting(table) {
     });
 }
 
-// Universal 10-Rows-Per-Page Table Pagination Engine
 function initTablePagination(table, pageSize = 10) {
     if (!table) return;
 
@@ -874,7 +825,6 @@ function initTablePagination(table, pageSize = 10) {
             return !tr.querySelector('td[colspan]') && !tr.classList.contains('no-paginate');
         });
 
-        // If no data rows (empty state)
         if (allRows.length === 0) {
             paginationContainer.style.display = 'none';
             return;
@@ -916,7 +866,6 @@ function initTablePagination(table, pageSize = 10) {
             }
         });
 
-        // Controls HTML
         let controlsHtml = `
             <button type="button" class="btn-page prev-page" ${currentPage === 1 ? 'disabled' : ''} aria-label="Previous page">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -996,7 +945,6 @@ function initTablePagination(table, pageSize = 10) {
     renderPagination();
 }
 
-// Universal Flash Alert Dismissal Engine with Smooth Fade & Collapse
 function dismissFlashAlert(alertEl) {
     if (!alertEl || alertEl.dataset.dismissing === 'true') return;
     alertEl.dataset.dismissing = 'true';
@@ -1005,7 +953,6 @@ function dismissFlashAlert(alertEl) {
     alertEl.style.overflow = 'hidden';
     alertEl.style.maxHeight = alertEl.scrollHeight + 'px';
 
-    // Force repaint before animating out
     void alertEl.offsetHeight;
 
     alertEl.style.opacity = '0';
@@ -1023,9 +970,8 @@ function dismissFlashAlert(alertEl) {
 }
 window.dismissFlashAlert = dismissFlashAlert;
 
-// Auto-initialize pagination & sorting on all data tables, plus global modal Escape & Focus Trap
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-dismiss all Throwable / Error & Flash Alert banners after 4 seconds
+
     function attachAlertAutoDismiss(alert) {
         if (!alert || alert.dataset.autoDismissAttached) return;
         alert.dataset.autoDismissAttached = 'true';
@@ -1035,19 +981,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 4000);
     }
 
-    // F-28: Restrict auto-dismiss strictly to explicit .flash-alert banners not marked data-persistent.
-    // Never auto-remove modal feedback banners (e.g. #notifFeedbackBanner, #securityFeedbackBanner, #supportFeedbackBanner).
     const initialAlerts = document.querySelectorAll(
         '.flash-alert:not([data-persistent]):not([role="status"])'
     );
     initialAlerts.forEach(attachAlertAutoDismiss);
 
-    // Also observe dynamically injected alerts (e.g. AJAX or dynamic error popups)
     if (window.MutationObserver) {
         const alertObserver = new MutationObserver(mutations => {
             mutations.forEach(m => {
                 m.addedNodes.forEach(node => {
-                    if (node.nodeType === 1) { // Node.ELEMENT_NODE
+                    if (node.nodeType === 1) { 
                         if (node.matches && node.matches('.flash-alert:not([data-persistent]):not([role="status"])') && !node.closest('.modal, .modal-backdrop, .settings-modal-backdrop')) {
                             attachAlertAutoDismiss(node);
                         }
@@ -1071,7 +1014,6 @@ document.addEventListener('DOMContentLoaded', function() {
         initTablePagination(table, 10);
     });
 
-    // Global Escape key dismissal & Tab focus trapping for all page modals
     document.addEventListener('keydown', function(e) {
         const openModals = Array.from(document.querySelectorAll('.modal-backdrop.open, .modal-overlay.open, .settings-modal-backdrop.open, .modal[style*="flex"], .modal-overlay[style*="flex"], .modal-backdrop[style*="flex"]'));
         if (openModals.length === 0) return;
@@ -1109,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-<!-- F-38: Real-Time Toast Alert Container at root body level (escapes page-header stacking trap) -->
+
 <div class="notif-toast-container" id="notifToastContainer" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

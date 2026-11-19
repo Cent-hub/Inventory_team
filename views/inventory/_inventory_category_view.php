@@ -1,8 +1,7 @@
 <?php
-/**
- * Shared Inventory Category View Template
- * Used by raw_materials.php and finished_goods.php to eliminate view duplication.
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Shared inventory list template used by both the Raw Materials and Finished
+ * Goods pages to display stock counts, low-stock alerts, and item tables.
  */
 
 $cfg = $categoryConfig ?? [];
@@ -19,7 +18,6 @@ $itemType = $cfg['item_type'] ?? 'raw_material';
 $categoryLabel = $cfg['category_name'] ?? 'Materials';
 $refPrefix = $cfg['ref_prefix'] ?? 'IN #';
 
-// Query items for assigned warehouse with latest receipt/production info
 $stmt = $pdo->prepare("
     SELECT 
         i.item_id,
@@ -70,7 +68,6 @@ $stmt->execute([
 ]);
 $categoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Metrics scoped strictly to assigned warehouse
 $totalSKUs     = 0;
 $inactiveCount = 0;
 $totalQty      = 0.0;
@@ -92,7 +89,6 @@ foreach ($categoryItems as $row) {
 }
 ?>
 
-<!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title"><?= htmlspecialchars($cfg['page_heading'] ?? '') ?></h1>
@@ -103,7 +99,6 @@ foreach ($categoryItems as $row) {
     </div>
 </div>
 
-<!-- KPI Summary Cards -->
 <div class="stats-grid stats-grid-4">
     <div class="<?= htmlspecialchars($cfg['stat_card_class'] ?? 'stat-card') ?>">
         <div class="stat-header">
@@ -173,7 +168,6 @@ foreach ($categoryItems as $row) {
     </div>
 </div>
 
-<!-- Main Inventory Card -->
 <div class="card">
     <div class="card-header">
         <div>

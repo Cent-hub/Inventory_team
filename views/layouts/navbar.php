@@ -1,8 +1,9 @@
 <?php
-/**
- * Layout: Top Navigation Bar
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Top navigation bar layout. Shows the current page title, warehouse switcher
+ * for multi-warehouse users, notification bell, and account controls.
  */
+
 $navbarWarehouses = [];
 if (!empty($isAuthorizedForMultiWarehouse) && isset($pdo)) {
     try {

@@ -1,7 +1,7 @@
 <?php
-/**
- * View: Central Admin Dashboard
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Main dashboard page. Displays inventory summaries, low-stock alerts, recent
+ * movements, and overview tables for the user's warehouse.
  */
 
 $pageTitle   = 'Admin Dashboard — InventoryTeam';
@@ -12,7 +12,6 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// 1. Primary Inventory Status Table for assigned warehouse (active catalog items only)
 $stmtInventory = $pdo->prepare("
     SELECT 
         w.code AS warehouse_code,
@@ -32,7 +31,6 @@ $stmtInventory = $pdo->prepare("
 $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
-// Compute KPI metrics directly from $inventoryRows (eliminating redundant SQL queries)
 $totalRawMaterials   = 0;
 $totalFinishedGoods  = 0;
 $lowStockCount       = 0;
@@ -52,21 +50,19 @@ foreach ($inventoryRows as $row) {
     }
 }
 
-// 2. Bad Products List (Active damaged / defective records for assigned warehouse)
 $stmtBP = $pdo->prepare("
     SELECT 
         COUNT(*) AS record_count,
         COALESCE(SUM(quantity), 0) AS total_qty
     FROM bad_products
     WHERE warehouse_id = :wid
-      AND status != 'cancelled'
+      AND status NOT IN ('cancelled', 'disposed')
 ");
 $stmtBP->execute([':wid' => $currentWarehouseId]);
 $bpRow = $stmtBP->fetch(PDO::FETCH_ASSOC);
 $badProductsCount  = (int)($bpRow['record_count'] ?? 0);
 $badProductsVolume = (float)($bpRow['total_qty'] ?? 0);
 
-// 4. Recent Inventory Activity in assigned warehouse (within 3 days only)
 $stmtRecent = $pdo->prepare("
     SELECT 
         sm.movement_id,
@@ -93,7 +89,6 @@ $stmtRecent = $pdo->prepare("
 $stmtRecent->execute([':wid' => $currentWarehouseId]);
 $recentActivities = $stmtRecent->fetchAll(PDO::FETCH_ASSOC);
 
-// --- 7-Day Inbound vs. Outbound Movement Trend Data (Strict Realtime 7 Days) ---
 $chartDays = [];
 for ($i = 6; $i >= 0; $i--) {
     $dateKey = date('Y-m-d', strtotime("-$i days"));
@@ -113,11 +108,11 @@ $stmtChart = $pdo->prepare("
     SELECT 
         DATE(sm.created_at) AS txn_date,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'CANCELLED_OUTBOUND', 'CANCELLED_TRANSFER', 'CANCELLED_BAD_PRODUCT', 'IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'IN') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_in,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND', 'OUT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'OUT') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_out
     FROM stock_movements sm
@@ -139,7 +134,6 @@ foreach ($chartDbRows as $row) {
 $totalWeekIn = array_sum(array_column($chartDays, 'inbound'));
 $totalWeekOut = array_sum(array_column($chartDays, 'outbound'));
 
-// --- Recent Warehouse Staff Activity (Super Admin & HR see all; employees see only their own activity) ---
 $canMonitorAllLogins = $isSuperAdmin
     || strtolower(trim((string)($currentUser['team'] ?? ''))) === 'hr'
     || strtolower(trim((string)($currentUser['department'] ?? ''))) === 'hr';
@@ -176,7 +170,6 @@ $stmtWhStaff->execute($staffParams);
 $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
@@ -187,14 +180,13 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- 4 Core Summary KPI Cards -->
 <div class="stats-grid stats-grid-4">
-    <!-- 1. Total Raw Materials -->
+
     <div class="stat-card stat-gold">
         <div class="stat-header">
             <span class="stat-label">Total Raw Materials</span>
             <div class="stat-icon-wrap" aria-hidden="true">
-                <!-- Lucide Layers Icon -->
+
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"/>
                     <polyline points="2 17 12 22 22 17"/>
@@ -206,12 +198,11 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         <div class="stat-meta">Raw Materials</div>
     </div>
 
-    <!-- 2. Total Finished Goods -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Total Finished Goods</span>
             <div class="stat-icon-wrap" aria-hidden="true">
-                <!-- Lucide PackageCheck Icon -->
+
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m7.5 4.27 9 5.15"/>
                     <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
@@ -224,12 +215,11 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         <div class="stat-meta">Finished Goods</div>
     </div>
 
-    <!-- 3. Low Stock Items -->
     <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>" id="dashboardCardLowStock">
         <div class="stat-header">
             <span class="stat-label">Low Stock Items</span>
             <div class="stat-icon-wrap" aria-hidden="true">
-                <!-- Lucide AlertTriangle Icon -->
+
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                     <line x1="12" y1="9" x2="12" y2="13"/>
@@ -245,12 +235,11 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- 4. Bad Products List -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Bad Products List</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
-                <!-- Lucide XCircle Icon -->
+
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="15" y1="9" x2="9" y2="15"/>
@@ -265,9 +254,8 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- 2-Column Section: 7-Day Movement Trend Chart (Left) + Warehouse Staff Logins (Right) -->
 <div class="dashboard-analytics-grid">
-    <!-- Left Column: 7-Day Inbound vs. Outbound Movement Trend Chart -->
+
     <div class="card" style="margin-bottom: 0;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
             <div>
@@ -297,7 +285,6 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
 
-        <!-- Responsive SVG Chart -->
         <div style="width: 100%; overflow-x: auto;">
             <?php
             $svgWidth = 560;
@@ -315,12 +302,12 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                 if ($d['outbound'] > $maxVal) $maxVal = $d['outbound'];
             }
             $yMax = max(10, ceil($maxVal * 1.15));
-            $numDays = count($chartDays); // Exactly 7
+            $numDays = count($chartDays); 
             $slotW = $plotW / $numDays;
             $barW = 14;
             ?>
             <svg viewBox="0 0 <?= $svgWidth ?> <?= $svgHeight ?>" style="width: 100%; height: auto; max-height: 230px; display: block;" role="img" aria-label="Realtime 7-day inventory movement trend chart">
-                <!-- Y-Axis Gridlines & Labels -->
+
                 <?php for ($step = 0; $step <= 3; $step++): 
                     $ratio = $step / 3;
                     $yVal = round($yMax * (1 - $ratio));
@@ -330,7 +317,6 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                     <text x="<?= $padL - 6 ?>" y="<?= $yPos + 3 ?>" text-anchor="end" font-size="10" font-family="sans-serif" fill="#94A3B8"><?= $yVal ?></text>
                 <?php endfor; ?>
 
-                <!-- Bars & Labels for each of the 7 Realtime Days -->
                 <?php 
                 $dayIndex = 0;
                 foreach ($chartDays as $d): 
@@ -343,36 +329,35 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                     $outY = $padT + $plotH - $outH;
                     $isToday = !empty($d['is_today']);
                 ?>
-                    <!-- Subtle highlight column for Today -->
+
                     <?php if ($isToday): ?>
                         <rect x="<?= $slotCenter - ($slotW / 2) + 2 ?>" y="<?= $padT ?>" width="<?= $slotW - 4 ?>" height="<?= $plotH ?>" rx="4" fill="rgba(31, 122, 108, 0.05)" />
                     <?php endif; ?>
 
                     <?php if ($d['inbound'] > 0): ?>
-                        <!-- Inbound Bar -->
+
                         <rect x="<?= $inX ?>" y="<?= $inY ?>" width="<?= $barW ?>" height="<?= max(2, $inH) ?>" rx="3" fill="#10B981" style="transition: fill-opacity 0.2s; cursor: pointer;">
                             <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Inbound: +<?= formatQty($d['inbound']) ?> units</title>
                         </rect>
                     <?php else: ?>
-                        <!-- Zero activity base indicator -->
+
                         <rect x="<?= $inX ?>" y="<?= $padT + $plotH - 2 ?>" width="<?= $barW ?>" height="2" rx="1" fill="#E2E8F0" opacity="0.8">
                             <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Inbound: 0 units</title>
                         </rect>
                     <?php endif; ?>
 
                     <?php if ($d['outbound'] > 0): ?>
-                        <!-- Outbound Bar -->
+
                         <rect x="<?= $outX ?>" y="<?= $outY ?>" width="<?= $barW ?>" height="<?= max(2, $outH) ?>" rx="3" fill="#3B82F6" style="transition: fill-opacity 0.2s; cursor: pointer;">
                             <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Outbound: -<?= formatQty($d['outbound']) ?> units</title>
                         </rect>
                     <?php else: ?>
-                        <!-- Zero activity base indicator -->
+
                         <rect x="<?= $outX ?>" y="<?= $padT + $plotH - 2 ?>" width="<?= $barW ?>" height="2" rx="1" fill="#E2E8F0" opacity="0.8">
                             <title><?= htmlspecialchars($d['label']) ?> (<?= $isToday ? 'Today' : $d['day_name'] ?>) — Outbound: 0 units</title>
                         </rect>
                     <?php endif; ?>
 
-                    <!-- Realtime Date Labels (X-Axis: Month Day & Day Name / Today) -->
                     <text x="<?= $slotCenter ?>" y="<?= $padT + $plotH + 16 ?>" text-anchor="middle" font-size="10.5" font-family="sans-serif" font-weight="<?= $isToday ? '700' : '600' ?>" fill="<?= $isToday ? '#1F7A6C' : '#475569' ?>">
                         <?= htmlspecialchars($d['month'] . ' ' . $d['day_num']) ?>
                     </text>
@@ -387,7 +372,6 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Right Column: Recent Staff Logins (Warehouse Scoped) -->
     <div class="card" style="margin-bottom: 0; display: flex; flex-direction: column;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">
             <div>
@@ -462,7 +446,6 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Recent Inventory Activity Card -->
 <div class="card">
     <div class="card-header">
         <div>
@@ -531,7 +514,6 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Primary Real-Time Stock Status Card -->
 <div class="card">
     <div class="card-header">
         <div>

@@ -1,8 +1,7 @@
 <?php
-/**
- * AccountabilityService.php
- * Centralized audit logging service for InventoryTeam Inventory ERP.
- * Records every user, team, and API transaction affecting inventory.
+/*
+ * Audit log helper. Records who performed each inventory or account action, when
+ * it happened, and which warehouse or item was affected.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -17,24 +16,6 @@ class AccountabilityService {
         return self::$pdo;
     }
 
-    /**
-     * Records an accountability audit log entry
-     *
-     * @param array $params [
-     *   'user_id'                 => int|null,
-     *   'user_name'               => string|null,
-     *   'team'                    => string|null,
-     *   'action_type'             => string, (e.g. 'STOCK_IN', 'STOCK_OUT', 'TRANSFER_INITIATED', 'TRANSFER_RECEIVED', etc.)
-     *   'channel'                 => string, ('UI'|'API')
-     *   'item_id'                 => int|null,
-     *   'quantity'                => float|null,
-     *   'warehouse_id'            => int,
-     *   'destination_warehouse_id'=> int|null,
-     *   'reference_number'        => string|null,
-     *   'notes'                   => string|null
-     * ]
-     * @return int Inserted log ID
-     */
     public static function log(array $params): int {
         $pdo = self::getPdo();
 
@@ -54,7 +35,6 @@ class AccountabilityService {
         $refNo       = trim($params['reference_number'] ?? '');
         $notes       = trim($params['notes'] ?? '');
 
-        // Resolve user metadata if userId is given
         if ($userId > 0) {
             $stmtU = $pdo->prepare("SELECT name, role, team, email FROM users WHERE user_id = ? LIMIT 1");
             $stmtU->execute([$userId]);
@@ -80,7 +60,6 @@ class AccountabilityService {
             $team = self::inferTeamFromAction($actionType);
         }
 
-        // Resolve item snapshot if itemId is given
         if ($itemId > 0) {
             $stmtI = $pdo->prepare("SELECT code AS item_code, name AS item_name, unit FROM items WHERE item_id = ? LIMIT 1");
             $stmtI->execute([$itemId]);
@@ -94,7 +73,6 @@ class AccountabilityService {
             }
         }
 
-        // Validate warehouse_id foreign key
         if ($warehouseId > 0) {
             $stmtW = $pdo->prepare("SELECT warehouse_id FROM warehouses WHERE warehouse_id = ? LIMIT 1");
             $stmtW->execute([$warehouseId]);
@@ -105,7 +83,6 @@ class AccountabilityService {
             $warehouseId = null;
         }
 
-        // Pack rich operational metadata into details column
         $detailsData = [
             'user_name'                => $userName,
             'user_role'                => $userRole,
@@ -149,9 +126,6 @@ class AccountabilityService {
         return (int)$pdo->lastInsertId();
     }
 
-    /**
-     * Helper to infer team from user email
-     */
     private static function inferTeamFromEmail(?string $email): string {
         if (function_exists('resolveUserTeam')) {
             return resolveUserTeam(null, $email);
@@ -163,9 +137,6 @@ class AccountabilityService {
         return 'Inventory';
     }
 
-    /**
-     * Helper to infer team from action
-     */
     private static function inferTeamFromAction(string $action): string {
         if (str_contains($action, 'PURCHASE') || str_contains($action, 'PROCURE')) return 'Procurement';
         if (str_contains($action, 'PROD') || str_contains($action, 'MATERIAL_REQUEST')) return 'Production';
@@ -173,9 +144,6 @@ class AccountabilityService {
         return 'Inventory';
     }
 
-    /**
-     * Fetch logs with strict warehouse scoping and optional filtering
-     */
     public static function getLogs(int $warehouseId, array $filters = []): array {
         $pdo = self::getPdo();
 
@@ -206,19 +174,16 @@ class AccountabilityService {
         ";
         $params = [];
 
-        // Warehouse scoping: logged-in user's assigned warehouse
         if ($warehouseId > 0) {
             $sql .= " AND al.warehouse_id = ?";
             $params[] = $warehouseId;
         }
 
-        // Team filter
         if (!empty($filters['team']) && $filters['team'] !== 'all') {
             $sql .= " AND al.team = ?";
             $params[] = $filters['team'];
         }
 
-        // Action filter (supports exact match or prefix groups like TRANSFER / ADJUSTMENT)
         if (!empty($filters['action']) && $filters['action'] !== 'all') {
             $act = strtoupper(trim((string)$filters['action']));
             if (in_array($act, ['TRANSFER', 'ADJUSTMENT'], true)) {
@@ -230,7 +195,6 @@ class AccountabilityService {
             }
         }
 
-        // Warehouse filter (by name or code from UI filter bar)
         if (!empty($filters['warehouse']) && $filters['warehouse'] !== 'all') {
             $whFilter = trim((string)$filters['warehouse']);
             $sql .= " AND (w.name = ? OR w.code = ?)";
@@ -238,7 +202,6 @@ class AccountabilityService {
             $params[] = $whFilter;
         }
 
-        // Search filter
         if (!empty($filters['search'])) {
             $s = "%" . trim($filters['search']) . "%";
             $sql .= " AND (
@@ -252,7 +215,6 @@ class AccountabilityService {
             $params = array_merge($params, [$s, $s, $s, $s, $s, $s]);
         }
 
-        // Date range
         if (!empty($filters['start_date'])) {
             $sql .= " AND DATE(al.created_at) >= ?";
             $params[] = $filters['start_date'];
@@ -336,9 +298,6 @@ class AccountabilityService {
         return $rows;
     }
 
-    /**
-     * Compute live KPI counts for the warehouse (Inventory Team users only)
-     */
     public static function getKpis(int $warehouseId): array {
         $pdo = self::getPdo();
 
@@ -374,9 +333,6 @@ class AccountabilityService {
         ];
     }
 
-    /**
-     * Return initials for avatar (e.g. "JD")
-     */
     public static function getUserInitials(?string $name): string {
         $n = trim((string)$name);
         if ($n === '') return 'SY';
@@ -389,9 +345,6 @@ class AccountabilityService {
         return $initials ?: 'US';
     }
 
-    /**
-     * Format action badge HTML
-     */
     public static function formatActionBadge(string $actionType, string $channel = 'UI'): string {
         $action = strtoupper(trim($actionType));
         $badgeClass = 'adjustment';
@@ -520,9 +473,6 @@ class AccountabilityService {
         return '<span class="badge-action ' . htmlspecialchars($badgeClass) . '">' . $iconSvg . ' ' . htmlspecialchars($label) . $apiPill . '</span>';
     }
 
-    /**
-     * Format team badge HTML
-     */
     public static function formatTeamBadge(?string $team): string {
         $t = trim((string)$team);
         $cls = 'inventory';
@@ -549,10 +499,6 @@ class AccountabilityService {
         return '<span class="badge-team ' . htmlspecialchars($cls) . '" ' . $style . '>' . htmlspecialchars($t ?: 'Inventory') . '</span>';
     }
 
-    /**
-     * Sanitize CSV cells starting with formula trigger characters (=, +, -, @, \t, \r)
-     * by prepending a single quote to prevent CSV formula injection in spreadsheet software.
-     */
     public static function sanitizeCsvCell(mixed $value): string {
         $str = (string)($value ?? '');
         if ($str !== '' && in_array($str[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
@@ -561,11 +507,8 @@ class AccountabilityService {
         return $str;
     }
 
-    /**
-     * Stream CSV export of filtered logs
-     */
     public static function exportCsv(int $warehouseId, array $filters = []): void {
-        // Remove limit to export all matching records
+
         unset($filters['limit'], $filters['offset']);
         $logs = self::getLogs($warehouseId, $filters);
 
@@ -578,7 +521,7 @@ class AccountabilityService {
         }
 
         $out = fopen('php://output', 'w');
-        // Add UTF-8 BOM for Excel compatibility
+
         fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
 
         fputcsv($out, [

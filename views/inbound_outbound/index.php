@@ -1,11 +1,7 @@
 <?php
-/**
- * View: Inventory Inbound & Outbound (Unified Movement Hub)
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Unifies two core inventory transaction flows into a single interface:
- * 1. Inbound (Stock In receipts from Procurement & Production)
- * 2. Outbound (Stock Out dispatches to Sales & Production)
+/*
+ * Inbound and outbound stock page. Lets staff record incoming stock receipts,
+ * dispatch outgoing stock, and manage inbound and outbound orders.
  */
 
 $pageTitle   = 'Inventory Inbound & Outbound — InventoryTeam';
@@ -21,7 +17,6 @@ require_once __DIR__ . '/../../helpers/OrderService.php';
 $successMessage = null;
 $errorMessage   = null;
 
-// Determine Initial Active Tab
 $activeTab = 'inbound';
 if (isset($_GET['tab']) && in_array($_GET['tab'], ['inbound', 'outbound'], true)) {
     $activeTab = $_GET['tab'];
@@ -29,9 +24,6 @@ if (isset($_GET['tab']) && in_array($_GET['tab'], ['inbound', 'outbound'], true)
     $activeTab = $_POST['active_tab'];
 }
 
-// =============================================================================
-// POST ACTION DISPATCHER
-// =============================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -43,9 +35,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             switch ($action) {
-                // -------------------------------------------------------------
-                // Cancel Outbound Order (Releases reserved stock)
-                // -------------------------------------------------------------
+
+                case 'cancel_inbound_order':
+                    $activeTab = 'inbound';
+                    $orderId = (int)($_POST['inbound_order_id'] ?? 0);
+                    $reason  = trim($_POST['cancellation_reason'] ?? '');
+                    if ($orderId <= 0) {
+                        throw new InvalidArgumentException("Invalid Inbound Order ID.");
+                    }
+                    if (empty($reason)) {
+                        throw new InvalidArgumentException("Rejection reason is required.");
+                    }
+                    $orderService = new OrderService($pdo);
+                    $res = $orderService->cancelInboundOrder($orderId, $userId, $reason, $currentUser);
+                    $successMessage = "Incoming order " . htmlspecialchars($res['order_number']) . " has been rejected.";
+                    break;
+
                 case 'cancel_outbound_order':
                     $activeTab = 'outbound';
                     $orderId = (int)($_POST['outbound_order_id'] ?? 0);
@@ -72,9 +77,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Order dispatch cancelled and stock returned to inventory.";
                     break;
 
-                // -------------------------------------------------------------
-                // 1. Document-Driven Inbound Order Receiving
-                // -------------------------------------------------------------
                 case 'receive_inbound_order':
                     $activeTab = 'inbound';
                     $orderId = (int)($_POST['inbound_order_id'] ?? 0);
@@ -138,9 +140,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     break;
 
-                // -------------------------------------------------------------
-                // 3. Document-Driven Outbound Order Dispatching
-                // -------------------------------------------------------------
                 case 'dispatch_outbound_order':
                     $activeTab = 'outbound';
                     $orderId = (int)($_POST['outbound_order_id'] ?? 0);
@@ -162,11 +161,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// =============================================================================
-// DATA QUERIES: SECTION 1 (INBOUND / STOCK IN)
-// =============================================================================
-
-// Consolidated query: Fetch all active items with warehouse inventory balance
 $allItemsStmt = $pdo->prepare("
     SELECT i.item_id, i.code AS item_code, i.name AS item_name, i.type AS item_type, i.unit, COALESCE(s.qty_on_hand, 0.000) AS current_stock
     FROM items i 
@@ -177,7 +171,6 @@ $allItemsStmt = $pdo->prepare("
 $allItemsStmt->execute([':wid' => $currentWarehouseId]);
 $allItems = $allItemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch Stock In transactions strictly for assigned warehouse
 $stmtIn = $pdo->prepare("
     SELECT 
         sm.movement_id AS stock_in_id,
@@ -235,7 +228,6 @@ $stmtIn = $pdo->prepare("
 $stmtIn->execute([':wid' => $currentWarehouseId]);
 $stockIns = $stmtIn->fetchAll(PDO::FETCH_ASSOC);
 
-// Build line items array for modal inspection
 $linesByStockIn = [];
 foreach ($stockIns as $row) {
     $linesByStockIn[(int)$row['stock_in_id']][] = [
@@ -248,19 +240,12 @@ foreach ($stockIns as $row) {
     ];
 }
 
-// KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
 $totalStockInTxns    = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed'));
 $procurementInbounds = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'PURCHASE_ORDER'));
 $productionInbounds  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && in_array($r['source_type'] ?? '', ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)));
 
-// =============================================================================
-// DATA QUERIES: SECTION 2 (OUTBOUND / STOCK OUT)
-// =============================================================================
-
-// Items available in this warehouse with positive balance (reusing consolidated item query)
 $availableItems = array_values(array_filter($allItems, fn($it) => (float)$it['current_stock'] > 0));
 
-// Fetch Stock Out transactions strictly for assigned warehouse
 $stmtOut = $pdo->prepare("
     SELECT 
         sm.movement_id AS stock_out_id,
@@ -312,7 +297,6 @@ $stmtOut = $pdo->prepare("
 $stmtOut->execute([':wid' => $currentWarehouseId]);
 $stockOuts = $stmtOut->fetchAll(PDO::FETCH_ASSOC);
 
-// Build line items array for modal inspection
 $linesByStockOut = [];
 foreach ($stockOuts as $row) {
     $linesByStockOut[(int)$row['stock_out_id']][] = [
@@ -325,16 +309,10 @@ foreach ($stockOuts as $row) {
     ];
 }
 
-// KPI Metrics scoped strictly to assigned warehouse (completed transactions only)
 $totalStockOutTxns = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed'));
 $salesDispatches   = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'SALES_DELIVERY'));
 $materialRequests  = count(array_filter($stockOuts, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'MATERIAL_REQUEST'));
 
-// =============================================================================
-// ERP DOCUMENT QUEUES: PENDING INBOUND & OUTBOUND ORDERS
-// =============================================================================
-
-// 1. Pending Inbound Shipments (Receiving Dock Queue)
 $stmtPendingIn = $pdo->prepare("
     SELECT 
         io.inbound_order_id,
@@ -356,7 +334,6 @@ $stmtPendingIn = $pdo->prepare("
 $stmtPendingIn->execute([':wid' => $currentWarehouseId]);
 $pendingInboundOrders = $stmtPendingIn->fetchAll(PDO::FETCH_ASSOC);
 
-// Inbound line items
 $inboundOrderLines = [];
 $stmtInLines = $pdo->prepare("
     SELECT 
@@ -381,7 +358,6 @@ foreach ($stmtInLines->fetchAll(PDO::FETCH_ASSOC) as $line) {
     $inboundOrderLines[(int)$line['inbound_order_id']][] = $line;
 }
 
-// 2. Pending Outbound Orders (Fulfillment & Shipping Dock Queue)
 $stmtPendingOut = $pdo->prepare("
     SELECT 
         oo.outbound_order_id,
@@ -403,7 +379,6 @@ $stmtPendingOut = $pdo->prepare("
 $stmtPendingOut->execute([':wid' => $currentWarehouseId]);
 $pendingOutboundOrders = $stmtPendingOut->fetchAll(PDO::FETCH_ASSOC);
 
-// Outbound line items with current available stock
 $outboundOrderLines = [];
 $stmtOutLines = $pdo->prepare("
     SELECT 
@@ -439,11 +414,11 @@ $stmtDamagedRma = $pdo->prepare("
       AND (reason LIKE '%Customer Return%' OR reason LIKE '%RMA%')
 ");
 $stmtDamagedRma->execute([':wid' => $currentWarehouseId]);
-$damagedRmaCount = (int)$stmtDamagedRma->fetchColumn();
-$customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN')) + $damagedRmaCount;
+$damagedRmaCount      = (int)$stmtDamagedRma->fetchColumn();
+$salableReturnsCount  = count(array_filter($stockIns, fn($r) => ($r['status'] ?? '') === 'completed' && ($r['source_type'] ?? '') === 'CUSTOMER_RETURN'));
+$customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
 ?>
 
-<!-- Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Inventory Inbound &amp; Outbound</h1>
@@ -454,9 +429,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- NAVIGATION SWITCHER: INBOUND | OUTBOUND                                   -->
-<!-- ========================================================================= -->
 <div class="stock-ops-nav-wrapper">
     <div class="stock-ops-nav-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -488,7 +460,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- Flash Alerts -->
 <?php if ($successMessage): ?>
     <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -509,11 +480,8 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 <?php endif; ?>
 
-<!-- ######################################################################### -->
-<!-- PANE 1: INBOUND SECTION                                                   -->
-<!-- ######################################################################### -->
 <div id="pane-inbound" class="stock-op-pane" style="display: <?= $activeTab === 'inbound' ? 'block' : 'none' ?>;">
-    <!-- Inbound KPI Cards -->
+
     <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
         <div class="stat-card">
             <div class="stat-header">
@@ -569,13 +537,10 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                 </div>
             </div>
             <div class="stat-value"><?= $customerReturnsCount ?></div>
-            <div class="stat-meta">Items sent back by buyers</div>
+            <div class="stat-meta"><?= $salableReturnsCount ?> restocked &middot; <?= $damagedRmaCount ?> damaged</div>
         </div>
     </div>
 
-    <!-- ===================================================================== -->
-    <!-- INBOUND QUEUE: EXPECTED SHIPMENTS (RECEIVING DOCK)                   -->
-    <!-- ===================================================================== -->
     <div class="card" style="margin-bottom: 24px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -682,9 +647,22 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
-                                    <button type="button" class="btn btn-primary btn-sm" onclick="openReceiveOrderModal(<?= (int)$pIn['inbound_order_id'] ?>)">
-                                        Receive Shipment &rarr;
-                                    </button>
+                                    <?php
+                                        $receiveBtnLabel = 'Receive Goods &rarr;';
+                                        if ($pIn['source_type'] === 'PURCHASE_ORDER') {
+                                            $receiveBtnLabel = 'Accept &amp; Receive &rarr;';
+                                        } elseif (in_array($pIn['source_type'], ['PRODUCTION_RETURN', 'CUSTOMER_RETURN'], true)) {
+                                            $receiveBtnLabel = 'Receive Return &rarr;';
+                                        }
+                                    ?>
+                                    <div style="display: inline-flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="openReceiveOrderModal(<?= (int)$pIn['inbound_order_id'] ?>)">
+                                            <?= $receiveBtnLabel ?>
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm" style="color: #B91C1C; border-color: #FCA5A5; height: 32px; padding: 0 10px; font-size: 12px;" onclick="openCancelInboundOrderModal(<?= (int)$pIn['inbound_order_id'] ?>, '<?= htmlspecialchars($pIn['order_number'], ENT_QUOTES) ?>')">
+                                            Reject
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -694,7 +672,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
         </div>
     </div>
 
-    <!-- Inbound Transaction Ledger Card -->
     <div class="card">
         <div class="card-header">
             <div>
@@ -702,7 +679,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                 <p class="card-desc">List of all completed items received into stock.</p>
             </div>
             <div class="filter-group">
-                <!-- Search Filter -->
+
                 <div class="search-wrap">
                     <span class="search-icon" aria-hidden="true">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -713,7 +690,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     <input type="text" id="stockInSearch" class="search-box" aria-label="Filter inbound transactions" placeholder="Filter item, ref, PO #..." oninput="filterStockInTable()">
                 </div>
 
-                <!-- Source Filter -->
                 <select id="sourceTypeFilter" class="select-filter" aria-label="Filter by inbound source" onchange="filterStockInTable()">
                     <option value="">All Sources</option>
                     <option value="PURCHASE_ORDER">Receiving Raw Materials (Procurement)</option>
@@ -722,7 +698,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     <option value="CUSTOMER_RETURN">Receiving Returns (Sales)</option>
                 </select>
 
-                <!-- Item Type Filter -->
                 <select id="itemTypeFilter" class="select-filter" aria-label="Filter inbound by item classification" onchange="filterStockInTable()">
                     <option value="">All Classifications</option>
                     <option value="raw_material">Raw Materials</option>
@@ -759,7 +734,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                             $firstLine = $lines[0] ?? null;
                             $hasMultiple = count($lines) > 1;
 
-                            // Derive item classification
                             $itemType = 'raw_material';
                             if ($row['source_type'] === 'PRODUCTION_RECEIPT' || $row['source_type'] === 'CUSTOMER_RETURN') {
                                 $itemType = 'finished_good';
@@ -769,7 +743,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                             }
                         ?>
                             <tr data-source="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
-                                <!-- Source -->
+
                                 <td>
                                     <?php if ($row['source_type'] === 'PURCHASE_ORDER'): ?>
                                         <span class="badge-source-procurement">
@@ -796,7 +770,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Item -->
                                 <td style="max-width: 260px;">
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($firstLine['item_name']) ?></div>
@@ -811,7 +784,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Type -->
                                 <td>
                                     <?php if ($itemType === 'finished_good'): ?>
                                         <span class="badge-type type-fg">Finished Good</span>
@@ -822,7 +794,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Quantity -->
                                 <td class="text-center" style="font-weight: 700; color: #15803D; white-space: nowrap;">
                                     <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
@@ -830,7 +801,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Reference / Tracking # -->
                                 <td>
                                     <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: var(--panel-ink);">
                                         <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
@@ -840,7 +810,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     </small>
                                 </td>
 
-                                <!-- Date Received -->
                                 <td style="font-size: 12.5px; white-space: nowrap;">
                                     <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
                                     <small style="display: block; color: var(--gray); font-size: 11px;">
@@ -848,7 +817,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     </small>
                                 </td>
 
-                                <!-- Status -->
                                 <td>
                                     <?php if ($row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Received</span>
@@ -857,7 +825,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Action -->
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
                                         <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openDetailModal(<?= (int)$row['stock_in_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
@@ -874,7 +841,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- Line Item Details Modal (Inbound) -->
 <div id="stockInModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle" onclick="if(event.target === this) closeDetailModal()">
     <div class="modal-card">
         <div class="modal-header">
@@ -933,12 +899,8 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-
-<!-- ######################################################################### -->
-<!-- PANE 2: OUTBOUND SECTION                                                  -->
-<!-- ######################################################################### -->
 <div id="pane-outbound" class="stock-op-pane" style="display: <?= $activeTab === 'outbound' ? 'block' : 'none' ?>;">
-    <!-- Outbound KPI Cards -->
+
     <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="stat-card">
             <div class="stat-header">
@@ -986,9 +948,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
         </div>
     </div>
 
-    <!-- ===================================================================== -->
-    <!-- OUTBOUND QUEUE: PENDING ORDERS (FULFILLMENT & SHIPPING DOCK)          -->
-    <!-- ===================================================================== -->
     <div class="card" style="margin-bottom: 24px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -1087,9 +1046,14 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align: right; white-space: nowrap;">
+                                    <?php
+                                        $dispatchBtnLabel = ($pOut['source_type'] === 'MATERIAL_REQUEST')
+                                            ? 'Approve &amp; Issue &rarr;'
+                                            : 'Approve &amp; Dispatch &rarr;';
+                                    ?>
                                     <div style="display: inline-flex; gap: 6px; justify-content: flex-end; align-items: center;">
                                         <button type="button" class="btn btn-primary btn-sm" onclick="openDispatchOrderModal(<?= (int)$pOut['outbound_order_id'] ?>)">
-                                            Dispatch Order &rarr;
+                                            <?= $dispatchBtnLabel ?>
                                         </button>
                                         <button type="button" class="btn btn-secondary btn-sm" style="color: #B91C1C; border-color: #FCA5A5; height: 32px; padding: 0 10px; font-size: 12px;" onclick="openCancelOutboundOrderModal(<?= (int)$pOut['outbound_order_id'] ?>, '<?= htmlspecialchars($pOut['order_number'], ENT_QUOTES) ?>')">
                                             Cancel
@@ -1104,7 +1068,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
         </div>
     </div>
 
-    <!-- Outbound Main Table Card -->
     <div class="card">
         <div class="card-header">
             <div>
@@ -1112,7 +1075,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                 <p class="card-desc">List of all completed items shipped or issued out of stock.</p>
             </div>
             <div class="filter-group">
-                <!-- Search Filter -->
+
                 <div class="search-wrap">
                     <span class="search-icon" aria-hidden="true">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1123,14 +1086,12 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     <input type="text" id="stockOutSearch" class="search-box" aria-label="Filter outbound transactions" placeholder="Filter item, ref, SO/MR #..." oninput="filterStockOutTable()">
                 </div>
 
-                <!-- Destination Filter -->
                 <select id="stockOutDestFilter" class="select-filter" aria-label="Filter by outbound destination" onchange="filterStockOutTable()">
                     <option value="">All Destinations</option>
                     <option value="SALES_DELIVERY">Dispatching Finished Goods (Sales)</option>
                     <option value="MATERIAL_REQUEST">Dispatching Raw Materials (Production)</option>
                 </select>
 
-                <!-- Item Type Filter -->
                 <select id="stockOutTypeFilter" class="select-filter" aria-label="Filter outbound by item classification" onchange="filterStockOutTable()">
                     <option value="">All Classifications</option>
                     <option value="finished_good">Finished Goods</option>
@@ -1166,7 +1127,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                             $firstLine = $lines[0] ?? null;
                             $hasMultiple = count($lines) > 1;
 
-                            // Derive item classification
                             $itemType = 'finished_good';
                             if ($row['source_type'] === 'MATERIAL_REQUEST') {
                                 $itemType = 'raw_material';
@@ -1176,7 +1136,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                             }
                         ?>
                             <tr data-destination="<?= htmlspecialchars($row['source_type']) ?>" data-type="<?= htmlspecialchars($itemType) ?>">
-                                <!-- Destination -->
+
                                 <td>
                                     <?php if ($row['source_type'] === 'SALES_DELIVERY'): ?>
                                         <span class="badge-dest-sales">
@@ -1195,7 +1155,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Item -->
                                 <td style="max-width: 260px;">
                                     <?php if (!$hasMultiple && $firstLine): ?>
                                         <div style="font-weight: 700; color: var(--panel-ink);"><?= htmlspecialchars($firstLine['item_name']) ?></div>
@@ -1210,7 +1169,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Type -->
                                 <td>
                                     <?php if ($itemType === 'finished_good'): ?>
                                         <span class="badge-type type-fg">Finished Good</span>
@@ -1221,7 +1179,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Quantity -->
                                 <td class="text-center" style="font-weight: 700; color: #B91C1C; white-space: nowrap;">
                                     <?= formatQty(abs((float)$row['total_quantity'])) ?>
                                     <?php if (!$hasMultiple && $firstLine): ?>
@@ -1229,7 +1186,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Reference / Order # -->
                                 <td>
                                     <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: var(--panel-ink);">
                                         <?= htmlspecialchars($row['source_reference_no'] ?: '—') ?>
@@ -1239,7 +1195,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     </small>
                                 </td>
 
-                                <!-- Date Dispatched -->
                                 <td style="font-size: 12.5px; white-space: nowrap;">
                                     <?= date('M d, Y', strtotime($row['transaction_date'])) ?>
                                     <small style="display: block; color: var(--gray); font-size: 11px;">
@@ -1247,7 +1202,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     </small>
                                 </td>
 
-                                <!-- Status -->
                                 <td>
                                     <?php if ($row['status'] === 'completed'): ?>
                                         <span class="badge status-completed">Dispatched</span>
@@ -1256,7 +1210,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Action -->
                                 <td style="text-align: right; white-space: nowrap;">
                                     <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
                                         <button type="button" class="btn btn-secondary" style="height: 30px; padding: 0 11px; font-size: 11.5px;" onclick="openOutDetailModal(<?= (int)$row['stock_out_id'] ?>, '<?= htmlspecialchars($row['transaction_number'], ENT_QUOTES) ?>')">
@@ -1273,7 +1226,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- Line Item Details Modal (Outbound) -->
 <div id="stockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalOutTitle" onclick="if(event.target === this) closeOutDetailModal()">
     <div class="modal-card">
         <div class="modal-header">
@@ -1332,7 +1284,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- Modal: Cancel Stock Out (Outbound Dispatch) -->
 <div id="cancelStockOutModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelStockOutModalTitle" onclick="if(event.target === this) closeCancelStockOutModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=outbound">
@@ -1367,7 +1318,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- Modal: Cancel Outbound Order (Releases Reservation) -->
 <div id="cancelOutboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelOutboundOrderModalTitle" onclick="if(event.target === this) closeCancelOutboundOrderModal()">
     <div class="modal-card" style="max-width: 480px;">
         <form method="POST" action="index.php?tab=outbound">
@@ -1403,9 +1353,41 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- MODAL: RECEIVE INBOUND ORDER / SHIPMENT (DOCUMENT-DRIVEN RECEIVING & QA)  -->
-<!-- ========================================================================= -->
+<div id="cancelInboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelInboundOrderModalTitle" onclick="if(event.target === this) closeCancelInboundOrderModal()">
+    <div class="modal-card" style="max-width: 480px;">
+        <form method="POST" action="index.php?tab=inbound">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="cancel_inbound_order">
+            <input type="hidden" name="active_tab" value="inbound">
+            <input type="hidden" name="inbound_order_id" id="cancelInboundOrderId" value="">
+
+            <div class="modal-header">
+                <div>
+                    <h3 id="cancelInboundOrderModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Reject Incoming Order</h3>
+                    <p class="card-desc" style="margin: 0;">Decline delivery or return without adding to stock</p>
+                </div>
+                <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelInboundOrderModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #991B1B; line-height: 1.5;">
+                    Are you sure you want to reject <strong id="cancelInboundOrderRef" style="font-family: monospace;">—</strong>?<br>
+                    No items from this order will be added to warehouse stock.
+                </div>
+                <div>
+                    <label for="cancelInboundOrderReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">Rejection Reason <span style="color: #DC2626;">*</span></label>
+                    <textarea name="cancellation_reason" id="cancelInboundOrderReason" class="search-box" style="width: 100%; border-radius: 6px; height: 70px; padding: 8px 12px; resize: vertical;" placeholder="Specify why this incoming shipment or return is being rejected..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCancelInboundOrderModal()">Back</button>
+                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Rejection</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div id="receiveOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="receiveOrderModalTitle" onclick="if(event.target === this) closeReceiveOrderModal()">
     <div class="modal-card" style="max-width: 680px;">
         <form method="POST" action="index.php?tab=inbound">
@@ -1425,7 +1407,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
             </div>
 
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Summary Card -->
+
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12.5px;">
                     <div>
                         <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Order / Tracking #</div>
@@ -1445,7 +1427,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     </div>
                 </div>
 
-                <!-- Condition Selection (QA Disposition & Customer RMA routing) -->
                 <div id="recConditionGroup" style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 12px 14px;">
                     <label for="receiveCondition" style="font-size: 12.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
                         Quality Inspection &amp; Stock Disposition <span style="color: #DC2626;">*</span>
@@ -1460,7 +1441,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     </small>
                 </div>
 
-                <!-- Line Items Table -->
                 <div>
                     <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Line Items to Receive
@@ -1483,7 +1463,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     </div>
                 </div>
 
-                <!-- Receiving Remarks -->
                 <div>
                     <label for="receiveRemarks" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">
                         Receiving / QA Inspection Notes
@@ -1500,9 +1479,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- MODAL: DISPATCH OUTBOUND ORDER (FULFILLMENT, ALLOCATION & DISPATCH)        -->
-<!-- ========================================================================= -->
 <div id="dispatchOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dispatchOrderModalTitle" onclick="if(event.target === this) closeDispatchOrderModal()">
     <div class="modal-card" style="max-width: 680px;">
         <form method="POST" action="index.php?tab=outbound">
@@ -1522,7 +1498,7 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
             </div>
 
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <!-- Summary Card -->
+
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 12.5px;">
                     <div>
                         <div style="color: var(--gray); font-size: 11px; text-transform: uppercase; font-weight: 600;">Order / Requisition #</div>
@@ -1542,7 +1518,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     </div>
                 </div>
 
-                <!-- Line Items Table -->
                 <div>
                     <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
                         Requested Items &amp; Stock Availability
@@ -1564,7 +1539,6 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
                     </div>
                 </div>
 
-                <!-- Dispatch Remarks -->
                 <div>
                     <label for="dispatchRemarks" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 4px; display: block;">
                         Carrier / Dispatch Notes
@@ -1582,14 +1556,11 @@ $customerReturnsCount = count(array_filter($stockIns, fn($r) => ($r['status'] ??
 </div>
 
 <script>
-// =============================================================================
-// TAB SWITCHING CONTROLLER
-// =============================================================================
+
 function switchStockTab(tabName) {
     const validTabs = ['inbound', 'outbound'];
     if (!validTabs.includes(tabName)) tabName = 'inbound';
 
-    // Update Tab Buttons
     validTabs.forEach(t => {
         const btn = document.getElementById('tab-btn-' + t);
         if (btn) {
@@ -1601,7 +1572,6 @@ function switchStockTab(tabName) {
         }
     });
 
-    // Update Tab Panes
     validTabs.forEach(t => {
         const pane = document.getElementById('pane-' + t);
         if (pane) {
@@ -1609,12 +1579,10 @@ function switchStockTab(tabName) {
         }
     });
 
-    // Sync URL without reloading
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tabName);
     window.history.replaceState({ tab: tabName }, '', url.toString());
 
-    // Trigger pagination re-calculation for all tables in the newly visible tab pane
     const activePane = document.getElementById('pane-' + tabName);
     if (activePane) {
         activePane.querySelectorAll('table').forEach(tbl => {
@@ -1625,16 +1593,12 @@ function switchStockTab(tabName) {
     }
 }
 
-// Support browser back/forward buttons
 window.addEventListener('popstate', function() {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') || 'inbound';
     switchStockTab(tab);
 });
 
-// =============================================================================
-// SECTION 1: INBOUND SCRIPTS
-// =============================================================================
 const linesData = <?= json_encode($linesByStockIn, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockInList = <?= json_encode($stockIns, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockInMetaById = {};
@@ -1793,9 +1757,6 @@ function resetPendingOutboundFilters() {
     filterPendingOutboundTable();
 }
 
-// =============================================================================
-// SECTION 2: OUTBOUND SCRIPTS
-// =============================================================================
 const outLinesData = <?= json_encode($linesByStockOut, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockOutList = <?= json_encode($stockOuts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const stockOutMetaById = {};
@@ -1948,9 +1909,6 @@ function closeCancelOutboundOrderModal() {
     }
 }
 
-// =============================================================================
-// ERP DOCUMENT QUEUES: RECEIVING & FULFILLMENT CONTROLLERS
-// =============================================================================
 const pendingInOrdersData   = <?= json_encode($pendingInboundOrders, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const inLinesData           = <?= json_encode($inboundOrderLines, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 const pendingOutOrdersData  = <?= json_encode($pendingOutboundOrders, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
@@ -1962,9 +1920,6 @@ pendingInOrdersData.forEach(o => { pendingInMap[o.inbound_order_id] = o; });
 const pendingOutMap = {};
 pendingOutOrdersData.forEach(o => { pendingOutMap[o.outbound_order_id] = o; });
 
-// -----------------------------------------------------------------------------
-// Inbound Order Receiving
-// -----------------------------------------------------------------------------
 function openReceiveOrderModal(id) {
     const order = pendingInMap[id];
     if (!order) return;
@@ -1993,16 +1948,22 @@ function openReceiveOrderModal(id) {
     const condHint   = document.getElementById('recConditionHint');
     const submitBtn  = document.getElementById('btnConfirmReceive');
 
-    if (order.source_type === 'CUSTOMER_RETURN') {
+    if (order.source_type === 'CUSTOMER_RETURN' || order.source_type === 'PRODUCTION_RETURN') {
         condSelect.value = 'salable';
-        condHint.textContent = 'Customer returns: Select whether returned items passed QA for restock or should be discarded.';
+        condHint.textContent = 'Returns: Select whether returned items passed QA for restock or should be discarded.';
         submitBtn.textContent = 'Confirm & Receive Return';
         submitBtn.style.background = '#6D28D9';
         submitBtn.style.borderColor = '#6D28D9';
+    } else if (order.source_type === 'PURCHASE_ORDER') {
+        condSelect.value = 'salable';
+        condHint.textContent = 'Accepted items will be added to current inventory balance.';
+        submitBtn.textContent = 'Confirm & Accept Delivery';
+        submitBtn.style.background = '#15803D';
+        submitBtn.style.borderColor = '#15803D';
     } else {
         condSelect.value = 'salable';
         condHint.textContent = 'Salable items will increase current inventory balance.';
-        submitBtn.textContent = 'Confirm & Receive Shipment';
+        submitBtn.textContent = 'Confirm & Receive Goods';
         submitBtn.style.background = '#15803D';
         submitBtn.style.borderColor = '#15803D';
     }
@@ -2105,9 +2066,6 @@ function handleReceiveConditionChange(selectEl) {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Outbound Order Dispatching
-// -----------------------------------------------------------------------------
 function openDispatchOrderModal(id) {
     const order = pendingOutMap[id];
     if (!order) return;
@@ -2116,12 +2074,16 @@ function openDispatchOrderModal(id) {
     document.getElementById('dispOrderNum').textContent = order.order_number || '—';
 
     let badgeHtml = '';
+    const dispatchBtn = document.getElementById('btnConfirmDispatch');
     if (order.source_type === 'SALES_DELIVERY') {
         badgeHtml = '<span class="badge" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">Sales Order Delivery</span>';
+        if (dispatchBtn) dispatchBtn.textContent = 'Approve & Dispatch Order';
     } else if (order.source_type === 'MATERIAL_REQUEST') {
         badgeHtml = '<span class="badge-source-production">Raw Material Request</span>';
+        if (dispatchBtn) dispatchBtn.textContent = 'Approve & Issue Materials';
     } else {
         badgeHtml = '<span class="badge-source-manual">' + escapeHtml(order.source_type) + '</span>';
+        if (dispatchBtn) dispatchBtn.textContent = 'Approve & Dispatch Order';
     }
     document.getElementById('dispOrderTypeBadge').innerHTML = badgeHtml;
     document.getElementById('dispOrderEntity').textContent = order.entity_name || '—';
@@ -2169,6 +2131,25 @@ function openDispatchOrderModal(id) {
     }
 }
 
+function openCancelInboundOrderModal(orderId, orderRef) {
+    document.getElementById('cancelInboundOrderId').value = orderId;
+    document.getElementById('cancelInboundOrderRef').textContent = orderRef;
+    document.getElementById('cancelInboundOrderReason').value = '';
+    const modal = document.getElementById('cancelInboundOrderModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.style.display = 'flex';
+    }
+}
+
+function closeCancelInboundOrderModal() {
+    const modal = document.getElementById('cancelInboundOrderModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+    }
+}
+
 function closeDispatchOrderModal() {
     const modal = document.getElementById('dispatchOrderModal');
     if (modal) {
@@ -2177,7 +2158,6 @@ function closeDispatchOrderModal() {
     }
 }
 
-// Document event listeners initialized
 </script>
 
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

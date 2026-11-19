@@ -1,8 +1,8 @@
 <?php
-/**
- * AuthController.php
- * Handles user authentication, session security, operator registration,
- * and password recovery for InventoryTeam ERP.
+/*
+ * Handles user authentication and account security. Manages login verification,
+ * failed-login lockouts, session timeouts, password resets, and user
+ * registration.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -10,8 +10,8 @@ require_once __DIR__ . '/../config/database.php';
 class AuthController {
     public const LOGIN_MAX_ATTEMPTS = 5;
     public const LOGIN_LOCKOUT_SECONDS = 300;
-    public const IDLE_TIMEOUT_SECONDS = 1800; // 30 minutes inactivity timeout
-    public const ACCOUNT_REVALIDATE_SECONDS = 0; // F-23: re-check users.status/role/team/warehouse on every request
+    public const IDLE_TIMEOUT_SECONDS = 1800; 
+    public const ACCOUNT_REVALIDATE_SECONDS = 0; 
 
     private PDO $db;
     private static bool $rateLimitTableEnsured = false;
@@ -21,17 +21,11 @@ class AuthController {
         $this->initSession();
     }
 
-    /**
-     * Start session safely if not already active
-     */
     private function initSession(): void {
-        // Single hardened session entry point shared with helpers/csrf.php (F-10, F-23)
+
         startSecureSession();
     }
 
-    /**
-     * Determine client IP address safely
-     */
     public function getClientIp(): string {
         $trustedProxiesEnv = getenv('TRUSTED_PROXIES');
         if (!empty($trustedProxiesEnv)) {
@@ -58,9 +52,6 @@ class AuthController {
         return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'inv_rl_' . substr($clientKey, 0, 16) . '.json';
     }
 
-    /**
-     * Check if client IP is currently rate limited
-     */
     public function checkLoginRateLimit(int $maxAttempts = self::LOGIN_MAX_ATTEMPTS, int $windowSeconds = self::LOGIN_LOCKOUT_SECONDS): array {
         $now = time();
         $cacheFile = $this->getRateLimitCacheFile();
@@ -91,9 +82,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Record a failed login attempt for the client IP
-     */
     public function recordFailedLogin(int $maxAttempts = self::LOGIN_MAX_ATTEMPTS, int $windowSeconds = self::LOGIN_LOCKOUT_SECONDS): array {
         $now = time();
         $cacheFile = $this->getRateLimitCacheFile();
@@ -119,9 +107,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Clear login rate limiting for the client IP upon successful login
-     */
     public function clearLoginRateLimit(): void {
         $cacheFile = $this->getRateLimitCacheFile();
         if (file_exists($cacheFile)) {
@@ -129,11 +114,8 @@ class AuthController {
         }
     }
 
-    /**
-     * Authenticate user with email and password
-     */
     public function login(string $email, string $password, bool $remember = false, ?string $twoFactorCode = null): array {
-        // 1. Guard against brute force DoS attacks before database lookups and bcrypt hashing
+
         $rateCheck = $this->checkLoginRateLimit();
         if (!$rateCheck['allowed']) {
             $retryAfter = $rateCheck['retry_after'];
@@ -211,15 +193,12 @@ class AuthController {
             ];
         }
 
-        // Authentication successful: clear failed attempt tracker
         $this->clearLoginRateLimit();
 
-        // Resolve assigned warehouse for user session without mutating database record
         $assignedWhId = !empty($user['warehouse_id'])
             ? (int)$user['warehouse_id']
             : self::resolveDefaultWarehouseId($user['email'] ?? '');
 
-        // Prevent session fixation attack
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             @session_regenerate_id(true);
         }
@@ -273,9 +252,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Compute clean dashboard redirect URL considering base folders like /Inventory_Team
-     */
     public function getDashboardRedirectUrl(): string {
         $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
         if (preg_match('#^(.*?)/(api|auth|views)#', $scriptDir, $matches)) {
@@ -285,9 +261,6 @@ class AuthController {
         return '/views/dashboard/index.php';
     }
 
-    /**
-     * Compute clean login redirect URL considering base folders like /Inventory_Team
-     */
     public function getLoginRedirectUrl(): string {
         $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
         if (preg_match('#^(.*?)/(api|auth|views)#', $scriptDir, $matches)) {
@@ -297,9 +270,6 @@ class AuthController {
         return '/auth/login.php';
     }
 
-    /**
-     * Log the current user out and destroy session
-     */
     public function logout(): void {
         $this->initSession();
         $_SESSION = [];
@@ -322,9 +292,6 @@ class AuthController {
         }
     }
 
-    /**
-     * Change password for an authenticated user after verifying current password
-     */
     public function changePassword(int $userId, string $currentPassword, string $newPassword, string $confirmPassword): array {
         if ($userId <= 0) {
             return [
@@ -399,9 +366,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Step 1: Request 6-digit OTP password reset code
-     */
     public function requestPasswordReset(string $email): array {
         $this->initSession();
         $email = trim(filter_var($email, FILTER_SANITIZE_EMAIL));
@@ -419,7 +383,7 @@ class AuthController {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$user) {
-            // Anti-enumeration: Uniform generic response prevents leaking account existence (F-27)
+
             return [
                 'success'      => true,
                 'message'      => 'If an active account exists for that email, a verification code has been dispatched.',
@@ -435,7 +399,7 @@ class AuthController {
             'code'       => $code,
             'token'      => $token,
             'attempts'   => 0,
-            'expires_at' => time() + 900 // 15 minutes
+            'expires_at' => time() + 900 
         ];
 
         $maskedEmail = $this->maskEmail($email);
@@ -448,9 +412,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Step 2: Verify 6-digit OTP code and issue reset token
-     */
     public function verifyPasswordResetCode(string $code, ?string $email = null): array {
         $this->initSession();
         $code = trim($code);
@@ -510,9 +471,6 @@ class AuthController {
         ];
     }
 
-    /**
-     * Step 3: Complete password reset using verified token
-     */
     public function completePasswordReset(string $resetToken, string $password, string $confirmPassword, ?string $email = null): array {
         $this->initSession();
         $resetToken = trim($resetToken);
@@ -578,39 +536,27 @@ class AuthController {
         ];
     }
 
-    /**
-     * Check if currently authenticated and enforce idle inactivity timeout
-     */
     public function isAuthenticated(bool $touchActivity = true): bool {
         if (empty($_SESSION['logged_in']) || empty($_SESSION['user_id'])) {
             return false;
         }
 
-        // Enforce Idle Inactivity Session Timeout (> 1800 seconds / 30 minutes)
         if (isset($_SESSION['last_activity']) && (time() - (int)$_SESSION['last_activity']) > self::IDLE_TIMEOUT_SECONDS) {
             $this->terminateSession();
             return false;
         }
 
-        // F-23: Revoke sessions of deactivated / deleted accounts and refresh role, team and
-        // warehouse assignment so privilege changes take effect on the very next request.
         if (!$this->revalidateSessionAccount()) {
             $this->terminateSession();
             return false;
         }
 
-        // Background polling (e.g. notifications_poll.php) passes $touchActivity = false so an
-        // unattended open tab still expires after the idle timeout (F-23).
         if ($touchActivity) {
             $_SESSION['last_activity'] = time();
         }
         return true;
     }
 
-    /**
-     * Re-read the session's user row and sync privilege-bearing fields (F-23).
-     * Returns false when the account no longer exists or is not active.
-     */
     private function revalidateSessionAccount(): bool {
         static $validatedThisRequest = [];
         $uid = (int)($_SESSION['user_id'] ?? 0);
@@ -631,7 +577,7 @@ class AuthController {
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
         } catch (Throwable $e) {
             error_log('Session revalidation failed: ' . $e->getMessage());
-            // Fail closed: never keep a session alive when the account state cannot be verified
+
             return $validatedThisRequest[$uid] = false;
         }
 
@@ -651,9 +597,6 @@ class AuthController {
         return $validatedThisRequest[$uid] = true;
     }
 
-    /**
-     * Destroy the current session (idle timeout or revoked account).
-     */
     private function terminateSession(): void {
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
@@ -661,11 +604,8 @@ class AuthController {
         }
     }
 
-    /**
-     * Get current authenticated user payload
-     */
     public function getCurrentUser(): ?array {
-        // Do not refresh last_activity here; callers decide via isAuthenticated($touchActivity)
+
         if (!$this->isAuthenticated(false)) {
             return null;
         }
@@ -681,20 +621,14 @@ class AuthController {
         ];
     }
 
-    /**
-     * Resolve default warehouse ID from user email when warehouse_id is not explicitly set
-     */
     public static function resolveDefaultWarehouseId(?string $email): int {
         $emailLower = strtolower(trim((string)$email));
         if (str_contains($emailLower, 'sales') || str_contains($emailLower, 'bond')) {
-            return 2; // WH-BOND (Manila)
+            return 2; 
         }
-        return 1; // WH-MAIN (Laguna)
+        return 1; 
     }
 
-    /**
-     * Obfuscate email address for safe public disclosure (F-27)
-     */
     public function maskEmail(string $email): string {
         $parts = explode('@', $email);
         $namePart = $parts[0] ?? '';
@@ -705,16 +639,13 @@ class AuthController {
         return $maskedName . '@' . $domainPart;
     }
 
-    /**
-     * Dispatch OTP verification email with system error_log fallback (F-27)
-     */
     public function deliverOtpEmail(string $email, string $name, string $code, string $type = 'password_reset'): bool {
         $subject = "InventoryTeam - Password Reset Verification Code";
         $body = "Hello {$name},\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please secure your account immediately.";
         $headers = "From: no-reply@inventory.local\r\nReply-To: no-reply@inventory.local\r\nX-Mailer: PHP/" . phpversion();
         $sent = @mail($email, $subject, $body, $headers);
         if (!$sent) {
-            // SEC-05: Redact plaintext OTP verification codes from server error logs
+
             error_log("OTP delivery notice: [{$type}] verification email could not be sent to {$email} (system mailer unavailable).");
         }
         return $sent;

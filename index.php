@@ -1,7 +1,7 @@
 <?php
-/**
- * Root Gateway Index
- * Directs visitors to Dashboard (if authenticated) or Login (if unauthenticated).
+/*
+ * Entry point for the application. Sends logged-in users to the dashboard and
+ * sends everyone else to the login page.
  */
 
 require_once __DIR__ . '/controllers/AuthController.php';

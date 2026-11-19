@@ -1,18 +1,13 @@
 <?php
-/**
- * View: Full Page Accountability Audit Log
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Whole-page audit ledger showing who performed inventory-related actions,
- * what they did, when they did it, and which warehouse was affected.
- * Kept strictly inside the Settings section.
+/*
+ * Accountability audit log page. Displays a searchable history of user inventory
+ * actions and supports exporting the log to CSV.
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/AccountabilityService.php';
 
-// Real CSV export (must run before header.php outputs HTML, while enforcing identical warehouse isolation)
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $auth = new AuthController();
     if (!$auth->isAuthenticated()) {
@@ -63,14 +58,12 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
-// Fetch live KPIs, warehouses, and logs AFTER header.php has resolved and enforced $currentWarehouseId
 $scopeWarehouseId = $isSuperAdmin ? 0 : $currentWarehouseId;
 $kpis = AccountabilityService::getKpis($scopeWarehouseId);
 
 $warehousesStmt = $pdo->query("SELECT warehouse_id, name AS warehouse_name, code AS warehouse_code, code, name FROM warehouses ORDER BY name ASC");
 $allWarehouses = $warehousesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Server-Side Limit & Pagination (UI-01)
 $limitParam = $_GET['limit'] ?? '';
 $isAll = ($limitParam === 'all');
 $limitVal = $isAll ? 0 : max(10, min(1000, (int)($limitParam ?: 100)));
@@ -88,7 +81,6 @@ if ($limitVal > 0) {
     $filters['offset'] = 0;
 }
 
-// Fetch logs with verified warehouse scope (all facilities for Super Admin so the Warehouse Filter works across branches)
 $logs = AccountabilityService::getLogs($scopeWarehouseId, $filters);
 
 $currentWarehouseCode = $assignedWarehouse['warehouse_code'] ?? 'WH-MAIN';
@@ -96,7 +88,6 @@ $currentWarehouseName = $assignedWarehouse['warehouse_name'] ?? 'Main Warehouse'
 $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $currentWarehouseName);
 ?>
 
-<!-- Page Header -->
 <div class="page-header">
     <div>
         <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
@@ -117,9 +108,8 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
     </div>
 </div>
 
-<!-- Accountability KPI Metrics Grid (Inventory Team Only) -->
 <div class="stats-grid" style="margin-bottom: 24px;">
-    <!-- Metric 1: Total Inventory Events -->
+
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Audit Trail Events</span>
@@ -135,7 +125,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <div class="stat-meta">Inventory team operations logged</div>
     </div>
 
-    <!-- Metric 2: Stock In & Out Operations -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Stock In &amp; Out</span>
@@ -151,7 +140,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <div class="stat-meta">Inbound receipts &amp; outbound dispatches</div>
     </div>
 
-    <!-- Metric 3: Transfers & Adjustments -->
     <div class="stat-card stat-gold">
         <div class="stat-header">
             <span class="stat-label">Transfers &amp; Adjustments</span>
@@ -168,7 +156,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <div class="stat-meta">Facility transfers, counts &amp; bad stock</div>
     </div>
 
-    <!-- Metric 4: Staff Sign-Ins & Admin -->
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Staff Sign-Ins &amp; Admin</span>
@@ -186,7 +173,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
     </div>
 </div>
 
-<!-- Main Accountability Card -->
 <div class="card">
     <div class="card-header">
         <div>
@@ -194,9 +180,8 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             <p class="card-desc">Showing timestamped inventory activities with full operational traceability</p>
         </div>
 
-        <!-- Filter & Search Toolbar -->
         <div class="filter-group">
-            <!-- Search Box -->
+
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -207,7 +192,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
                 <input type="text" id="fullLogSearch" class="search-box" aria-label="Filter accountability audit log" placeholder="Filter user, item, or warehouse..." oninput="filterFullLogTable()">
             </div>
 
-            <!-- Action Type Filter -->
             <select id="fullLogActionFilter" class="select-filter" aria-label="Filter by action type" onchange="filterFullLogTable()">
                 <option value="all">All Actions</option>
                 <option value="STOCK_IN">Stock In</option>
@@ -232,7 +216,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </select>
 
             <?php if ($isSuperAdmin): ?>
-            <!-- Warehouse Filter (Super Admin only) -->
+
             <select id="fullLogWarehouseFilter" class="select-filter" aria-label="Filter by warehouse" onchange="filterFullLogTable()">
                 <option value="all">All Warehouses</option>
                 <?php foreach ($allWarehouses as $wh): ?>
@@ -243,7 +227,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </select>
             <?php endif; ?>
 
-            <!-- Server-Side Query Limit (UI-01) -->
             <div style="display: flex; align-items: center; gap: 6px;">
                 <span style="font-size: 12px; color: var(--gray); font-weight: 500;">Show</span>
                 <select id="fullLogLimitFilter" class="select-filter" style="width: 105px; padding: 0 8px;" onchange="window.location.href='?limit=' + this.value" title="Records limit per query">
@@ -261,7 +244,6 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         </div>
     </div>
 
-    <!-- Whole Page Accountability Table -->
     <div class="table-responsive">
         <table id="fullLogTable">
             <thead>
@@ -373,7 +355,6 @@ function filterFullLogTable() {
     const action = (document.getElementById('fullLogActionFilter')?.value || 'all');
     const warehouse = (document.getElementById('fullLogWarehouseFilter')?.value || 'all');
 
-    // Keep Export CSV link synchronized with active filters
     const exportBtn = document.getElementById('exportCsvBtn');
     if (exportBtn) {
         const params = new URLSearchParams();
@@ -391,7 +372,7 @@ function filterFullLogTable() {
     const actionLower = action.toLowerCase();
 
     rows.forEach(row => {
-        // Skip empty placeholder row if present
+
         if (row.cells.length <= 1) return;
 
         const rowTeam = (row.getAttribute('data-team') || '').toLowerCase();

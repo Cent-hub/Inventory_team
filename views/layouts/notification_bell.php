@@ -1,14 +1,12 @@
 <?php
-/**
- * Layout Component: Header Notification Bell & Dropdown
- * InventoryTeam — Liquor Business Inventory Management System
- * Refactored under F-22 & F-35 via NotificationService
+/*
+ * Header notification bell widget. Loads recent inventory alerts and lets users
+ * mark notifications as read.
  */
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/NotificationService.php';
 
-// Ensure database connection is initialized defensively
 if (!isset($pdo) || !($pdo instanceof PDO)) {
     try {
         $pdo = Database::getConnection();
@@ -53,7 +51,6 @@ if (!isset($notificationList) || !is_array($notificationList)) {
     $unreadNotificationsCount = count(array_filter($notificationList, fn($n) => empty($n['is_read'])));
 }
 
-// Group notifications into New, Today, Earlier sections
 $groupedNotifications = [
     'New'     => [],
     'Today'   => [],
@@ -75,7 +72,6 @@ foreach ($groupedNotifications as &$sectionItems) {
 }
 unset($sectionItems);
 
-// Calculate filter tab badge totals
 $tabStockCount = 0;
 $tabMessageCount = 0;
 foreach ($notificationList as $notifItem) {
@@ -98,7 +94,7 @@ foreach ($notificationList as $notifItem) {
     }
     if (count($headerWarehouses) > 1):
 ?>
-    <!-- F-37: Super Admin Desktop Facility Switcher inside .page-header -->
+
     <div class="header-desktop-wh-switcher" style="display: inline-flex; align-items: center; margin-right: 8px;">
         <form method="GET" style="margin: 0; display: inline-flex; align-items: center;">
             <?php foreach ($_GET as $gk => $gv): if ($gk === 'warehouse_id' || is_array($gv)) continue; ?>
@@ -127,7 +123,7 @@ foreach ($notificationList as $notifItem) {
             data-tooltip="Notifications"
             aria-haspopup="dialog" 
             aria-expanded="false">
-        <!-- Lucide Bell Icon -->
+
         <svg class="notification-bell-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
@@ -137,7 +133,6 @@ foreach ($notificationList as $notifItem) {
         </span>
     </button>
 
-    <!-- Notification Dropdown Popover -->
     <div class="notification-dropdown" id="notificationDropdown" role="dialog" aria-label="Notifications Panel">
         <div class="notif-header">
             <div class="notif-header-title">
@@ -155,7 +150,6 @@ foreach ($notificationList as $notifItem) {
             </button>
         </div>
 
-        <!-- Segmented Notification Filter Controls Group -->
         <div class="notif-tabs" role="tablist" aria-label="Notification Filters">
             <button type="button" 
                     class="notif-tab active" 
@@ -227,32 +221,32 @@ foreach ($notificationList as $notifItem) {
                                     <a href="<?= $safeLink ?>" class="notif-link" onclick="handleNotificationClick(event, this.closest('.notif-item'))">
                                         <div class="notif-icon-circle <?= $safeSev ?>" aria-hidden="true">
                                             <?php if ($safeSev === 'critical'): ?>
-                                                <!-- AlertCircle Icon -->
+
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                     <circle cx="12" cy="12" r="10"/>
                                                     <line x1="12" y1="8" x2="12" y2="12"/>
                                                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                                                 </svg>
                                             <?php elseif ($safeSev === 'warning'): ?>
-                                                <!-- AlertTriangle Icon -->
+
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                                                     <line x1="12" y1="9" x2="12" y2="13"/>
                                                     <line x1="12" y1="17" x2="12.01" y2="17"/>
                                                 </svg>
                                             <?php elseif ($safeSev === 'shield'): ?>
-                                                <!-- ShieldCheck Icon (Super Admin Stock Action) -->
+
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                                                     <path d="m9 12 2 2 4-4"/>
                                                 </svg>
                                             <?php elseif ($safeSev === 'message'): ?>
-                                                <!-- MessageSquare Icon (Contact Support / Admin Message) -->
+
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                                 </svg>
                                             <?php else: ?>
-                                                <!-- Layers Icon -->
+
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                     <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
                                                     <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
@@ -303,7 +297,7 @@ foreach ($notificationList as $notifItem) {
             <?php else: ?>
                 <div class="notif-empty">
                     <div class="notif-empty-icon" aria-hidden="true">
-                        <!-- CheckCircle Icon -->
+
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                             <polyline points="22 4 12 14.01 9 11.01"/>
@@ -314,7 +308,6 @@ foreach ($notificationList as $notifItem) {
                 </div>
             <?php endif; ?>
 
-            <!-- Filter Empty State -->
             <div class="notif-filter-empty" id="notifFilterEmpty" style="display: none;">
                 <div class="notif-empty-icon" style="background: #F1F5F9; color: #64748B;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -333,4 +326,3 @@ foreach ($notificationList as $notifItem) {
         </div>
     </div>
 </div>
-

@@ -1,12 +1,7 @@
 <?php
-/**
- * View: Stock Operations (Unified Transaction Hub)
- * InventoryTeam — Liquor Business Inventory Management System
- * 
- * Unifies three core inventory transaction functions into a single interface:
- * 1. Stock Transfer (Inter-facility warehouse transfer ledger)
- * 2. Stock Adjustment (Discrepancy reconciliation & defect write-offs)
- * 3. Stock Card (Item-level chronological debit/credit ledger)
+/*
+ * Stock operations page. Combines warehouse-to-warehouse stock transfers, stock
+ * adjustments for discrepancies or defects, and item stock cards into one view.
  */
 
 $pageTitle   = 'Stock Operations — InventoryTeam';
@@ -21,7 +16,6 @@ require_once __DIR__ . '/../../helpers/StockService.php';
 $successMessage = null;
 $errorMessage   = null;
 
-// Determine Initial Active Tab
 $activeTab = 'transfer';
 if (isset($_GET['tab']) && in_array($_GET['tab'], ['transfer', 'adjustment', 'stock_card'], true)) {
     $activeTab = $_GET['tab'];
@@ -31,7 +25,6 @@ if (isset($_GET['tab']) && in_array($_GET['tab'], ['transfer', 'adjustment', 'st
     $activeTab = 'stock_card';
 }
 
-// Fetch available destination warehouses (other active facilities only)
 $destStmt = $pdo->prepare("
     SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location 
     FROM warehouses 
@@ -43,9 +36,6 @@ $destinationWarehouses = $destStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $canInitiateTransfer = !empty($destinationWarehouses);
 
-// =============================================================================
-// POST ACTION DISPATCHER
-// =============================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -57,9 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             switch ($action) {
-                // -------------------------------------------------------------
-                // 1. Stock Transfer Actions
-                // -------------------------------------------------------------
+
                 case 'create_transfer':
                     $activeTab = 'transfer';
                     if (!$canInitiateTransfer) {
@@ -112,9 +100,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $successMessage = "Stock transfer " . htmlspecialchars($result['transaction_number']) . " has been cancelled and stock restored to the source warehouse.";
                     break;
 
-                // -------------------------------------------------------------
-                // 2. Stock Adjustment Actions
-                // -------------------------------------------------------------
                 case 'create_adjustment':
                     $activeTab       = 'adjustment';
                     $itemId          = (int)($_POST['item_id'] ?? 0);
@@ -143,7 +128,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser
                     );
 
-                    // Auto-approve adjustment immediately if creator is super_admin
                     $adjId = (int)($result['stock_adjustment_id'] ?? 0);
                     if ($adjId > 0 && ($currentUser['role'] ?? '') === 'super_admin') {
                         $apprResult = $stockService->approveStockAdjustment($adjId, $userId, $currentUser);
@@ -268,11 +252,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// =============================================================================
-// DATA QUERIES: SECTION 1 (STOCK TRANSFER)
-// =============================================================================
-
-// Consolidated query: Fetch all active items with warehouse inventory balance
 $allWhItemsStmt = $pdo->prepare("
     SELECT 
         i.item_id, 
@@ -290,10 +269,8 @@ $allWhItemsStmt = $pdo->prepare("
 $allWhItemsStmt->execute([':wid' => $currentWarehouseId]);
 $allWarehouseItems = $allWhItemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Items available in source warehouse with positive stock for transfer
 $transferAvailableItems = array_values(array_filter($allWarehouseItems, fn($it) => (float)$it['current_stock'] > 0));
 
-// Inbound Transfers (Destination = Current Warehouse)
 $stmtRecv = $pdo->prepare("
     SELECT 
         st.transfer_id AS stock_transfer_id,
@@ -330,7 +307,6 @@ $stmtRecv = $pdo->prepare("
 $stmtRecv->execute([':wid' => $currentWarehouseId]);
 $receivedTransfers = $stmtRecv->fetchAll(PDO::FETCH_ASSOC);
 
-// Outbound Transfers (Source = Current Warehouse)
 $stmtSent = $pdo->prepare("
     SELECT 
         st.transfer_id AS stock_transfer_id,
@@ -367,7 +343,6 @@ $stmtSent = $pdo->prepare("
 $stmtSent->execute([':wid' => $currentWarehouseId]);
 $transferredTransfers = $stmtSent->fetchAll(PDO::FETCH_ASSOC);
 
-// Line items for modal inspection
 $linesByTransfer = [];
 foreach (array_merge($receivedTransfers, $transferredTransfers) as $row) {
     $linesByTransfer[(int)$row['stock_transfer_id']][] = [
@@ -386,14 +361,8 @@ $totalTransfersCount = $totalReceived + $totalTransferred;
 $allInvolved         = array_merge($receivedTransfers, $transferredTransfers);
 $completedCount      = count(array_filter($allInvolved, fn($t) => in_array(($t['status'] ?? ''), ['received', 'completed'], true)));
 
-// =============================================================================
-// DATA QUERIES: SECTION 2 (STOCK ADJUSTMENT)
-// =============================================================================
-
-// Items for adjustment dropdown (reusing consolidated item query)
 $adjAvailableItems = $allWarehouseItems;
 
-// Stock Adjustments for assigned warehouse
 $stmtAdj = $pdo->prepare("
     SELECT 
         sa.adjustment_id AS stock_adjustment_id,
@@ -427,7 +396,6 @@ $stmtAdj = $pdo->prepare("
 $stmtAdj->execute([':wid' => $currentWarehouseId]);
 $adjustments = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
-// Bad Product Defect Records
 $stmtBad = $pdo->prepare("
     SELECT 
         bp.bad_product_id,
@@ -460,7 +428,9 @@ $stmtBad->execute([':wid' => $currentWarehouseId]);
 $badProducts = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
 
 $totalAdjustments = count(array_filter($adjustments, fn($a) => !in_array($a['status'] ?? '', ['cancelled', 'rejected'], true)));
-$totalBadProducts = count(array_filter($badProducts, fn($b) => ($b['status'] ?? '') !== 'cancelled'));
+$activeBadProducts = array_filter($badProducts, fn($b) => !in_array(($b['status'] ?? ''), ['cancelled', 'disposed'], true));
+$totalBadProducts  = count($activeBadProducts);
+$totalBadVolume    = array_sum(array_map(fn($b) => (float)($b['quantity'] ?? 0), $activeBadProducts));
 $netVariance      = 0.0;
 foreach ($adjustments as $a) {
     if (($a['status'] ?? '') === 'approved') {
@@ -468,14 +438,8 @@ foreach ($adjustments as $a) {
     }
 }
 
-// =============================================================================
-// DATA QUERIES: SECTION 3 (STOCK CARD)
-// =============================================================================
-
-// Distinct items in assigned warehouse inventory for Stock Card selector (reusing consolidated item query)
 $cardItems = $allWarehouseItems;
 
-// Selected filters
 $selectedItemId = (isset($_GET['item_id']) && is_numeric($_GET['item_id']) && (int)$_GET['item_id'] > 0)
     ? (int)$_GET['item_id']
     : (int)($cardItems[0]['item_id'] ?? 0);
@@ -490,7 +454,6 @@ if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
     [$startDate, $endDate] = [$endDate, $startDate];
 }
 
-// Retrieve selected item profile
 $selectedItem = null;
 foreach ($cardItems as $it) {
     if ((int)$it['item_id'] === $selectedItemId) {
@@ -499,7 +462,6 @@ foreach ($cardItems as $it) {
     }
 }
 
-// Current stock snapshot
 $cardCurrentStock = 0.0;
 if ($selectedItem) {
     $stockStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_on_hand), 0) FROM stock WHERE item_id = ? AND warehouse_id = ?");
@@ -507,7 +469,6 @@ if ($selectedItem) {
     $cardCurrentStock = (float)$stockStmt->fetchColumn();
 }
 
-// Movements ledger strictly for assigned warehouse
 $movements = [];
 if ($selectedItemId > 0) {
     $sql = "
@@ -584,7 +545,6 @@ if ($selectedItemId > 0) {
 }
 ?>
 
-<!-- Main Page Header -->
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Operations</h1>
@@ -595,9 +555,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- NAVIGATION SWITCHER: INVENTORY OPERATIONS                                 -->
-<!-- ========================================================================= -->
 <div class="stock-ops-nav-wrapper">
     <div class="stock-ops-nav-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -640,7 +597,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- Flash Alerts -->
 <?php if ($successMessage): ?>
     <div class="flash-alert flash-alert-success" style="background: var(--success-light); border: 1px solid var(--success-border); color: var(--success); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 500;">
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -661,13 +617,8 @@ if ($selectedItemId > 0) {
     </div>
 <?php endif; ?>
 
-
-<!-- ######################################################################### -->
-<!-- PANE 1: STOCK TRANSFER SECTION                                            -->
-<!-- ######################################################################### -->
 <div id="pane-transfer" class="stock-op-pane" style="display: <?= $activeTab === 'transfer' ? 'block' : 'none' ?>;">
 
-    <!-- Section Header Toolbar -->
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
         <div>
             <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Transfer Ledger</h2>
@@ -703,7 +654,6 @@ if ($selectedItemId > 0) {
         </div>
     <?php endif; ?>
 
-    <!-- KPI Summary Cards -->
     <div class="stats-grid" style="margin-bottom: 24px;">
         <div class="stat-card">
             <div class="stat-header">
@@ -763,7 +713,6 @@ if ($selectedItemId > 0) {
         </div>
     </div>
 
-    <!-- Section: Received from Other Warehouse (Inbound) -->
     <div class="card mb-6" style="margin-bottom: 28px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -890,7 +839,6 @@ if ($selectedItemId > 0) {
         </div>
     </div>
 
-    <!-- Section: Transferred to Other Warehouse (Outbound) -->
     <div class="card mb-6">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -1012,13 +960,8 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-
-<!-- ######################################################################### -->
-<!-- PANE 2: STOCK ADJUSTMENT SECTION                                          -->
-<!-- ######################################################################### -->
 <div id="pane-adjustment" class="stock-op-pane" style="display: <?= $activeTab === 'adjustment' ? 'block' : 'none' ?>;">
 
-    <!-- Section Header Toolbar -->
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
         <div>
             <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Adjustments &amp; Discrepancy Audits</h2>
@@ -1036,7 +979,6 @@ if ($selectedItemId > 0) {
         </div>
     </div>
 
-    <!-- KPI Summary Cards -->
     <div class="stats-grid" style="margin-bottom: 24px;">
         <div class="stat-card">
             <div class="stat-header">
@@ -1054,7 +996,7 @@ if ($selectedItemId > 0) {
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-label">Damaged / Defect Records</span>
+                <span class="stat-label">Bad Products</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"/>
@@ -1063,12 +1005,11 @@ if ($selectedItemId > 0) {
                     </svg>
                 </div>
             </div>
-            <div class="stat-value"><?= $totalBadProducts ?></div>
-            <div class="stat-meta">Damaged / spoiled / broken units</div>
+            <div class="stat-value"><?= formatQty($totalBadVolume) ?></div>
+            <div class="stat-meta"><?= $totalBadProducts ?> record<?= $totalBadProducts === 1 ? '' : 's' ?></div>
         </div>
     </div>
 
-    <!-- Section 1: Stock Adjustments (Physical Count Reconciliation) -->
     <div class="card mb-6" style="margin-bottom: 28px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -1172,7 +1113,6 @@ if ($selectedItemId > 0) {
         </div>
     </div>
 
-    <!-- Section 2: Damaged & Defective Goods (Write-offs) -->
     <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -1291,28 +1231,21 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-
-<!-- ######################################################################### -->
-<!-- PANE 3: STOCK CARD SECTION                                                -->
-<!-- ######################################################################### -->
 <div id="pane-stock_card" class="stock-op-pane" style="display: <?= $activeTab === 'stock_card' ? 'block' : 'none' ?>;">
 
-    <!-- Section Header Toolbar -->
     <div style="margin-bottom: 20px;">
         <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Item Stock Card Ledger</h2>
         <p style="font-size: 13px; color: var(--gray); margin: 0;">Full history of stock in, stock out, and running balance for each item</p>
     </div>
 
-    <!-- Filter Toolbar Card -->
     <div class="card" style="padding: 18px 22px; margin-bottom: 24px;">
         <form method="GET" action="index.php" id="stockCardForm" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">
             <input type="hidden" name="tab" value="stock_card">
-            
-            <!-- Searchable Item Autocomplete Selector -->
+
             <div style="display: flex; flex-direction: column; gap: 4px; min-width: 280px; flex: 1; position: relative;">
                 <label for="itemSearchInput" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Select Inventory Item:</label>
                 <input type="hidden" name="item_id" id="selectedItemId" value="<?= (int)$selectedItemId ?>">
-                
+
                 <div id="itemSearchWrapper" class="searchable-select-wrap">
                     <div style="position: relative; display: flex; align-items: center;">
                         <input type="text" 
@@ -1332,12 +1265,10 @@ if ($selectedItemId > 0) {
                         <button type="button" id="clearItemSearchBtn" aria-label="Clear item search" onclick="clearItemSearch()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--gray); font-size: 16px; display: <?= $selectedItem ? 'inline-block' : 'none' ?>; line-height: 1; padding: 2px;" title="Clear search">&times;</button>
                     </div>
 
-                    <!-- Dropdown Search Results Container -->
                     <div id="itemDropdownList" class="searchable-dropdown-list" role="listbox" aria-label="Inventory items"></div>
                 </div>
             </div>
 
-            <!-- Movement Type Filter -->
             <div style="display: flex; flex-direction: column; gap: 4px; min-width: 160px;">
                 <label for="movement_type" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">Movement Type:</label>
                 <select name="movement_type" id="movement_type" class="select-filter" onchange="this.form.submit()">
@@ -1355,13 +1286,11 @@ if ($selectedItemId > 0) {
                 </select>
             </div>
 
-            <!-- Start Date -->
             <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label for="start_date" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">From:</label>
                 <input type="date" id="start_date" name="start_date" class="select-filter" value="<?= htmlspecialchars($startDate) ?>" onchange="this.form.submit()">
             </div>
 
-            <!-- End Date -->
             <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label for="end_date" style="font-size: 12px; font-weight: 700; color: var(--panel-ink);">To:</label>
                 <input type="date" id="end_date" name="end_date" class="select-filter" value="<?= htmlspecialchars($endDate) ?>" onchange="this.form.submit()">
@@ -1370,7 +1299,6 @@ if ($selectedItemId > 0) {
             <a href="index.php?tab=stock_card&item_id=<?= $selectedItemId ?>" class="btn btn-secondary" style="height: 38px;">Reset</a>
         </form>
 
-        <!-- Compact Selected Item Header (inside the same card) -->
         <?php if ($selectedItem): ?>
         <?php
             $unitLabel = htmlspecialchars($selectedItem['unit']);
@@ -1406,7 +1334,6 @@ if ($selectedItemId > 0) {
         <?php endif; ?>
     </div>
 
-    <!-- Stock Card Ledger Table -->
     <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
@@ -1485,12 +1412,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-
-<!-- ========================================================================= -->
-<!-- MODALS SECTION                                                            -->
-<!-- ========================================================================= -->
-
-<!-- 1. Transfer Details Modal -->
 <div id="transferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTrfTitle" onclick="if(event.target === this) closeTransferDetailModal()">
     <div class="modal-card" style="max-width: 620px;">
         <div class="modal-header">
@@ -1563,14 +1484,13 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 2. Initiate Transfer Modal -->
 <div id="newTransferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newTransferModalTitle" onclick="handleOpsBackdropClose(event, this, closeNewTransferModal)">
     <div class="modal-card" style="max-width: 540px;">
         <form method="POST" action="index.php?tab=transfer">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create_transfer">
             <input type="hidden" name="active_tab" value="transfer">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="newTransferModalTitle" class="card-title">Initiate Stock Transfer</h3>
@@ -1653,7 +1573,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 3. Confirm Received Stock Modal -->
 <div id="confirmReceiptModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmReceiptModalTitle" onclick="if(event.target === this) closeConfirmReceiptModal()">
     <div class="modal-card" style="max-width: 480px;">
         <form method="POST" action="index.php?tab=transfer">
@@ -1661,7 +1580,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="confirm_receipt">
             <input type="hidden" name="active_tab" value="transfer">
             <input type="hidden" name="stock_transfer_id" id="confirmReceiptId" value="">
-            
+
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <div style="width: 36px; height: 36px; border-radius: 50%; background: #DCFCE7; color: #15803D; display: flex; align-items: center; justify-content: center;">
@@ -1714,14 +1633,13 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 4. New Stock Adjustment Modal -->
 <div id="newAdjustmentModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newAdjustmentModalTitle" onclick="handleOpsBackdropClose(event, this, closeNewAdjustmentModal)">
     <div class="modal-card" style="max-width: 520px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create_adjustment">
             <input type="hidden" name="active_tab" value="adjustment">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="newAdjustmentModalTitle" class="card-title" style="margin: 0;">New Stock Adjustment</h3>
@@ -1800,14 +1718,13 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 5. Report Damaged Goods Modal -->
 <div id="reportBadProductModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reportBadProductModalTitle" onclick="handleOpsBackdropClose(event, this, closeReportBadProductModal)">
     <div class="modal-card" style="max-width: 500px;">
         <form method="POST" action="index.php?tab=adjustment">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create_bad_product">
             <input type="hidden" name="active_tab" value="adjustment">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="reportBadProductModalTitle" class="card-title" style="margin: 0;">Report Damaged / Defective Stock</h3>
@@ -1870,7 +1787,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 6. Approve Adjustment Modal -->
 <div id="confirmApproveModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmApproveModalTitle" onclick="if(event.target === this) closeApproveModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
@@ -1878,7 +1794,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="approve_adjustment">
             <input type="hidden" name="active_tab" value="adjustment">
             <input type="hidden" name="stock_adjustment_id" id="approveAdjId" value="">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="confirmApproveModalTitle" class="card-title" style="margin: 0;">Approve Stock Adjustment</h3>
@@ -1908,7 +1824,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 7. Reject Adjustment Modal -->
 <div id="confirmRejectModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmRejectModalTitle" onclick="if(event.target === this) closeRejectModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
@@ -1916,7 +1831,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="reject_adjustment">
             <input type="hidden" name="active_tab" value="adjustment">
             <input type="hidden" name="stock_adjustment_id" id="rejectAdjId" value="">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="confirmRejectModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Reject Stock Adjustment</h3>
@@ -1943,7 +1858,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 8. Cancel Approved Adjustment Modal -->
 <div id="confirmCancelAdjModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelAdjModalTitle" onclick="if(event.target === this) closeCancelAdjModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
@@ -1951,7 +1865,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="cancel_adjustment">
             <input type="hidden" name="active_tab" value="adjustment">
             <input type="hidden" name="stock_adjustment_id" id="cancelAdjId" value="">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="confirmCancelAdjModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Cancel Stock Adjustment</h3>
@@ -1978,7 +1892,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 9. Restore Damaged Product Modal -->
 <div id="confirmCancelBadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelBadModalTitle" onclick="if(event.target === this) closeCancelBadModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=adjustment">
@@ -1986,7 +1899,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="cancel_bad_product">
             <input type="hidden" name="active_tab" value="adjustment">
             <input type="hidden" name="bad_product_id" id="cancelBadId" value="">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="confirmCancelBadModalTitle" class="card-title" style="margin: 0; color: #15803D;">Restore Damaged Product Stock</h3>
@@ -2013,7 +1926,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 9b. Dispose Defective Product Modal (QC Physical Destruction) -->
 <div id="disposeBadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="disposeBadModalTitle" onclick="if(event.target === this) closeDisposeBadModal()">
     <div class="modal-card" style="max-width: 480px;">
         <form method="POST" action="index.php?tab=adjustment">
@@ -2021,7 +1933,7 @@ if ($selectedItemId > 0) {
             <input type="hidden" name="action" value="dispose_bad_product">
             <input type="hidden" name="active_tab" value="adjustment">
             <input type="hidden" name="bad_product_id" id="disposeBadId" value="">
-            
+
             <div class="modal-header">
                 <div>
                     <h3 id="disposeBadModalTitle" class="card-title" style="margin: 0; color: #7C3AED;">Record Defect Disposal</h3>
@@ -2053,7 +1965,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 10. Adjustment Details Modal -->
 <div id="adjustmentDetailModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalAdjTitle" onclick="if(event.target === this) closeAdjDetailModal()">
     <div class="modal-card" style="max-width: 540px;">
         <div class="modal-header">
@@ -2120,7 +2031,6 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- 11. Cancel Stock Transfer Modal -->
 <div id="confirmCancelTransferModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmCancelTransferModalTitle" onclick="if(event.target === this) closeCancelTransferModal()">
     <div class="modal-card" style="max-width: 460px;">
         <form method="POST" action="index.php?tab=transfer">
@@ -2155,13 +2065,9 @@ if ($selectedItemId > 0) {
     </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- JAVASCRIPT LOGIC                                                          -->
-<!-- ========================================================================= -->
 <script>
 const isSuperAdminUser = <?= json_encode($isSuperAdmin, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
-// Protect creation modals from accidental backdrop-click dismissal when forms contain unsaved input
 function handleOpsBackdropClose(event, modalEl, closeFn) {
     if (event.target !== modalEl) return;
     const form = modalEl.querySelector('form');
@@ -2177,12 +2083,10 @@ function handleOpsBackdropClose(event, modalEl, closeFn) {
     closeFn();
 }
 
-// Tab Switching Controller
 function switchStockTab(tabName) {
     const validTabs = ['transfer', 'adjustment', 'stock_card'];
     if (!validTabs.includes(tabName)) tabName = 'transfer';
 
-    // Update Tab Buttons
     validTabs.forEach(t => {
         const btn = document.getElementById('tab-btn-' + t);
         if (btn) {
@@ -2194,7 +2098,6 @@ function switchStockTab(tabName) {
         }
     });
 
-    // Update Tab Panes
     validTabs.forEach(t => {
         const pane = document.getElementById('pane-' + t);
         if (pane) {
@@ -2202,12 +2105,10 @@ function switchStockTab(tabName) {
         }
     });
 
-    // Sync URL without reloading
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tabName);
     window.history.replaceState({}, '', url.toString());
 
-    // Trigger pagination re-calculation for newly visible tables in active pane
     const activePane = document.getElementById('pane-' + tabName);
     if (activePane) {
         activePane.querySelectorAll('table').forEach(tbl => {
@@ -2218,9 +2119,6 @@ function switchStockTab(tabName) {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Stock Transfer JS
-// -----------------------------------------------------------------------------
 const trfLinesData = <?= json_encode($linesByTransfer, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
 function openCancelTransferModal(trf) {
@@ -2240,12 +2138,12 @@ function openConfirmReceiptModal(trf) {
     document.getElementById('confirmReceiptId').value = trf.stock_transfer_id;
     document.getElementById('confirmTrfRef').textContent = trf.transaction_number;
     document.getElementById('confirmTrfFrom').textContent = (trf.src_code || '') + ' - ' + (trf.src_name || '');
-    
+
     const itemName = ((parseInt(trf.total_items) || 0) > 1) 
         ? (trf.total_items + ' items (' + (trf.items_summary || '') + ')') 
         : (trf.first_item_name || 'Item');
     document.getElementById('confirmTrfItem').textContent = itemName;
-    
+
     const unit = trf.first_unit || '';
     document.getElementById('confirmTrfQty').textContent = '+' + formatQty(trf.total_quantity) + ' ' + unit;
 
@@ -2261,7 +2159,7 @@ function openTransferDetailModal(trf, direction) {
 
     document.getElementById('modalTrfTitle').textContent = 'Transfer ' + trf.transaction_number;
     document.getElementById('modalTrfRef').textContent = trf.transaction_number;
-    
+
     let statusBadge = '<span class="badge status-completed">Received</span>';
     if (trf.status === 'in_transit' || trf.status === 'pending') {
         statusBadge = '<span class="badge status-pending">In Transit</span>';
@@ -2273,7 +2171,7 @@ function openTransferDetailModal(trf, direction) {
 
     document.getElementById('modalTrfSrc').textContent = (trf.src_code || '') + ' - ' + (trf.src_name || '');
     document.getElementById('modalTrfDest').textContent = (trf.dest_code || '') + ' - ' + (trf.dest_name || '');
-    
+
     const dateFormatted = trf.created_at ? trf.created_at : (trf.transaction_date || '—');
     document.getElementById('modalTrfDate').textContent = dateFormatted;
     document.getElementById('modalTrfUser').textContent = trf.requested_by || '—';
@@ -2355,9 +2253,6 @@ function handleTransferItemChange(selectElem) {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Stock Adjustment JS
-// -----------------------------------------------------------------------------
 let currentSelectedStock = 0;
 let currentSelectedUnit  = '';
 
@@ -2484,7 +2379,7 @@ function openApproveModal(row) {
     document.getElementById('approveAdjId').value = row.stock_adjustment_id;
     document.getElementById('approveTrfRef').textContent = row.transaction_number;
     document.getElementById('approveItemName').textContent = row.item_name || 'Item';
-    
+
     const diff = Math.round(parseFloat(row.difference) || 0);
     const unit = row.unit || '';
     document.getElementById('approveDiff').textContent = (diff >= 0 ? '+' : '-') + formatQty(Math.abs(diff)) + ' ' + unit;
@@ -2594,7 +2489,7 @@ function openAdjDetailModal(row) {
     currentDetailAdjRow = row;
     document.getElementById('modalAdjTitle').textContent = 'Adjustment ' + row.transaction_number;
     document.getElementById('modalAdjRef').textContent = row.transaction_number;
-    
+
     let badge = '<span class="badge status-pending">Pending</span>';
     if (row.status === 'approved') badge = '<span class="badge status-completed">Approved</span>';
     else if (row.status === 'rejected') badge = '<span class="badge status-cancelled">Rejected</span>';
@@ -2670,9 +2565,6 @@ function closeAdjDetailModal() {
     document.getElementById('adjustmentDetailModal').style.display = 'none';
 }
 
-// -----------------------------------------------------------------------------
-// Stock Card JS
-// -----------------------------------------------------------------------------
 const allInventoryItems = <?= json_encode(array_map(function($it) {
     return [
         'id'   => (int)$it['item_id'],

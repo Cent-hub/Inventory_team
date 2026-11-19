@@ -1,14 +1,13 @@
 <?php
-/**
- * Layout: Header & Master Framework
- * InventoryTeam — Liquor Business Inventory Management System
+/*
+ * Shared page header layout. Verifies the user is logged in, sets security
+ * headers, loads stylesheets, and prepares warehouse context for every page.
  */
 
 require_once __DIR__ . '/../../controllers/AuthController.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../helpers/csrf.php';
 
-// Security: Prevent browser caching & cache snooping of authenticated views (SEC-05)
 if (!headers_sent()) {
     emitSecurityHeaders();
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -25,7 +24,6 @@ if (!$auth->isAuthenticated()) {
 $currentUser = $auth->getCurrentUser();
 $pdo = Database::getConnection();
 
-// Compute clean BASE_URL
 $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
 $projectRoot = preg_replace('#/(auth|views|api|dashboard).*$#', '', $scriptDir);
 $projectRoot = ($projectRoot === '/' || $projectRoot === '\\') ? '' : rtrim($projectRoot, '/\\');
@@ -36,10 +34,8 @@ if (!defined('BASE_URL')) {
 $isSuperAdmin = (($currentUser['role'] ?? '') === 'super_admin');
 $userRole = strtolower(trim((string)($currentUser['role'] ?? '')));
 
-// Only super_admin is permitted multi-warehouse switching across all facilities (FIX-015)
 $isAuthorizedForMultiWarehouse = ($userRole === 'super_admin');
 
-// Enforce assigned warehouse and team resolution directly from cached session data
 $userAssignedWhId = !empty($_SESSION['warehouse_id']) 
     ? (int)$_SESSION['warehouse_id'] 
     : (!empty($currentUser['warehouse_id']) ? (int)$currentUser['warehouse_id'] : 1);
@@ -48,8 +44,6 @@ $userTeam = !empty($_SESSION['user_team'])
     ? $_SESSION['user_team']
     : (!empty($currentUser['team']) ? $currentUser['team'] : 'Inventory');
 
-// F-37: Query assigned warehouse BEFORE evaluating facility switch so 403.php displays the real facility
-/** @var array{warehouse_id: int, warehouse_code: string, warehouse_name: string, location: string} $assignedWarehouse */
 $assignedWarehouse = null;
 if ($userAssignedWhId > 0) {
     $whStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
@@ -70,8 +64,6 @@ if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
     ];
 }
 
-// F-36: Only explicit facility switch requests (warehouse_id or branch_id) are permitted.
-// NEVER treat transfer parameters (source_warehouse_id) as facility switch requests!
 $requestedWhId = null;
 if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
     $requestedWhId = (int)$_GET['warehouse_id'];
@@ -84,7 +76,7 @@ if (isset($_GET['warehouse_id']) && (int)$_GET['warehouse_id'] > 0) {
 }
 
 if ($isAuthorizedForMultiWarehouse) {
-    // Multi-warehouse viewing enabled for super_admin: allow switching across all warehouses
+
     if ($requestedWhId !== null && $requestedWhId > 0) {
         $currentWarehouseId = $requestedWhId;
         if ($currentWarehouseId !== (int)($assignedWarehouse['warehouse_id'] ?? 0)) {
@@ -99,7 +91,7 @@ if ($isAuthorizedForMultiWarehouse) {
         $currentWarehouseId = (int)$assignedWarehouse['warehouse_id'];
     }
 } else {
-    // Non-super_admin roles: strictly enforce their assigned warehouse
+
     $currentWarehouseId = (int)$assignedWarehouse['warehouse_id'];
 
     if ($requestedWhId !== null && $requestedWhId > 0 && $requestedWhId !== $currentWarehouseId) {
@@ -113,11 +105,9 @@ if ($isAuthorizedForMultiWarehouse) {
     }
 }
 
-// Ensure session & currentUser are strictly synchronized
 $_SESSION['warehouse_id'] = $currentWarehouseId;
 $currentUser['warehouse_id'] = $currentWarehouseId;
 
-// Reconcile external Procurement/Production/Sales stock movements & orders with warehouse stock rows
 $syncLockAcquired = false;
 $syncTxnStarted = false;
 try {
@@ -128,10 +118,7 @@ try {
             $pdo->beginTransaction();
             $syncTxnStarted = true;
         }
-    // (Removed Sections 1 & 2 external stock_movements auto-sync so Procurement/Production/Sales require manual Receive/Approve)
 
-    // 3. Bridge Sales Team `orders` & `order_items` (Pending Dispatches & Customer Returns)
-    // 3a. Sync unfulfilled Sales Orders into `outbound_orders` (`SALES_DELIVERY`) for manual Warehouse Approval/Dispatch (no auto-deduct)
     $openSalesStmt = $pdo->query("
         SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.order_date, o.notes, o.created_by,
                COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
@@ -191,8 +178,6 @@ try {
         }
     }
 
-
-    // 3b-cancel. Sync Sales Orders marked 'Cancelled' by Sales Team (cancel pending outbound_orders & reverse auto-deducted STOCK_OUTs)
     $cancelledSalesStmt = $pdo->query("
         SELECT o.order_number, o.created_by, oo.outbound_order_id, oo.status AS oo_status
         FROM orders o
@@ -250,8 +235,6 @@ try {
         }
     }
 
-    // 3c. Sync Customer Returns recorded by Sales Team in `order_items.quantity_returned > 0` into `inbound_orders` (CUSTOMER_RETURN)
-    //     so returned items go to the Receiving Dock for QA verification (Salable vs. Bad Product) instead of auto-entering salable stock!
     $returnedSalesStmt = $pdo->query("
         SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes,
                COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
@@ -293,7 +276,6 @@ try {
         }
     }
 
-    // 4. Bridge Production Team `production_orders` & `production_materials` into `outbound_orders` (MATERIAL_REQUEST)
     $openProdStmt = $pdo->query("
         SELECT po.id, po.order_number, po.warehouse_id, po.planned_start, po.remarks, po.created_by
         FROM production_orders po
@@ -348,7 +330,7 @@ try {
                         try {
                             $hdrStockSvc->reserveStock((int)$pm['item_id'], $prodWhId, $remQty, $po['order_number'], $prodUserId);
                         } catch (Throwable $e) {
-                            // Leave unreserved if insufficient stock; order remains pending in queue
+
                         }
                     }
                 }
@@ -356,7 +338,6 @@ try {
         }
     }
 
-    // 4b. Sync Production Orders marked 'Cancelled' -> cancel pending MATERIAL_REQUEST outbound_orders & release qty_reserved
     $cancelledProdStmt = $pdo->query("
         SELECT oo.outbound_order_id, po.order_number, po.created_by
         FROM production_orders po
@@ -378,7 +359,6 @@ try {
         }
     }
 
-    // 5. Sync un-logged `production_receipts` into `inbound_orders` (`PRODUCTION_RECEIPT`, `pending`) for manual Warehouse Receiving
     $unsyncedProdRecStmt = $pdo->query("
         SELECT pr.id, pr.receipt_number, pr.item_id, pr.warehouse_id, pr.qty_received, pr.received_by, pr.received_at, pr.remarks
         FROM production_receipts pr
@@ -435,7 +415,6 @@ try {
         }
     }
 
-    // 5b. Sync Production Raw Material Returns (`production_materials.returned_qty > 0`) into `inbound_orders` (`PRODUCTION_RETURN`, `pending`)
     $prodRetStmt = $pdo->query("
         SELECT po.id, po.order_number, po.warehouse_id, po.created_by, po.remarks
         FROM production_orders po
@@ -480,7 +459,6 @@ try {
         }
     }
 
-    // 5c. Sync Procurement Goods Receipts (`goods_receipts`) into `inbound_orders` (`PURCHASE_ORDER`, `pending`) for manual Warehouse Receiving
     $procGrStmt = $pdo->query("
         SELECT gr.id, gr.gr_number, gr.warehouse_id, gr.received_date, gr.received_by, gr.remarks,
                COALESCE(s.company_name, 'Procurement Supplier') AS supplier_name
@@ -529,7 +507,6 @@ try {
         }
     }
 
-    // 6. Auto-inactivate Raw Materials & Finished Goods unused for 2+ months
     $pdo->exec("
         UPDATE items i
         SET i.status = 'Inactive'
@@ -551,7 +528,7 @@ try {
     if ($syncTxnStarted && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    // Non-blocking sync safeguard
+
 } finally {
     if ($syncLockAcquired) {
         try {
@@ -575,13 +552,7 @@ if (!function_exists('getWarehouseBadgeClass')) {
 }
 
 if (!function_exists('formatQty')) {
-    /**
-     * Formats a quantity value cleanly as a whole integer without decimals.
-     *
-     * @param float|int|string|null $val
-     * @param int $decimals
-     * @return string
-     */
+
     function formatQty($val, $decimals = 0) {
         if ($val === null || $val === '') return '0';
         return number_format(round((float)$val), 0);
@@ -589,9 +560,7 @@ if (!function_exists('formatQty')) {
 }
 
 if (!function_exists('formatQuantity')) {
-    /**
-     * Alias for formatQty() for backward compatibility.
-     */
+
     function formatQuantity($val, $decimals = 0) {
         return formatQty($val, 0);
     }
@@ -621,7 +590,7 @@ $isSidebarCollapsed = (isset($_COOKIE['inventory_sidebar_collapsed']) && $_COOKI
 </head>
 <body class="<?= $isSidebarCollapsed ? 'sidebar-collapsed' : '' ?>">
 <script>
-    // Synchronously apply saved sidebar state before rendering to prevent FOUC / flicker
+
     try {
         if (localStorage.getItem('inventory_sidebar_collapsed') === 'true' && window.innerWidth > 992) {
             document.body.classList.add('sidebar-collapsed');
