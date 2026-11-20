@@ -48,7 +48,7 @@ $stmt = $pdo->prepare("
         INNER JOIN (
             SELECT item_id, MAX(movement_id) AS max_m_id
             FROM stock_movements
-            WHERE movement_type IN ('STOCK_IN', 'IN')
+            WHERE movement_type = 'STOCK_IN'
               AND (warehouse_id = :wid2 OR :wid3 = 1)
             GROUP BY item_id
         ) latest_m ON sm.movement_id = latest_m.max_m_id

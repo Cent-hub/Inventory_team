@@ -154,6 +154,14 @@ class OrderService {
                     $stmtUpdGr = $this->pdo->prepare("UPDATE goods_receipts SET status = 'Rejected', remarks = ?, updated_at = NOW() WHERE id = ?");
                     $stmtUpdGr->execute([$newRemarks, $grId]);
                 }
+            } elseif ($order['source_type'] === 'PRODUCTION_RECEIPT') {
+                $cleanNote = trim($reason) ?: 'Rejected by Inventory';
+                $stmtUpdPr = $this->pdo->prepare("
+                    UPDATE production_receipts
+                    SET remarks = TRIM(BOTH '\n' FROM CONCAT(COALESCE(remarks, ''), '\n[Inventory Rejected] ', ?))
+                    WHERE receipt_number = ?
+                ");
+                $stmtUpdPr->execute([$cleanNote, $order['order_number']]);
             }
 
             AccountabilityService::log([

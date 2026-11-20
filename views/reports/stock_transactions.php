@@ -77,14 +77,15 @@ $sqlM = "
             sm.remarks,
             sm.created_at,
             COALESCE(sm.quantity_delta, CASE 
-                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER', 'IN') THEN sm.quantity 
-                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND', 'OUT') THEN -sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CANCELLED_OUTBOUND', 'CANCELLED_BAD_PRODUCT', 'CANCELLED_TRANSFER') THEN sm.quantity 
+                WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'BAD_PRODUCT_DISCARD', 'CANCELLED_INBOUND') THEN -sm.quantity 
                 WHEN sm.movement_type = 'STOCK_ADJUSTMENT' THEN COALESCE(sa.difference, sm.quantity) 
                 WHEN sm.movement_type = 'CANCELLED_ADJUSTMENT' THEN COALESCE(-sa.difference, -sm.quantity) 
                 ELSE 0 
             END) AS signed_delta
         FROM stock_movements sm
         LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
+        WHERE sm.movement_type NOT IN ('IN', 'OUT')
     ),
     movement_ledger AS (
         SELECT
@@ -163,7 +164,7 @@ $sqlIn = "
         AND (rev.movement_type = 'CANCELLED_INBOUND' OR rev.remarks LIKE 'Cancelled Stock IN %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
-      AND sm.movement_type IN ('STOCK_IN', 'IN')
+      AND sm.movement_type = 'STOCK_IN'
       AND (sm.remarks IS NULL OR (
           sm.remarks NOT LIKE 'Cancelled Stock OUT %'
           AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
@@ -217,7 +218,7 @@ $sqlOut = "
         AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR rev.remarks LIKE 'Cancelled Stock OUT %')
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
-      AND sm.movement_type IN ('STOCK_OUT', 'OUT')
+      AND sm.movement_type = 'STOCK_OUT'
       AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
 ";
 $paramsOut = [$startDate, $endDate, $currentWarehouseId];

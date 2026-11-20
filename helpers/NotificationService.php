@@ -72,15 +72,21 @@ class NotificationService {
         }
 
         $stmtExactLow = $pdo->prepare("
-            SELECT COUNT(*) AS total_low
+            SELECT
+                COUNT(*) AS total_low,
+                SUM(CASE WHEN LOWER(REPLACE(COALESCE(i.item_type, i.type, ''), ' ', '_')) = 'raw_material' THEN 1 ELSE 0 END) AS low_raw_materials,
+                SUM(CASE WHEN LOWER(REPLACE(COALESCE(i.item_type, i.type, ''), ' ', '_')) = 'finished_good' THEN 1 ELSE 0 END) AS low_finished_goods
             FROM items i
             LEFT JOIN stock s ON s.item_id = i.item_id AND s.warehouse_id = :wid
-            WHERE i.status = 'active'
+            WHERE LOWER(i.status) = 'active'
               AND COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level, 0) > 0
               AND COALESCE(s.qty_on_hand, 0) <= COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level, 0)
         ");
         $stmtExactLow->execute([':wid' => $warehouseId]);
-        $exactLowStockCount = (int)$stmtExactLow->fetchColumn();
+        $exactLowRow = $stmtExactLow->fetch(PDO::FETCH_ASSOC) ?: [];
+        $exactLowStockCount = (int)($exactLowRow['total_low'] ?? 0);
+        $exactLowRawCount = (int)($exactLowRow['low_raw_materials'] ?? 0);
+        $exactLowFinishedCount = (int)($exactLowRow['low_finished_goods'] ?? 0);
 
         $stmtNotif = $pdo->prepare("
             SELECT 
@@ -410,10 +416,12 @@ class NotificationService {
             'has_new_alert'        => $hasNewAlert,
             'new_alert'            => $newAlert,
             'kpi'                  => [
-                'low_stock_count'     => $exactLowStockCount,
-                'pending_adj_count'   => $pendingAdjCount,
-                'pending_trans_count' => $pendingTransCount,
-                'pending_item_count'  => $pendingItemCount,
+                'low_stock_count'          => $exactLowStockCount,
+                'low_stock_raw_materials'  => $exactLowRawCount,
+                'low_stock_finished_goods' => $exactLowFinishedCount,
+                'pending_adj_count'        => $pendingAdjCount,
+                'pending_trans_count'      => $pendingTransCount,
+                'pending_item_count'       => $pendingItemCount,
             ],
             'notifications'        => $notificationList,
         ];

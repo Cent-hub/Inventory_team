@@ -217,7 +217,7 @@ $stmtIn = $pdo->prepare("
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
         AND (rev.movement_type = 'CANCELLED_INBOUND' OR (rev.movement_type = 'STOCK_OUT' AND rev.remarks LIKE 'Cancelled Stock IN %'))
     WHERE sm.warehouse_id = :wid 
-      AND sm.movement_type IN ('STOCK_IN', 'IN')
+      AND sm.movement_type = 'STOCK_IN'
       AND (sm.remarks IS NULL OR (
           sm.remarks NOT LIKE 'Cancelled Stock OUT %'
           AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
@@ -290,7 +290,7 @@ $stmtOut = $pdo->prepare("
     LEFT JOIN stock_movements rev ON rev.reference_id = sm.movement_id 
         AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR (rev.movement_type = 'STOCK_IN' AND rev.remarks LIKE 'Cancelled Stock OUT %'))
     WHERE sm.warehouse_id = :wid 
-      AND sm.movement_type IN ('STOCK_OUT', 'OUT')
+      AND sm.movement_type = 'STOCK_OUT'
       AND (sm.remarks IS NULL OR sm.remarks NOT LIKE 'Cancelled Stock IN %')
     ORDER BY sm.movement_id DESC
 ");
@@ -1354,35 +1354,79 @@ $customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
 </div>
 
 <div id="cancelInboundOrderModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cancelInboundOrderModalTitle" onclick="if(event.target === this) closeCancelInboundOrderModal()">
-    <div class="modal-card" style="max-width: 480px;">
-        <form method="POST" action="index.php?tab=inbound">
+    <div class="modal-card" style="max-width: 640px;">
+        <form id="cancelInboundOrderForm" method="POST" action="index.php?tab=inbound" onsubmit="return prepareCancelInboundSubmit()">
             <?= csrfField() ?>
-            <input type="hidden" name="action" value="cancel_inbound_order">
+            <input type="hidden" name="action" id="cancelInboundAction" value="cancel_inbound_order">
             <input type="hidden" name="active_tab" value="inbound">
             <input type="hidden" name="inbound_order_id" id="cancelInboundOrderId" value="">
+            <input type="hidden" name="item_condition" id="cancelInboundCondition" value="damaged">
+            <input type="hidden" name="remarks" id="cancelInboundRemarks" value="">
 
             <div class="modal-header">
                 <div>
                     <h3 id="cancelInboundOrderModalTitle" class="card-title" style="margin: 0; color: #B91C1C;">Reject Incoming Order</h3>
-                    <p class="card-desc" style="margin: 0;">Decline delivery or return without adding to stock</p>
+                    <p class="card-desc" style="margin: 0;">Decline delivery or report damaged / mixed items to Procurement</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeCancelInboundOrderModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-                <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #991B1B; line-height: 1.5;">
+                <div id="cancelInboundAlertBox" style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #991B1B; line-height: 1.5;">
                     Are you sure you want to reject <strong id="cancelInboundOrderRef" style="font-family: monospace;">—</strong>?<br>
-                    No items from this order will be added to warehouse stock.
+                    <span id="cancelInboundAlertDesc">No items from this order will be added to warehouse stock.</span>
                 </div>
+
+                <div id="cancelInboundDispositionWrap" style="display: none; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 12px 14px;">
+                    <label for="cancelInboundDisposition" style="font-size: 12.5px; font-weight: 700; color: #991B1B; display: block; margin-bottom: 6px;">
+                        Rejection / Inspection Disposition <span style="color: #DC2626;">*</span>
+                    </label>
+                    <select id="cancelInboundDisposition" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px; font-size: 13px;" onchange="handleCancelInboundDispositionChange(this)">
+                        <option value="damaged">Damaged / Defective / Expired &mdash; Route directly to Bad Products Discard</option>
+                        <option value="mixed">Mixed Inspection &mdash; Split Salable (Stock In) &amp; Damaged (Bad Products)</option>
+                    </select>
+                    <small id="cancelInboundDispositionHint" style="display: block; margin-top: 4px; font-size: 11.5px; color: #B91C1C;">
+                        Damaged items will NOT enter active stock. They will be logged into Bad Products and reported to Procurement.
+                    </small>
+                </div>
+
+                <div id="cancelInboundLinesWrap" style="display: none;">
+                    <label style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
+                        Items to Reject / Inspect
+                    </label>
+                    <div class="table-responsive" style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+                        <table style="width: 100%; font-size: 12.5px; margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Item Code &amp; Name</th>
+                                    <th style="text-align: right;">Remaining</th>
+                                    <th id="cancelInboundSalableCol" style="width: 125px; text-align: right; display: none;">Good Qty (Stock In)</th>
+                                    <th id="cancelInboundDamagedCol" style="width: 125px; text-align: right;">Bad / Return Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cancelInboundLinesTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div>
-                    <label for="cancelInboundOrderReason" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">Rejection Reason <span style="color: #DC2626;">*</span></label>
-                    <textarea name="cancellation_reason" id="cancelInboundOrderReason" class="search-box" style="width: 100%; border-radius: 6px; height: 70px; padding: 8px 12px; resize: vertical;" placeholder="Specify why this incoming shipment or return is being rejected..." required></textarea>
+                    <label for="cancelInboundReasonSelect" style="font-size: 12.5px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">Rejection Reason <span style="color: #DC2626;">*</span></label>
+                    <select id="cancelInboundReasonSelect" class="select-filter" style="width: 100%; height: 38px; border-radius: 6px; font-size: 13px; margin-bottom: 8px;" onchange="handleCancelReasonSelectChange(this)" required>
+                        <option value="Damaged / Broken items">Damaged / Broken items</option>
+                        <option value="Expired / Spoiled batch">Expired / Spoiled batch</option>
+                        <option value="Wrong item / Specification mismatch">Wrong item / Specification mismatch</option>
+                        <option value="Defective / Leaking packaging">Defective / Leaking packaging</option>
+                        <option value="Short / Incomplete delivery">Short / Incomplete delivery</option>
+                        <option value="Other">Other (Specify below)</option>
+                    </select>
+                    <input type="hidden" name="cancellation_reason" id="cancelInboundFinalReason" value="">
+                    <textarea id="cancelInboundOrderReason" class="search-box" style="width: 100%; border-radius: 6px; height: 64px; padding: 8px 12px; resize: vertical;" placeholder="Optional additional details or batch notes..."></textarea>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeCancelInboundOrderModal()">Back</button>
-                <button type="submit" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Rejection</button>
+                <button type="submit" id="btnConfirmCancelInbound" class="btn btn-primary" style="background: #B91C1C; border-color: #B91C1C;">Confirm Rejection</button>
             </div>
         </form>
     </div>
@@ -1944,9 +1988,25 @@ function openReceiveOrderModal(id) {
     document.getElementById('recOrderDate').textContent = order.expected_date ? order.expected_date : '—';
     document.getElementById('receiveRemarks').value = '';
 
+    const condGroup  = document.getElementById('recConditionGroup');
     const condSelect = document.getElementById('receiveCondition');
     const condHint   = document.getElementById('recConditionHint');
     const submitBtn  = document.getElementById('btnConfirmReceive');
+    const isPO       = (order.source_type === 'PURCHASE_ORDER');
+
+    if (condGroup) {
+        condGroup.style.display = isPO ? 'none' : 'block';
+    }
+
+    Array.from(condSelect.options).forEach(opt => {
+        if (isPO && (opt.value === 'damaged' || opt.value === 'mixed')) {
+            opt.hidden = true;
+            opt.disabled = true;
+        } else {
+            opt.hidden = false;
+            opt.disabled = false;
+        }
+    });
 
     if (order.source_type === 'CUSTOMER_RETURN' || order.source_type === 'PRODUCTION_RETURN') {
         condSelect.value = 'salable';
@@ -1954,9 +2014,9 @@ function openReceiveOrderModal(id) {
         submitBtn.textContent = 'Confirm & Receive Return';
         submitBtn.style.background = '#6D28D9';
         submitBtn.style.borderColor = '#6D28D9';
-    } else if (order.source_type === 'PURCHASE_ORDER') {
+    } else if (isPO) {
         condSelect.value = 'salable';
-        condHint.textContent = 'Accepted items will be added to current inventory balance.';
+        condHint.textContent = 'Accepted items will be added to current inventory balance. Use the Reject button for damaged or mixed deliveries.';
         submitBtn.textContent = 'Confirm & Accept Delivery';
         submitBtn.style.background = '#15803D';
         submitBtn.style.borderColor = '#15803D';
@@ -2135,11 +2195,163 @@ function openCancelInboundOrderModal(orderId, orderRef) {
     document.getElementById('cancelInboundOrderId').value = orderId;
     document.getElementById('cancelInboundOrderRef').textContent = orderRef;
     document.getElementById('cancelInboundOrderReason').value = '';
+    const reasonSelect = document.getElementById('cancelInboundReasonSelect');
+    if (reasonSelect) {
+        reasonSelect.value = 'Damaged / Broken items';
+        handleCancelReasonSelectChange(reasonSelect);
+    }
+
+    const order = pendingInMap[orderId] || {};
+    const dispWrap = document.getElementById('cancelInboundDispositionWrap');
+    const dispSelect = document.getElementById('cancelInboundDisposition');
+    const tbody = document.getElementById('cancelInboundLinesTbody');
+    const lines = inLinesData[orderId] || [];
+
+    tbody.innerHTML = '';
+    lines.forEach(l => {
+        const rem = Math.round(parseFloat(l.remaining_quantity) || 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 8px 10px;">
+                <div style="font-weight: 700; color: var(--panel-ink);">${escapeHtml(l.item_name)}</div>
+                <small style="font-family: monospace; color: var(--gray); font-size: 11px;">${escapeHtml(l.item_code)}</small>
+            </td>
+            <td style="text-align: right; padding: 8px 10px; font-weight: 700; color: #B91C1C;">${formatQty(rem)} ${escapeHtml(l.unit)}</td>
+            <td class="cancel-salable-col" style="text-align: right; padding: 8px 10px; display: none;">
+                <input type="number" step="1" min="0" max="${rem}" name="received_quantity[${l.item_id}]" value="0" data-rem="${rem}" oninput="syncCancelMixedQty(this, 'salable')" class="search-box cancel-salable-input" style="width: 95px; height: 32px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px;">
+            </td>
+            <td style="text-align: right; padding: 8px 10px;">
+                <input type="number" step="1" min="0" max="${rem}" name="damaged_quantity[${l.item_id}]" value="${rem}" data-rem="${rem}" oninput="syncCancelMixedQty(this, 'damaged')" class="search-box cancel-damaged-input" style="width: 95px; height: 32px; padding: 4px 8px; text-align: right; font-weight: 700; border-radius: 6px; border-color: #FCA5A5; color: #B91C1C;">
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (order.source_type === 'PURCHASE_ORDER') {
+        dispWrap.style.display = 'block';
+        dispSelect.value = 'damaged';
+        handleCancelInboundDispositionChange(dispSelect);
+    } else {
+        dispWrap.style.display = 'none';
+        handleCancelInboundDispositionChange(null);
+    }
+
     const modal = document.getElementById('cancelInboundOrderModal');
     if (modal) {
         modal.classList.add('open');
         modal.style.display = 'flex';
     }
+}
+
+function handleCancelInboundDispositionChange(selectEl) {
+    const mode = selectEl ? selectEl.value : 'cancel';
+    const actionInput = document.getElementById('cancelInboundAction');
+    const condInput = document.getElementById('cancelInboundCondition');
+    const hint = document.getElementById('cancelInboundDispositionHint');
+    const linesWrap = document.getElementById('cancelInboundLinesWrap');
+    const salHeader = document.getElementById('cancelInboundSalableCol');
+    const dmgHeader = document.getElementById('cancelInboundDamagedCol');
+    const salCols = document.querySelectorAll('.cancel-salable-col');
+    const salInputs = document.querySelectorAll('.cancel-salable-input');
+    const dmgInputs = document.querySelectorAll('.cancel-damaged-input');
+    const submitBtn = document.getElementById('btnConfirmCancelInbound');
+    const alertDesc = document.getElementById('cancelInboundAlertDesc');
+
+    if (mode === 'mixed') {
+        actionInput.value = 'receive_inbound_order';
+        condInput.value = 'mixed';
+        linesWrap.style.display = 'block';
+        salHeader.style.display = '';
+        salCols.forEach(td => { td.style.display = ''; });
+        if (dmgHeader) dmgHeader.textContent = 'Bad / Return Qty';
+        salInputs.forEach(inp => { inp.disabled = false; });
+        dmgInputs.forEach(inp => {
+            inp.disabled = false;
+            const rem = parseInt(inp.dataset.rem || '0', 10);
+            inp.name = inp.name.replace('received_quantity[', 'damaged_quantity[');
+            inp.value = 0;
+            const tr = inp.closest('tr');
+            const sal = tr ? tr.querySelector('.cancel-salable-input') : null;
+            if (sal) sal.value = rem;
+        });
+        hint.textContent = 'Split delivery between Salable (Stock In) and Damaged (Bad Products) and report to Procurement.';
+        alertDesc.textContent = 'Good items will enter stock; damaged items will be logged in Bad Products and reported to Procurement.';
+        submitBtn.textContent = 'Confirm Mixed Inspection';
+        submitBtn.style.background = '#6D28D9';
+        submitBtn.style.borderColor = '#6D28D9';
+    } else if (mode === 'damaged') {
+        actionInput.value = 'receive_inbound_order';
+        condInput.value = 'damaged';
+        linesWrap.style.display = 'none';
+        salInputs.forEach(inp => { inp.disabled = true; });
+        dmgInputs.forEach(inp => {
+            inp.disabled = false;
+            const rem = parseInt(inp.dataset.rem || '0', 10);
+            // For condition='damaged', receive_inbound_order reads received_quantity[...]
+            inp.name = inp.name.replace('damaged_quantity[', 'received_quantity[');
+            inp.value = rem;
+        });
+        hint.textContent = 'All items in this delivery will NOT enter active stock. They will be logged into Bad Products and reported to Procurement.';
+        alertDesc.textContent = 'All items will go to Bad Products (0 stock added) and Procurement will be notified.';
+        submitBtn.textContent = 'Confirm Damaged Discard';
+        submitBtn.style.background = '#B91C1C';
+        submitBtn.style.borderColor = '#B91C1C';
+    } else {
+        actionInput.value = 'cancel_inbound_order';
+        condInput.value = 'damaged';
+        linesWrap.style.display = 'none';
+        salInputs.forEach(inp => { inp.disabled = true; });
+        dmgInputs.forEach(inp => { inp.disabled = true; });
+        hint.textContent = 'Refuses the entire delivery at the gate without adding anything to Stock or Bad Products.';
+        alertDesc.textContent = 'No items from this order will be added to warehouse stock.';
+        submitBtn.textContent = 'Confirm Rejection';
+        submitBtn.style.background = '#B91C1C';
+        submitBtn.style.borderColor = '#B91C1C';
+    }
+}
+
+function syncCancelMixedQty(inputEl, changedType) {
+    const mode = document.getElementById('cancelInboundDisposition')?.value;
+    if (mode !== 'mixed') return;
+    const tr = inputEl.closest('tr');
+    if (!tr) return;
+    const salInput = tr.querySelector('.cancel-salable-input');
+    const dmgInput = tr.querySelector('.cancel-damaged-input');
+    const rem = parseInt(inputEl.dataset.rem || '0', 10);
+    let val = Math.max(0, Math.min(rem, parseInt(inputEl.value || '0', 10) || 0));
+    inputEl.value = val;
+    if (changedType === 'damaged' && salInput) {
+        salInput.value = Math.max(0, rem - val);
+    } else if (changedType === 'salable' && dmgInput) {
+        const dmgVal = Math.max(0, parseInt(dmgInput.value || '0', 10) || 0);
+        if (val + dmgVal > rem) {
+            dmgInput.value = Math.max(0, rem - val);
+        }
+    }
+}
+
+function handleCancelReasonSelectChange(selectEl) {
+    const notesEl = document.getElementById('cancelInboundOrderReason');
+    if (!notesEl) return;
+    if (selectEl && selectEl.value === 'Other') {
+        notesEl.required = true;
+        notesEl.placeholder = 'Please specify the rejection reason...';
+    } else {
+        notesEl.required = false;
+        notesEl.placeholder = 'Optional additional details or batch notes...';
+    }
+}
+
+function prepareCancelInboundSubmit() {
+    const selected = document.getElementById('cancelInboundReasonSelect')?.value || '';
+    const notes = (document.getElementById('cancelInboundOrderReason')?.value || '').trim();
+    let finalReason = selected === 'Other' ? notes : (notes ? `${selected} — ${notes}` : selected);
+    if (!finalReason) {
+        finalReason = 'Rejected during inspection';
+    }
+    document.getElementById('cancelInboundFinalReason').value = finalReason;
+    document.getElementById('cancelInboundRemarks').value = finalReason;
+    return true;
 }
 
 function closeCancelInboundOrderModal() {

@@ -683,7 +683,12 @@ class StockService {
                         $userId
                     ]);
 
-                    $bpTeam = $order['source_type'] === 'PURCHASE_ORDER' ? 'Procurement' : ($order['source_type'] === 'CUSTOMER_RETURN' ? 'Sales' : 'Inventory');
+                    $bpTeam = match ($order['source_type']) {
+                        'PURCHASE_ORDER' => 'Procurement',
+                        'CUSTOMER_RETURN' => 'Sales',
+                        'PRODUCTION_RECEIPT', 'PRODUCTION_RETURN' => 'Production',
+                        default => 'Inventory',
+                    };
                     AccountabilityService::log([
                         'user_id'          => $userId,
                         'team'             => $bpTeam,
@@ -707,6 +712,14 @@ class StockService {
 
                 if ($order['source_type'] === 'PURCHASE_ORDER') {
                     $this->syncProcurementGoodsReceipt($order['order_number'], $itemsToStock, 'damaged', $remarks);
+                } elseif ($order['source_type'] === 'PRODUCTION_RECEIPT') {
+                    $cleanNote = $remarks ? trim($remarks) : 'Damaged / defective goods reported by Inventory';
+                    $stmtUpdPr = $this->pdo->prepare("
+                        UPDATE production_receipts
+                        SET remarks = TRIM(BOTH '\n' FROM CONCAT(COALESCE(remarks, ''), '\n[Inventory Damaged Report] ', ?))
+                        WHERE receipt_number = ?
+                    ");
+                    $stmtUpdPr->execute([$cleanNote, $order['order_number']]);
                 }
 
                 $this->pdo->commit();

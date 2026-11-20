@@ -488,6 +488,24 @@ function pulseNotificationBell() {
     }
 }
 
+function formatLowStockMeta(count, rawCount, fgCount) {
+    if (count <= 0) {
+        return 'All items at healthy levels';
+    }
+    const parts = [];
+    if (rawCount > 0) {
+        parts.push(rawCount + ' ' + (rawCount === 1 ? 'Raw Material' : 'Raw Materials'));
+    }
+    if (fgCount > 0) {
+        parts.push(fgCount + ' ' + (fgCount === 1 ? 'Finished Good' : 'Finished Goods'));
+    }
+    const otherCount = count - rawCount - fgCount;
+    if (otherCount > 0) {
+        parts.push(otherCount + ' ' + (otherCount === 1 ? 'Other Item' : 'Other Items'));
+    }
+    return parts.join(' \u2022 ');
+}
+
 function updateDashboardKpi(kpi) {
     if (!kpi) return;
     const valLowStock = document.getElementById('dashboardValLowStock');
@@ -514,15 +532,12 @@ function updateDashboardKpi(kpi) {
                     cardLowStock.classList.remove('stat-alert');
                 }
             }
+        }
 
-            if (metaLowStock) {
-                if (count > 0) {
-                    const baseUrl = (typeof APP_BASE_URL !== 'undefined' ? APP_BASE_URL : '');
-                    metaLowStock.innerHTML = '<a href="' + baseUrl + 'views/inbound_outbound/index.php" style="color: var(--error); font-weight: 600; text-decoration: underline;">Replenish via Stock In &rarr;</a>';
-                } else {
-                    metaLowStock.textContent = 'All items at healthy levels';
-                }
-            }
+        if (metaLowStock && (oldCount !== count || typeof kpi.low_stock_raw_materials !== 'undefined' || typeof kpi.low_stock_finished_goods !== 'undefined')) {
+            const rawCount = parseInt(kpi.low_stock_raw_materials, 10) || 0;
+            const fgCount = parseInt(kpi.low_stock_finished_goods, 10) || 0;
+            metaLowStock.textContent = formatLowStockMeta(count, rawCount, fgCount);
         }
     }
 }

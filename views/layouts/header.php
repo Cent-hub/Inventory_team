@@ -44,7 +44,8 @@ $userTeam = !empty($_SESSION['user_team'])
     ? $_SESSION['user_team']
     : (!empty($currentUser['team']) ? $currentUser['team'] : 'Inventory');
 
-$assignedWarehouse = null;
+/** @var array<string, mixed> $assignedWarehouse */
+$assignedWarehouse = [];
 if ($userAssignedWhId > 0) {
     $whStmt = $pdo->prepare("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE warehouse_id = :id AND status = 'active' LIMIT 1");
     $whStmt->execute([':id' => $userAssignedWhId]);
@@ -53,7 +54,7 @@ if ($userAssignedWhId > 0) {
         $assignedWarehouse = $res;
     }
 }
-if (!$assignedWarehouse || !is_array($assignedWarehouse)) {
+if (empty($assignedWarehouse)) {
     $fallbackStmt = $pdo->query("SELECT warehouse_id, code AS warehouse_code, name AS warehouse_name, location, code, name FROM warehouses WHERE status = 'active' ORDER BY warehouse_id ASC LIMIT 1");
     $res = $fallbackStmt ? $fallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
     $assignedWarehouse = is_array($res) ? $res : [
@@ -280,7 +281,7 @@ try {
         SELECT po.id, po.order_number, po.warehouse_id, po.planned_start, po.remarks, po.created_by
         FROM production_orders po
         LEFT JOIN outbound_orders oo ON oo.order_number = po.order_number
-        WHERE po.status IN ('Approved', 'In Progress')
+        WHERE po.status IN ('Planned', 'Approved', 'In Progress')
           AND oo.outbound_order_id IS NULL
           AND EXISTS (
               SELECT 1 FROM production_materials pm
@@ -369,7 +370,7 @@ try {
           AND NOT EXISTS (
               SELECT 1 FROM stock_movements sm
               WHERE sm.item_id = pr.item_id
-                AND sm.movement_type IN ('IN', 'STOCK_IN')
+                AND sm.movement_type = 'STOCK_IN'
                 AND (
                     sm.reference_no = pr.receipt_number
                     OR sm.reference_number = pr.receipt_number

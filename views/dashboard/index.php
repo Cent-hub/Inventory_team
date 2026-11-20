@@ -12,6 +12,9 @@ require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar.php';
 require_once __DIR__ . '/../layouts/navbar.php';
 
+$warehouseCode = is_array($assignedWarehouse ?? null) ? (string)($assignedWarehouse['warehouse_code'] ?? '') : '';
+$warehouseName = is_array($assignedWarehouse ?? null) ? (string)($assignedWarehouse['warehouse_name'] ?? '') : '';
+
 $stmtInventory = $pdo->prepare("
     SELECT 
         w.code AS warehouse_code,
@@ -31,9 +34,11 @@ $stmtInventory = $pdo->prepare("
 $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
-$totalRawMaterials   = 0;
-$totalFinishedGoods  = 0;
-$lowStockCount       = 0;
+$totalRawMaterials      = 0;
+$totalFinishedGoods     = 0;
+$lowStockCount          = 0;
+$lowStockRawMaterials   = 0;
+$lowStockFinishedGoods  = 0;
 
 foreach ($inventoryRows as $row) {
     $normType = strtolower(str_replace(' ', '_', (string)($row['item_type'] ?? '')));
@@ -47,8 +52,26 @@ foreach ($inventoryRows as $row) {
 
     if ($reorder > 0 && $qty <= $reorder) {
         $lowStockCount++;
+        if ($normType === 'raw_material') {
+            $lowStockRawMaterials++;
+        } elseif ($normType === 'finished_good') {
+            $lowStockFinishedGoods++;
+        }
     }
 }
+
+$lowStockBreakdownParts = [];
+if ($lowStockRawMaterials > 0) {
+    $lowStockBreakdownParts[] = $lowStockRawMaterials . ' ' . ($lowStockRawMaterials === 1 ? 'Raw Material' : 'Raw Materials');
+}
+if ($lowStockFinishedGoods > 0) {
+    $lowStockBreakdownParts[] = $lowStockFinishedGoods . ' ' . ($lowStockFinishedGoods === 1 ? 'Finished Good' : 'Finished Goods');
+}
+$lowStockOther = $lowStockCount - $lowStockRawMaterials - $lowStockFinishedGoods;
+if ($lowStockOther > 0) {
+    $lowStockBreakdownParts[] = $lowStockOther . ' ' . ($lowStockOther === 1 ? 'Other Item' : 'Other Items');
+}
+$lowStockBreakdownText = implode(' • ', $lowStockBreakdownParts);
 
 $stmtBP = $pdo->prepare("
     SELECT 
@@ -82,6 +105,8 @@ $stmtRecent = $pdo->prepare("
     JOIN items i ON sm.item_id = i.item_id
     JOIN warehouses w ON sm.warehouse_id = w.warehouse_id
     WHERE sm.warehouse_id = :wid
+      AND sm.movement_type != ''
+      AND sm.movement_type NOT IN ('IN', 'OUT')
       AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC
     LIMIT 100
@@ -108,11 +133,11 @@ $stmtChart = $pdo->prepare("
     SELECT 
         DATE(sm.created_at) AS txn_date,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN', 'IN') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_IN', 'STOCK_TRANSFER_IN', 'CUSTOMER_RETURN') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_in,
         COALESCE(SUM(CASE 
-            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT', 'OUT') THEN sm.quantity 
+            WHEN sm.movement_type IN ('STOCK_OUT', 'STOCK_TRANSFER_OUT') THEN sm.quantity 
             ELSE 0 
         END), 0) AS total_out
     FROM stock_movements sm
@@ -173,7 +198,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
 <div class="page-header">
     <div>
         <h1 class="page-title">Liquor Inventory Dashboard</h1>
-        <p class="page-subtitle">Overview, stock levels, and recent warehouse activity in <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code'] . ' (' . $assignedWarehouse['warehouse_name'] . ')') ?></strong></p>
+        <p class="page-subtitle">Overview, stock levels, and recent warehouse activity in <strong><?= htmlspecialchars($warehouseCode . ' (' . $warehouseName . ')') ?></strong></p>
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -195,7 +220,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalRawMaterials) ?></div>
-        <div class="stat-meta">Raw Materials</div>
+        
     </div>
 
     <div class="stat-card">
@@ -212,7 +237,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
         <div class="stat-value"><?= number_format($totalFinishedGoods) ?></div>
-        <div class="stat-meta">Finished Goods</div>
+
     </div>
 
     <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>" id="dashboardCardLowStock">
@@ -231,6 +256,8 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         <div class="stat-meta" id="dashboardMetaLowStock">
             <?php if ($lowStockCount === 0): ?>
                 All items at healthy levels
+            <?php else: ?>
+                <?= htmlspecialchars($lowStockBreakdownText) ?>
             <?php endif; ?>
         </div>
     </div>
@@ -265,10 +292,10 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                         <line x1="12" y1="20" x2="12" y2="4"/>
                         <line x1="6" y1="20" x2="6" y2="14"/>
                     </svg>
-                    Inventory Flow Velocity
+                    Inventory Velocity
                 </h2>
                 <p class="card-desc" style="margin: 3px 0 0 0;">
-                    7-Day Movement (<strong><?= date('M j', strtotime('-6 days')) ?> &ndash; <?= date('M j, Y') ?></strong>) &bull; <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?> (<?= htmlspecialchars($assignedWarehouse['warehouse_name']) ?>)</strong>
+                    7-Day Movement (<strong><?= date('M j', strtotime('-6 days')) ?> &ndash; <?= date('M j, Y') ?></strong>) &bull; <strong><?= htmlspecialchars($warehouseCode) ?> (<?= htmlspecialchars($warehouseName) ?>)</strong>
                 </p>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px;">
@@ -385,7 +412,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                     Recent Staff Activity
                 </h2>
                 <p class="card-desc" style="margin: 2px 0 0 0; font-size: 11px;">
-                    Facility: <strong><?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></strong>
+                    Facility: <strong><?= htmlspecialchars($warehouseCode) ?></strong>
                 </p>
             </div>
             <span class="badge" style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; font-size: 10.5px; padding: 2px 7px; font-weight: 600;">
