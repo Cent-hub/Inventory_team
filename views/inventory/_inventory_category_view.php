@@ -135,12 +135,12 @@ foreach ($categoryItems as $row) {
             </div>
         </div>
         <div class="stat-value"><?= formatQty($totalQty) ?></div>
-        <div class="stat-meta">Total quantity on hand</div>
+        <div class="stat-meta">Total stock available</div>
     </div>
 
     <div class="stat-card <?= $lowStockCount > 0 ? 'stat-alert' : '' ?>">
         <div class="stat-header">
-            <span class="stat-label">Reorder Required</span>
+            <span class="stat-label">Low Stock Items</span>
             <div class="stat-icon-wrap" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
@@ -192,6 +192,8 @@ foreach ($categoryItems as $row) {
             <select id="<?= $statusElemId ?>" class="select-filter" aria-label="Filter by product status" onchange="filterCategoryInventoryTable('<?= $searchElemId ?>', '<?= $statusElemId ?>', '<?= $tableElemId ?>')">
                 <option value="">All Status</option>
                 <option value="active">Active</option>
+                <option value="low_stock">Low Stock</option>
+                <option value="out_of_stock">Out of Stock</option>
                 <option value="inactive">Inactive</option>
             </select>
         </div>
@@ -222,8 +224,9 @@ foreach ($categoryItems as $row) {
                             $isInactive  = (strtolower((string)($item['item_status'] ?? 'active')) === 'inactive');
                             $isAvailable = (float)$item['current_stock'] > 0;
                             $isReorder   = (float)$item['default_reorder_level'] > 0 && (float)$item['current_stock'] <= (float)$item['default_reorder_level'];
+                            $stockStatusAttr = $isInactive ? 'inactive' : (!$isAvailable ? 'out_of_stock' : ($isReorder ? 'low_stock' : 'in_stock'));
                         ?>
-                        <tr data-warehouse="<?= htmlspecialchars($item['warehouse_code'] ?? '') ?>" data-status="<?= $isInactive ? 'inactive' : 'active' ?>">
+                        <tr data-warehouse="<?= htmlspecialchars($item['warehouse_code'] ?? '') ?>" data-status="<?= $isInactive ? 'inactive' : 'active' ?>" data-stock-status="<?= $stockStatusAttr ?>">
                             <td style="font-family: monospace; font-weight: 700; color: var(--panel-ink);">
                                 <?= htmlspecialchars($item['item_code']) ?>
                             </td>
@@ -288,10 +291,23 @@ function filterCategoryInventoryTable(searchId, statusId, tableId) {
         if (row.querySelector('td[colspan]')) return;
         const text = (row.textContent || '').toLowerCase();
         const rowStatus = (row.getAttribute('data-status') || '').toLowerCase();
+        const rowStockStatus = (row.getAttribute('data-stock-status') || '').toLowerCase();
         const matchesQuery = !query || text.includes(query);
-        const matchesStatus = !statusFilter || rowStatus === statusFilter;
-        row.style.display = (matchesQuery && matchesStatus) ? '' : 'none';
+        let matchesStatus = true;
+        if (statusFilter === 'active' || statusFilter === 'inactive') {
+            matchesStatus = (rowStatus === statusFilter);
+        } else if (statusFilter === 'low_stock' || statusFilter === 'out_of_stock') {
+            matchesStatus = (rowStockStatus === statusFilter);
+        }
+        const match = matchesQuery && matchesStatus;
+        row.dataset.filteredOut = match ? 'false' : 'true';
+        if (typeof table.paginationUpdate !== 'function') {
+            row.style.display = match ? '' : 'none';
+        }
     });
+    if (typeof table.paginationUpdate === 'function') {
+        table.paginationUpdate(true);
+    }
 }
 </script>
 

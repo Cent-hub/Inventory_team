@@ -2384,14 +2384,27 @@ class StockService {
             $stmtCheckItem = $this->pdo->prepare("
                 SELECT item_id, code AS item_code, name AS item_name, unit, status FROM items WHERE item_id = ?
             ");
+            $stmtEnsureStock = $this->pdo->prepare("
+                INSERT IGNORE INTO stock (item_id, warehouse_id, qty_on_hand, reorder_level)
+                VALUES (?, ?, 0.0000, 0.0000)
+            ");
             $stmtLockStock = $this->pdo->prepare("
                 SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE
             ");
             $stmtAdj = $this->pdo->prepare("
                 INSERT INTO stock_adjustments (
                     item_id, warehouse_id, previous_quantity, adjusted_quantity,
-                    difference, reason, status, requested_by, requested_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW())
+                    difference, reason, status, requested_by, requested_at, approved_by, approved_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, NOW(), ?, NOW())
+            ");
+            $stmtUpdStock = $this->pdo->prepare("
+                UPDATE stock SET qty_on_hand = ? WHERE item_id = ? AND warehouse_id = ?
+            ");
+            $stmtMov = $this->pdo->prepare("
+                INSERT INTO stock_movements (
+                    item_id, warehouse_id, movement_type, quantity, quantity_delta, balance_after,
+                    reference_id, reference_number, remarks, created_by, created_at
+                ) VALUES (?, ?, 'STOCK_ADJUSTMENT', ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
 
             $processedItems = [];
@@ -2434,6 +2447,7 @@ class StockService {
                     "adjusted_quantity for item '{$itemInfo['item_code']}'"
                 );
 
+                $stmtEnsureStock->execute([$itemId, $warehouseId]);
                 $stmtLockStock->execute([$itemId, $warehouseId]);
                 $currentStock = $stmtLockStock->fetchColumn();
                 $previousQty = ($currentStock !== false) ? (float)$currentStock : 0.00;
@@ -2444,13 +2458,29 @@ class StockService {
                     );
                 }
 
+                $adjustedQty = round($adjustedQty, 4);
                 $diff = round($adjustedQty - $previousQty, 4);
 
-                $stmtAdj->execute([$itemId, $warehouseId, $previousQty, $adjustedQty, $diff, $reason, $userId]);
+                $stmtAdj->execute([$itemId, $warehouseId, $previousQty, $adjustedQty, $diff, $reason, $userId, $userId]);
                 $adjId = (int)$this->pdo->lastInsertId();
                 if ($firstAdjId === 0) {
                     $firstAdjId = $adjId;
                 }
+
+                $stmtUpdStock->execute([$adjustedQty, $itemId, $warehouseId]);
+
+                $movRemarks = "Adjustment applied: " . $reason;
+                $stmtMov->execute([
+                    $itemId,
+                    $warehouseId,
+                    abs($diff),
+                    $diff,
+                    $adjustedQty,
+                    $adjId,
+                    "ADJ-{$adjId}",
+                    $movRemarks,
+                    $userId
+                ]);
 
                 $processedItems[] = [
                     'adjustment_id'     => $adjId,
@@ -2466,13 +2496,13 @@ class StockService {
                 AccountabilityService::log([
                     'user_id'          => $userId,
                     'team'             => 'Inventory',
-                    'action_type'      => 'ADJUSTMENT_REQUESTED',
+                    'action_type'      => 'ADJUSTMENT_APPROVED',
                     'channel'          => (defined('API_REQUEST') || str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/api/')) ? 'API' : 'UI',
                     'item_id'          => $itemId,
                     'quantity'         => $diff,
                     'warehouse_id'     => $warehouseId,
                     'reference_number' => "ADJ-{$adjId}",
-                    'notes'            => "Adjustment requested: " . $reason . " (Diff: " . ($diff >= 0 ? "+{$diff}" : $diff) . ")"
+                    'notes'            => "Adjustment applied: " . $reason . " (Diff: " . ($diff >= 0 ? "+{$diff}" : $diff) . ")"
                 ]);
             }
 
@@ -2485,7 +2515,7 @@ class StockService {
                 'transaction_number'  => "ADJ-{$firstAdjId}",
                 'warehouse_id'        => $warehouseId,
                 'warehouse_name'      => $wh['warehouse_name'],
-                'status'              => 'pending',
+                'status'              => 'approved',
                 'adjustment_date'     => $adjustmentDate,
                 'reason'              => $reason,
                 'items_count'         => count($processedItems),
@@ -2936,10 +2966,10 @@ class StockService {
 
             $stmtBp = $this->pdo->prepare("
                 INSERT INTO bad_products (
-                    item_id, warehouse_id, quantity, reason, status, reported_by, reported_at
-                ) VALUES (?, ?, ?, ?, 'reported', ?, NOW())
+                    item_id, warehouse_id, quantity, reason, status, reported_by, reported_at, confirmed_by, confirmed_at
+                ) VALUES (?, ?, ?, ?, 'confirmed', ?, NOW(), ?, NOW())
             ");
-            $stmtBp->execute([$itemId, $warehouseId, $quantity, $reason, $userId]);
+            $stmtBp->execute([$itemId, $warehouseId, $quantity, $reason, $userId, $userId]);
             $badProductId = (int)$this->pdo->lastInsertId();
 
             $stmtDeduct = $this->pdo->prepare("UPDATE stock SET qty_on_hand = qty_on_hand - ? WHERE item_id = ? AND warehouse_id = ?");
@@ -2981,7 +3011,7 @@ class StockService {
                 'condition_type'     => strtolower($conditionType),
                 'quantity'           => $quantity,
                 'unit'               => $item['unit'],
-                'status'             => 'reported'
+                'status'             => 'confirmed'
             ];
         } catch (Throwable $e) {
             if ($isRootTxn && $this->pdo->inTransaction()) {

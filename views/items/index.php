@@ -267,7 +267,7 @@ if (empty($uoms)) {
     ];
 }
 
-$stmtItems = $pdo->query("
+$stmtItems = $pdo->prepare("
     SELECT    
         i.item_id,
         i.code AS item_code,
@@ -276,6 +276,8 @@ $stmtItems = $pdo->query("
         COALESCE(i.item_type, i.type) AS item_type,
         i.unit,
         i.reorder_level AS default_reorder_level,
+        COALESCE(s.qty_on_hand, 0) AS qty_on_hand,
+        COALESCE(NULLIF(s.reorder_level, 0), i.reorder_level, 0) AS effective_reorder_level,
         (
             (SELECT COUNT(*) FROM stock_movements sm WHERE sm.item_id = i.item_id) +
             (SELECT COUNT(*) FROM stock_adjustments sa WHERE sa.item_id = i.item_id) +
@@ -284,8 +286,10 @@ $stmtItems = $pdo->query("
         i.status,
         i.created_at
     FROM items i
+    LEFT JOIN stock s ON s.item_id = i.item_id AND s.warehouse_id = :wid
     ORDER BY i.type ASC, i.name ASC
 ");
+$stmtItems->execute([':wid' => $currentWarehouseId]);
 $itemsList = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
 $totalSKUs    = count($itemsList);
@@ -294,12 +298,27 @@ $activeSKUs   = count(array_filter($itemsList, fn($x) => strtolower($x['status']
 $inactiveSKUs = count(array_filter($itemsList, fn($x) => strtolower($x['status'] ?? '') === 'inactive'));
 $rawSKUs      = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['raw_material', 'raw'], true) && strtolower($x['status'] ?? 'active') === 'active'));
 $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['finished_good', 'finished'], true) && strtolower($x['status'] ?? 'active') === 'active'));
+$inactiveRawSKUs      = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['raw_material', 'raw'], true) && strtolower($x['status'] ?? '') === 'inactive'));
+$inactiveFinishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str_replace(' ', '_', $x['item_type'] ?? '')), ['finished_good', 'finished'], true) && strtolower($x['status'] ?? '') === 'inactive'));
+
+$inactiveBreakdownParts = [];
+if ($inactiveRawSKUs > 0) {
+    $inactiveBreakdownParts[] = $inactiveRawSKUs . ' ' . ($inactiveRawSKUs === 1 ? 'Raw Material' : 'Raw Materials');
+}
+if ($inactiveFinishedSKUs > 0) {
+    $inactiveBreakdownParts[] = $inactiveFinishedSKUs . ' ' . ($inactiveFinishedSKUs === 1 ? 'Finished Good' : 'Finished Goods');
+}
+$inactiveOtherSKUs = $inactiveSKUs - $inactiveRawSKUs - $inactiveFinishedSKUs;
+if ($inactiveOtherSKUs > 0) {
+    $inactiveBreakdownParts[] = $inactiveOtherSKUs . ' ' . ($inactiveOtherSKUs === 1 ? 'Other Item' : 'Other Items');
+}
+$inactiveBreakdownText = implode(' • ', $inactiveBreakdownParts);
 ?>
 
 <div class="page-header">
     <div>
         <h1 class="page-title">Item Catalog</h1>
-        <p class="page-subtitle">Centralized catalog and reorder threshold configuration</p>
+        <p class="page-subtitle">Manage all products and low-stock alert levels</p>
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -326,7 +345,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
     </div>
 <?php endif; ?>
 
-<div class="stats-grid">
+<div class="stats-grid stats-grid-4">
     <div class="stat-card">
         <div class="stat-header">
             <span class="stat-label">Total Items</span>
@@ -335,17 +354,8 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
             </div>
         </div>
         <div class="stat-value"><?= $totalSKUs ?></div>
-        <?php
-            $statusParts = [];
-            if ($pendingSKUs > 0) {
-                $statusParts[] = '<span style="color: #D97706; font-weight: 700;">' . $pendingSKUs . ' pending</span>';
-            }
-            if ($inactiveSKUs > 0) {
-                $statusParts[] = $inactiveSKUs . ' inactive';
-            }
-        ?>
-        <?php if (!empty($statusParts)): ?>
-            <div class="stat-meta"><?= implode(' · ', $statusParts) ?></div>
+        <?php if ($pendingSKUs > 0): ?>
+            <div class="stat-meta"><span style="color: #D97706; font-weight: 700;"><?= $pendingSKUs ?> pending</span></div>
         <?php endif; ?>
     </div>
 
@@ -370,13 +380,24 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
         <div class="stat-value"><?= $finishedSKUs ?></div>
         <div class="stat-meta">Ready for sale</div>
     </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Inactive Products</span>
+            <div class="stat-icon-wrap" aria-hidden="true" style="color: #64748B; background: #F1F5F9;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            </div>
+        </div>
+        <div class="stat-value"><?= $inactiveSKUs ?></div>
+        <div class="stat-meta"><?= $inactiveSKUs === 0 ? 'All products active' : htmlspecialchars($inactiveBreakdownText) ?></div>
+    </div>
 </div>
 
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Catalog Inventory Index</h2>
-            <p class="card-desc">All system materials and products. Each item has a strict single classification.</p>
+            <h2 class="card-title">All Products</h2>
+            <p class="card-desc">All raw materials and finished goods in the system.</p>
         </div>
         <div class="filter-group">
             <div class="search-wrap">
@@ -385,14 +406,15 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                 </span>
                 <input type="text" id="itemSearch" class="search-box" aria-label="Filter catalog items" placeholder="Filter code, name, unit..." oninput="filterItemsTable()">
             </div>
-            <select id="typeFilter" class="select-filter" aria-label="Filter by item classification" onchange="filterItemsTable()">
-                <option value="">All Classifications</option>
+            <select id="typeFilter" class="select-filter" aria-label="Filter by item type" onchange="filterItemsTable()">
+                <option value="">All Item Types</option>
                 <option value="raw_material">Raw Materials</option>
                 <option value="finished_good">Finished Goods</option>
             </select>
             <select id="statusFilter" class="select-filter" aria-label="Filter by item status" onchange="filterItemsTable()">
                 <option value="">All Statuses</option>
                 <option value="active">Active</option>
+                <option value="low_stock">Low Stock Items</option>
                 <option value="pending">Pending Approval</option>
                 <option value="inactive">Inactive</option>
             </select>
@@ -406,7 +428,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                     <th>Item ID</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Classification</th>
+                    <th>Item Type</th>
                     <th class="text-center">Unit</th>
                     <th class="text-center">Default Reorder Level</th>
                     <th class="text-center">Status</th>
@@ -422,7 +444,13 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                     </tr>
                 <?php else: ?>
                     <?php foreach ($itemsList as $row): ?>
-                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>" data-status="<?= htmlspecialchars(strtolower($row['status'] ?? 'active')) ?>">
+                        <?php
+                            $rowStatusNorm = strtolower($row['status'] ?? 'active');
+                            $rowQtyOnHand  = (float)($row['qty_on_hand'] ?? 0);
+                            $rowReorderLvl = (float)($row['effective_reorder_level'] ?? 0);
+                            $isLowStock    = ($rowStatusNorm === 'active') && ($rowReorderLvl > 0) && ($rowQtyOnHand <= $rowReorderLvl);
+                        ?>
+                        <tr data-type="<?= htmlspecialchars($row['item_type']) ?>" data-status="<?= htmlspecialchars($rowStatusNorm) ?>" data-low-stock="<?= $isLowStock ? '1' : '0' ?>">
                             <td style="font-family: monospace; color: var(--gray); font-weight: 600;">
                                 #<?= (int)$row['item_id'] ?>
                             </td>
@@ -453,9 +481,14 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                                 <?= formatQty($row['default_reorder_level'], 0) ?> <?= htmlspecialchars($row['unit']) ?>
                             </td>
                             <td class="text-center">
-                                <?php if (strtolower($row['status'] ?? 'active') === 'active'): ?>
+                                <?php if ($rowStatusNorm === 'active'): ?>
                                     <span class="badge status-completed">Active</span>
-                                <?php elseif (strtolower($row['status'] ?? '') === 'pending'): ?>
+                                    <?php if ($isLowStock): ?>
+                                        <div style="margin-top: 4px;">
+                                            <span class="badge status-pending" style="font-size: 10.5px;">Low Stock</span>
+                                        </div>
+                                    <?php endif; ?>
+                                <?php elseif ($rowStatusNorm === 'pending'): ?>
                                     <span class="badge" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D; font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                         Pending Approval
@@ -526,7 +559,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
             <div class="modal-header">
                 <div>
                     <h3 id="editItemModalTitle" class="card-title">Edit Catalog Item</h3>
-                    <p class="card-desc">Update item details, reorder threshold, or active status</p>
+                    <p class="card-desc">Update product details, low-stock level, or status</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeEditItemModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -550,14 +583,14 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
 
                 <div>
                     <label for="editItemType" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                        Classification <span style="color: #DC2626;">*</span>
+                        Item Type <span style="color: #DC2626;">*</span>
                     </label>
                     <select name="item_type" id="editItemType" class="select-filter" style="width: 100%;" required>
-                        <option value="raw_material">Raw Material (Procurement Inbound / Production Request)</option>
-                        <option value="finished_good">Finished Good (Production Receipt / Sales Delivery)</option>
+                        <option value="raw_material">Raw Material (Bought from Suppliers / Used in Production)</option>
+                        <option value="finished_good">Finished Good (Made in Production / Ready for Sale)</option>
                     </select>
                     <small id="editTypeLockNote" style="display: none; color: #DC2626; font-size: 12px; margin-top: 4px;">
-                        Classification locked: historical inventory movements/adjustments exist for this item.
+                        Item type cannot be changed because this item already has stock history.
                     </small>
                 </div>
 
@@ -576,7 +609,7 @@ $finishedSKUs = count(array_filter($itemsList, fn($x) => in_array(strtolower(str
                     </div>
                     <div>
                         <label for="editReorder" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Reorder Threshold <span style="color: #DC2626;">*</span>
+                            Reorder Level <span style="color: #DC2626;">*</span>
                         </label>
                         <input type="number" step="1" min="0" name="default_reorder_level" id="editReorder" class="search-box" style="width: 100%; padding-left: 12px;" onkeydown="if(event.key==='.'||event.key===',')event.preventDefault();" oninput="this.value=this.value.replace(/[^0-9]/g,'');" required>
                     </div>
@@ -643,10 +676,11 @@ function filterItemsTable() {
         if (row.cells.length <= 1) continue;
         const rowType = row.getAttribute('data-type') || '';
         const rowStatus = row.getAttribute('data-status') || '';
+        const rowLowStock = row.getAttribute('data-low-stock') === '1';
         const text = row.textContent.toLowerCase();
         const matchesQuery = !query || text.includes(query);
         const matchesType  = !typeFilter || rowType === typeFilter;
-        const matchesStatus = !statusFilter || rowStatus === statusFilter;
+        const matchesStatus = !statusFilter || (statusFilter === 'low_stock' ? rowLowStock : rowStatus === statusFilter);
         const match = matchesQuery && matchesType && matchesStatus;
 
         row.dataset.filteredOut = match ? 'false' : 'true';

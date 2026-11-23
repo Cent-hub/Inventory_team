@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $sQty = max(0.0, (float)($receivedQtys[$itemId] ?? 0));
                             $dQty = max(0.0, (float)($damagedQtys[$itemId] ?? 0));
                             if (($sQty + $dQty) > ($remQty + 0.0001)) {
-                                throw new InvalidArgumentException("Combined salable ({$sQty}) and damaged ({$dQty}) quantity exceeds remaining expected quantity ({$remQty}) for item ID {$itemId}.");
+                                throw new InvalidArgumentException("Total good ({$sQty}) and damaged ({$dQty}) items cannot exceed the remaining order quantity ({$remQty}) for item ID {$itemId}.");
                             }
                             if ($sQty > 0) {
                                 $salableToPost[$itemId] = $sQty;
@@ -218,6 +218,7 @@ $stmtIn = $pdo->prepare("
         AND (rev.movement_type = 'CANCELLED_INBOUND' OR (rev.movement_type = 'STOCK_OUT' AND rev.remarks LIKE 'Cancelled Stock IN %'))
     WHERE sm.warehouse_id = :wid 
       AND sm.movement_type = 'STOCK_IN'
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND (sm.remarks IS NULL OR (
           sm.remarks NOT LIKE 'Cancelled Stock OUT %'
           AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
@@ -291,6 +292,7 @@ $stmtOut = $pdo->prepare("
         AND (rev.movement_type = 'CANCELLED_OUTBOUND' OR (rev.movement_type = 'STOCK_IN' AND rev.remarks LIKE 'Cancelled Stock OUT %'))
     WHERE sm.warehouse_id = :wid 
       AND sm.movement_type = 'STOCK_OUT'
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND (sm.remarks IS NULL OR sm.remarks NOT LIKE 'Cancelled Stock IN %')
     ORDER BY sm.movement_id DESC
 ");
@@ -422,7 +424,7 @@ $customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Inventory Inbound &amp; Outbound</h1>
-        <p class="page-subtitle">Unified transaction ledger for receipts and dispatches</p>
+        <p class="page-subtitle">Manage incoming deliveries and outgoing shipments</p>
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -578,7 +580,7 @@ $customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
                     <tr>
                         <th>Order / Tracking #</th>
                         <th>Document Type</th>
-                        <th>Supplier / Customer / Origin</th>
+                        <th>From / Source</th>
                         <th>Expected Items &amp; Quantity</th>
                         <th>Expected Date</th>
                         <th>Queue Status</th>
@@ -589,7 +591,7 @@ $customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
                     <?php if (empty($pendingInboundOrders)): ?>
                         <tr>
                             <td colspan="7" style="text-align: center; color: var(--gray); padding: 32px;">
-                                No pending inbound shipments in queue for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?>. All incoming orders are fully received!
+                                No pending incoming deliveries for <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?>. Everything has been received.
                             </td>
                         </tr>
                     <?php else: ?>
@@ -659,9 +661,11 @@ $customerReturnsCount = $salableReturnsCount + $damagedRmaCount;
                                         <button type="button" class="btn btn-primary btn-sm" onclick="openReceiveOrderModal(<?= (int)$pIn['inbound_order_id'] ?>)">
                                             <?= $receiveBtnLabel ?>
                                         </button>
-                                        <button type="button" class="btn btn-secondary btn-sm" style="color: #B91C1C; border-color: #FCA5A5; height: 32px; padding: 0 10px; font-size: 12px;" onclick="openCancelInboundOrderModal(<?= (int)$pIn['inbound_order_id'] ?>, '<?= htmlspecialchars($pIn['order_number'], ENT_QUOTES) ?>')">
-                                            Reject
-                                        </button>
+                                        <?php if (!in_array($pIn['source_type'] ?? '', ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN', 'CUSTOMER_RETURN'], true)): ?>
+                                            <button type="button" class="btn btn-secondary btn-sm" style="color: #B91C1C; border-color: #FCA5A5; height: 32px; padding: 0 10px; font-size: 12px;" onclick="openCancelInboundOrderModal(<?= (int)$pIn['inbound_order_id'] ?>, '<?= htmlspecialchars($pIn['order_number'], ENT_QUOTES) ?>')">
+                                                Reject
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -2022,7 +2026,7 @@ function openReceiveOrderModal(id) {
         submitBtn.style.borderColor = '#15803D';
     } else {
         condSelect.value = 'salable';
-        condHint.textContent = 'Salable items will increase current inventory balance.';
+        condHint.textContent = 'Good items will be added to your current stock.';
         submitBtn.textContent = 'Confirm & Receive Goods';
         submitBtn.style.background = '#15803D';
         submitBtn.style.borderColor = '#15803D';
@@ -2192,6 +2196,11 @@ function openDispatchOrderModal(id) {
 }
 
 function openCancelInboundOrderModal(orderId, orderRef) {
+    const order = pendingInMap[orderId] || {};
+    if (order.source_type === 'PRODUCTION_RECEIPT' || order.source_type === 'PRODUCTION_RETURN' || order.source_type === 'CUSTOMER_RETURN') {
+        return;
+    }
+
     document.getElementById('cancelInboundOrderId').value = orderId;
     document.getElementById('cancelInboundOrderRef').textContent = orderRef;
     document.getElementById('cancelInboundOrderReason').value = '';
@@ -2201,7 +2210,6 @@ function openCancelInboundOrderModal(orderId, orderRef) {
         handleCancelReasonSelectChange(reasonSelect);
     }
 
-    const order = pendingInMap[orderId] || {};
     const dispWrap = document.getElementById('cancelInboundDispositionWrap');
     const dispSelect = document.getElementById('cancelInboundDisposition');
     const tbody = document.getElementById('cancelInboundLinesTbody');

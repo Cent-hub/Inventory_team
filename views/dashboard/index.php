@@ -34,11 +34,14 @@ $stmtInventory = $pdo->prepare("
 $stmtInventory->execute([':wid1' => $currentWarehouseId, ':wid2' => $currentWarehouseId]);
 $inventoryRows = $stmtInventory->fetchAll(PDO::FETCH_ASSOC);
 
-$totalRawMaterials      = 0;
-$totalFinishedGoods     = 0;
-$lowStockCount          = 0;
-$lowStockRawMaterials   = 0;
-$lowStockFinishedGoods  = 0;
+$totalRawMaterials         = 0;
+$totalFinishedGoods        = 0;
+$lowStockCount             = 0;
+$lowStockRawMaterials      = 0;
+$lowStockFinishedGoods     = 0;
+$outOfStockCount           = 0;
+$outOfStockRawMaterials    = 0;
+$outOfStockFinishedGoods   = 0;
 
 foreach ($inventoryRows as $row) {
     $normType = strtolower(str_replace(' ', '_', (string)($row['item_type'] ?? '')));
@@ -50,7 +53,14 @@ foreach ($inventoryRows as $row) {
     $qty = (float)($row['quantity'] ?? 0);
     $reorder = (float)($row['default_reorder_level'] ?? 0);
 
-    if ($reorder > 0 && $qty <= $reorder) {
+    if ($qty <= 0) {
+        $outOfStockCount++;
+        if ($normType === 'raw_material') {
+            $outOfStockRawMaterials++;
+        } elseif ($normType === 'finished_good') {
+            $outOfStockFinishedGoods++;
+        }
+    } elseif ($reorder > 0 && $qty <= $reorder) {
         $lowStockCount++;
         if ($normType === 'raw_material') {
             $lowStockRawMaterials++;
@@ -60,31 +70,23 @@ foreach ($inventoryRows as $row) {
     }
 }
 
-$lowStockBreakdownParts = [];
-if ($lowStockRawMaterials > 0) {
-    $lowStockBreakdownParts[] = $lowStockRawMaterials . ' ' . ($lowStockRawMaterials === 1 ? 'Raw Material' : 'Raw Materials');
-}
-if ($lowStockFinishedGoods > 0) {
-    $lowStockBreakdownParts[] = $lowStockFinishedGoods . ' ' . ($lowStockFinishedGoods === 1 ? 'Finished Good' : 'Finished Goods');
-}
-$lowStockOther = $lowStockCount - $lowStockRawMaterials - $lowStockFinishedGoods;
-if ($lowStockOther > 0) {
-    $lowStockBreakdownParts[] = $lowStockOther . ' ' . ($lowStockOther === 1 ? 'Other Item' : 'Other Items');
-}
-$lowStockBreakdownText = implode(' • ', $lowStockBreakdownParts);
+$formatCategoryBreakdown = static function (int $total, int $raw, int $fg): string {
+    $parts = [];
+    if ($raw > 0) {
+        $parts[] = $raw . ' ' . ($raw === 1 ? 'Raw Material' : 'Raw Materials');
+    }
+    if ($fg > 0) {
+        $parts[] = $fg . ' ' . ($fg === 1 ? 'Finished Good' : 'Finished Goods');
+    }
+    $other = $total - $raw - $fg;
+    if ($other > 0) {
+        $parts[] = $other . ' ' . ($other === 1 ? 'Other Item' : 'Other Items');
+    }
+    return implode(' • ', $parts);
+};
 
-$stmtBP = $pdo->prepare("
-    SELECT 
-        COUNT(*) AS record_count,
-        COALESCE(SUM(quantity), 0) AS total_qty
-    FROM bad_products
-    WHERE warehouse_id = :wid
-      AND status NOT IN ('cancelled', 'disposed')
-");
-$stmtBP->execute([':wid' => $currentWarehouseId]);
-$bpRow = $stmtBP->fetch(PDO::FETCH_ASSOC);
-$badProductsCount  = (int)($bpRow['record_count'] ?? 0);
-$badProductsVolume = (float)($bpRow['total_qty'] ?? 0);
+$lowStockBreakdownText   = $formatCategoryBreakdown($lowStockCount, $lowStockRawMaterials, $lowStockFinishedGoods);
+$outOfStockBreakdownText = $formatCategoryBreakdown($outOfStockCount, $outOfStockRawMaterials, $outOfStockFinishedGoods);
 
 $stmtRecent = $pdo->prepare("
     SELECT 
@@ -107,6 +109,7 @@ $stmtRecent = $pdo->prepare("
     WHERE sm.warehouse_id = :wid
       AND sm.movement_type != ''
       AND sm.movement_type NOT IN ('IN', 'OUT')
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND sm.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
     ORDER BY sm.movement_id DESC
     LIMIT 100
@@ -142,6 +145,7 @@ $stmtChart = $pdo->prepare("
         END), 0) AS total_out
     FROM stock_movements sm
     WHERE sm.warehouse_id = :wid
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND sm.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
     GROUP BY DATE(sm.created_at)
 ");
@@ -262,9 +266,9 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <div class="stat-card">
+    <div class="stat-card <?= $outOfStockCount > 0 ? 'stat-alert' : '' ?>" id="dashboardCardOutOfStock">
         <div class="stat-header">
-            <span class="stat-label">Bad Products List</span>
+            <span class="stat-label">Out of Stock Items</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: #B91C1C; background: #FEE2E2;">
 
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -274,9 +278,13 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                 </svg>
             </div>
         </div>
-        <div class="stat-value"><?= formatQty($badProductsVolume) ?></div>
-        <div class="stat-meta">
-            <?= $badProductsCount ?> record<?= $badProductsCount === 1 ? '' : 's' ?>
+        <div class="stat-value" id="dashboardValOutOfStock"><?= $outOfStockCount ?></div>
+        <div class="stat-meta" id="dashboardMetaOutOfStock">
+            <?php if ($outOfStockCount === 0): ?>
+                No out of stock items
+            <?php else: ?>
+                <?= htmlspecialchars($outOfStockBreakdownText) ?>
+            <?php endif; ?>
         </div>
     </div>
 </div>
@@ -292,7 +300,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                         <line x1="12" y1="20" x2="12" y2="4"/>
                         <line x1="6" y1="20" x2="6" y2="14"/>
                     </svg>
-                    Inventory Velocity
+                    7-Day Stock Movement
                 </h2>
                 <p class="card-desc" style="margin: 3px 0 0 0;">
                     7-Day Movement (<strong><?= date('M j', strtotime('-6 days')) ?> &ndash; <?= date('M j, Y') ?></strong>) &bull; <strong><?= htmlspecialchars($warehouseCode) ?> (<?= htmlspecialchars($warehouseName) ?>)</strong>
@@ -301,18 +309,18 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #10B981;"></span>
-                    <span style="color: var(--gray);">7-Day Inbound:</span>
+                    <span style="color: var(--gray);">7-Day Stock In:</span>
                     <strong style="color: #059669;">+<?= number_format($totalWeekIn) ?></strong>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #3B82F6;"></span>
-                    <span style="color: var(--gray);">7-Day Outbound:</span>
+                    <span style="color: var(--gray);">7-Day Stock Out:</span>
                     <strong style="color: #2563EB;">-<?= number_format($totalWeekOut) ?></strong>
                 </div>
             </div>
         </div>
 
-        <div style="width: 100%; overflow-x: auto;">
+        <div style="width: 100%; overflow: hidden;">
             <?php
             $svgWidth = 560;
             $svgHeight = 210;
@@ -412,7 +420,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                     Recent Staff Activity
                 </h2>
                 <p class="card-desc" style="margin: 2px 0 0 0; font-size: 11px;">
-                    Facility: <strong><?= htmlspecialchars($warehouseCode) ?></strong>
+                    Warehouse: <strong><?= htmlspecialchars($warehouseCode) ?></strong>
                 </p>
             </div>
             <span class="badge" style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; font-size: 10.5px; padding: 2px 7px; font-weight: 600;">
@@ -434,9 +442,9 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
                             : strtoupper(substr($nameParts[0], 0, 2));
                         $timeStr = !empty($st['created_at']) ? date('M d, H:i', strtotime($st['created_at'])) : 'Recent';
                         $actionLabel = match($st['action_type']) {
-                            'USER_LOGIN'          => 'Signed in to facility',
+                            'USER_LOGIN'          => 'Signed in to warehouse',
                             'STOCK_IN'            => 'Received stock in',
-                            'STOCK_OUT'           => 'Dispatched stock out',
+                            'STOCK_OUT'           => 'Sent stock out',
                             'TRANSFER_RECEIVED'   => 'Received transfer',
                             'TRANSFER_INITIATED'  => 'Initiated transfer',
                             'ADJUSTMENT_REQUESTED'=> 'Requested adjustment',
@@ -484,7 +492,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
             <thead>
                 <tr>
                     <th>Product / Item</th>
-                    <th>Classification</th>
+                    <th>Item Type</th>
                     <th class="text-center">Movement</th>
                     <th class="text-center">Quantity</th>
                     <th>Date &amp; Time</th>
@@ -544,7 +552,7 @@ $recentWarehouseStaff = $stmtWhStaff->fetchAll(PDO::FETCH_ASSOC);
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Warehouse Inventory Stock Snapshot</h2>
+            <h2 class="card-title">Current Warehouse Stock</h2>
         </div>
         <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">

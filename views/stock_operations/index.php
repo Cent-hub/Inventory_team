@@ -128,13 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser
                     );
 
-                    $adjId = (int)($result['stock_adjustment_id'] ?? 0);
-                    if ($adjId > 0 && ($currentUser['role'] ?? '') === 'super_admin') {
-                        $apprResult = $stockService->approveStockAdjustment($adjId, $userId, $currentUser);
-                        $successMessage = "Stock adjustment " . htmlspecialchars($apprResult['transaction_number']) . " applied and approved immediately! Physical inventory updated.";
-                    } else {
-                        $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " created successfully and is pending Super Admin approval.";
-                    }
+                    $successMessage = "Stock adjustment " . htmlspecialchars($result['transaction_number']) . " applied immediately! Physical inventory updated.";
                     break;
 
                 case 'approve_adjustment':
@@ -493,6 +487,7 @@ if ($selectedItemId > 0) {
             FROM stock_movements sm
             LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
             WHERE sm.movement_type NOT IN ('IN', 'OUT')
+              AND (sm.status IS NULL OR sm.status = 'Posted')
         ),
         movement_ledger AS (
             SELECT
@@ -549,7 +544,7 @@ if ($selectedItemId > 0) {
 <div class="page-header" style="margin-bottom: 20px;">
     <div>
         <h1 class="page-title">Stock Operations</h1>
-        <p class="page-subtitle">Unified transaction hub for Transfers, Physical Count Adjustments, and Item Stock Cards</p>
+        <p class="page-subtitle">Manage warehouse transfers, stock adjustments, damaged items, and item stock history</p>
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -622,7 +617,7 @@ if ($selectedItemId > 0) {
 
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
         <div>
-            <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Transfer Ledger</h2>
+            <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Transfers</h2>
             <p style="font-size: 13px; color: var(--gray); margin: 0;">Two-sided warehouse movement tracking and dispatch control</p>
         </div>
         <div>
@@ -658,7 +653,7 @@ if ($selectedItemId > 0) {
     <div class="stats-grid" style="margin-bottom: 24px;">
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-label">Received from Other Facilities</span>
+                <span class="stat-label">Received from Other Warehouses</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #15803D; background: #DCFCE7;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"/>
@@ -667,12 +662,12 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="stat-value" style="color: #15803D;"><?= $totalReceived ?></div>
-            <div class="stat-meta">Inbound transfers to <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
+            <div class="stat-meta">Transfers received by <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
         </div>
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-label">Transferred to Other Facilities</span>
+                <span class="stat-label">Sent to Other Warehouses</span>
                 <div class="stat-icon-wrap" aria-hidden="true" style="color: #1D4ED8; background: #EFF6FF;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"/>
@@ -681,7 +676,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="stat-value" style="color: #1D4ED8;"><?= $totalTransferred ?></div>
-            <div class="stat-meta">Outbound transfers from <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
+            <div class="stat-meta">Transfers sent from <?= htmlspecialchars($assignedWarehouse['warehouse_code']) ?></div>
         </div>
 
         <div class="stat-card">
@@ -695,7 +690,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="stat-value"><?= $completedCount ?></div>
-            <div class="stat-meta">Posted across dual ledgers</div>
+            <div class="stat-meta">Updated in both warehouses</div>
         </div>
 
         <div class="stat-card">
@@ -710,7 +705,7 @@ if ($selectedItemId > 0) {
                 </div>
             </div>
             <div class="stat-value"><?= count($destinationWarehouses) ?></div>
-            <div class="stat-meta">Active facilities ready for exchange</div>
+            <div class="stat-meta">Active warehouses available for transfer</div>
         </div>
     </div>
 
@@ -878,7 +873,7 @@ if ($selectedItemId > 0) {
                     <?php if (empty($transferredTransfers)): ?>
                         <tr>
                             <td colspan="8" style="text-align: center; color: var(--gray); padding: 36px;">
-                                No outgoing transfers dispatched to other warehouses yet.
+                                No outgoing transfers sent to other warehouses yet.
                             </td>
                         </tr>
                     <?php else: ?>
@@ -965,8 +960,8 @@ if ($selectedItemId > 0) {
 
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
         <div>
-            <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Adjustments &amp; Discrepancy Audits</h2>
-            <p style="font-size: 13px; color: var(--gray); margin: 0;">Audited inventory corrections and damaged goods write-offs</p>
+            <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Stock Adjustments &amp; Damaged Goods</h2>
+            <p style="font-size: 13px; color: var(--gray); margin: 0;">Fix stock count differences and record damaged items</p>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <button type="button" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;" onclick="openReportBadProductModal()">
@@ -1117,8 +1112,8 @@ if ($selectedItemId > 0) {
     <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
-                <h3 class="card-title" style="margin: 0; font-size: 16px;">Damaged &amp; Defective Liquor Goods</h3>
-                <p class="card-desc" style="margin: 0;">Losses from bottle breakage, cork defects, barrel leakage, or expired batches written off from active inventory</p>
+                <h3 class="card-title" style="margin: 0; font-size: 16px;">Damaged / Bad Products</h3>
+                <p class="card-desc" style="margin: 0;">Broken, leaked, or expired items removed from stock</p>
             </div>
             <div class="search-wrap">
                 <span class="search-icon" aria-hidden="true">
@@ -1235,7 +1230,7 @@ if ($selectedItemId > 0) {
 <div id="pane-stock_card" class="stock-op-pane" style="display: <?= $activeTab === 'stock_card' ? 'block' : 'none' ?>;">
 
     <div style="margin-bottom: 20px;">
-        <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Item Stock Card Ledger</h2>
+        <h2 style="font-size: 18px; font-weight: 700; color: var(--panel-ink); margin-bottom: 4px;">Item Stock History</h2>
         <p style="font-size: 13px; color: var(--gray); margin: 0;">Full history of stock in, stock out, and running balance for each item</p>
     </div>
 
@@ -1644,7 +1639,7 @@ if ($selectedItemId > 0) {
             <div class="modal-header">
                 <div>
                     <h3 id="newAdjustmentModalTitle" class="card-title" style="margin: 0;">New Stock Adjustment</h3>
-                    <p class="card-desc" style="margin: 0;">Submit stock discrepancy count for administrative approval and ledger audit</p>
+                    <p class="card-desc" style="margin: 0;">Update system stock to match your actual physical count</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeNewAdjustmentModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1713,7 +1708,7 @@ if ($selectedItemId > 0) {
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeNewAdjustmentModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Submit Adjustment for Approval</button>
+                <button type="submit" class="btn btn-primary">Apply Stock Adjustment</button>
             </div>
         </form>
     </div>
@@ -2336,11 +2331,11 @@ function calcAdjDiff() {
     if (diff > 0) {
         valElem.textContent = '+' + formatQty(diff) + ' ' + currentSelectedUnit;
         valElem.style.color = '#15803D';
-        descElem.textContent = 'Surplus: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + ' upon approval.';
+        descElem.textContent = 'Surplus: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + '.';
     } else if (diff < 0) {
         valElem.textContent = '-' + formatQty(Math.abs(diff)) + ' ' + currentSelectedUnit;
         valElem.style.color = '#B91C1C';
-        descElem.textContent = 'Shortage / Loss: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + ' upon approval.';
+        descElem.textContent = 'Shortage / Loss: New balance will be ' + formatQty(physical) + ' ' + currentSelectedUnit + '.';
     } else {
         valElem.textContent = '0 ' + currentSelectedUnit;
         valElem.style.color = '#475569';

@@ -121,7 +121,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             </div>
                             <div>
                                 <div class="settings-row-title">My Account</div>
-                                <div class="settings-row-subtitle">Profile details, facility &amp; credentials</div>
+                                <div class="settings-row-subtitle">Profile details, warehouse &amp; login info</div>
                             </div>
                         </div>
                         <div class="settings-row-right">
@@ -169,7 +169,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                             </div>
                             <div>
                                 <div class="settings-row-title">Notifications</div>
-                                <div class="settings-row-subtitle">Low-stock replenishment alerts</div>
+                                <div class="settings-row-subtitle">Low-stock alerts</div>
                             </div>
                         </div>
                         <div class="settings-row-right">
@@ -260,7 +260,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                     </div>
                 </div>
 
-                <span class="settings-group-label">Facility &amp; Session Scope</span>
+                <span class="settings-group-label">Warehouse &amp; Account Info</span>
                 <div class="settings-group">
                     <div class="settings-row static">
                         <div class="settings-row-left">
@@ -492,7 +492,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
 
                 <div id="notifFeedbackBanner" role="status" aria-live="polite" style="display: none; background: var(--success-light); border: 1px solid var(--success-border); color: #14532D; border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 500;"></div>
 
-                <span class="settings-group-label">Replenishment &amp; Movement Alerts</span>
+                <span class="settings-group-label">Stock Alerts</span>
                 <div class="settings-group">
 
                     <div class="settings-row static">
@@ -505,7 +505,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                 </svg>
                             </div>
                             <div>
-                                <div class="settings-row-title">Inbound Receipts (Stock In)</div>
+                                <div class="settings-row-title">Stock In Alerts</div>
                                 <div class="settings-row-subtitle">Procurement deliveries &amp; returns</div>
                             </div>
                         </div>
@@ -529,7 +529,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                 </svg>
                             </div>
                             <div>
-                                <div class="settings-row-title">High Outbound Dispatches</div>
+                                <div class="settings-row-title">Stock Out Alerts</div>
                                 <div class="settings-row-subtitle">Sales delivery &amp; materials issued</div>
                             </div>
                         </div>
@@ -554,7 +554,7 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                 </svg>
                             </div>
                             <div>
-                                <div class="settings-row-title">Daily Stock Ledger Digest</div>
+                                <div class="settings-row-title">Daily Stock Summary</div>
                                 <div class="settings-row-subtitle">End-of-shift balance summary</div>
                             </div>
                         </div>
@@ -742,11 +742,11 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                                 Inquiry Category
                             </label>
                             <select id="supportCategory" class="select-filter" style="width: 100%;">
-                                <option value="discrepancy">Stock Discrepancy / Cycle Count Dispute</option>
-                                <option value="requisition">Procurement &amp; Inbound Requisition</option>
-                                <option value="transfer">Inter-Warehouse Movement Assistance</option>
-                                <option value="access">Account Permissions &amp; Facility Access</option>
-                                <option value="general" selected>General System Inquiry</option>
+                                <option value="discrepancy">Wrong Stock Count</option>
+                                <option value="requisition">Supplier Delivery / Stock In</option>
+                                <option value="transfer">Warehouse Transfer Help</option>
+                                <option value="access">Account &amp; Warehouse Access</option>
+                                <option value="general" selected>General Question</option>
                             </select>
                         </div>
 
@@ -789,10 +789,10 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         </div>
                         <div>
                             <div style="font-size: 15px; font-weight: 700; color: var(--panel-ink);">
-                                Central Accountability Audit Log
+                                Activity Log
                             </div>
                             <div style="font-size: 12px; color: var(--gray); margin-top: 1px;">
-                                Immutable cross-team operational audit trail
+                                History of all team stock actions
                             </div>
                         </div>
                     </div>
@@ -824,11 +824,11 @@ $userTeamSubtitle = htmlspecialchars($teamSubtitleMap[$userTeamRaw] ?? ($userTea
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                         </svg>
-                        <span>Operating Facility: <strong><?= $currentBranchLabel ?></strong> (Strict Warehouse Isolation Active)</span>
+                        <span>Current Warehouse: <strong><?= $currentBranchLabel ?></strong></span>
                     </div>
 
                     <a href="<?= BASE_URL ?>views/settings/accountability.php" class="btn btn-primary" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 11px 16px; font-weight: 600; text-decoration: none; margin-top: 4px;">
-                        <span>Launch Full Accountability Audit Hub</span>
+                        <span>Open Full Activity Log</span>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                             <polyline points="15 3 21 3 21 9"/>

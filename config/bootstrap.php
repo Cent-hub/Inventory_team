@@ -33,6 +33,7 @@ if (!function_exists('loadEnvironmentFile')) {
     }
 }
 
+loadEnvironmentFile(__DIR__ . '/../.env.local');
 loadEnvironmentFile(__DIR__ . '/../.env');
 
 $appTimezone = getenv('APP_TIMEZONE') ?: 'Asia/Manila';
@@ -103,12 +104,13 @@ if (!function_exists('startSecureSession')) {
         if (!headers_sent()) {
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
+            @ini_set('session.cookie_lifetime', '0');
             @ini_set('session.cookie_httponly', '1');
             @ini_set('session.cookie_samesite', 'Lax');
             @ini_set('session.gc_maxlifetime', (string)(SESSION_IDLE_TIMEOUT_SECONDS * 4));
 
             session_set_cookie_params([
-                'lifetime' => 86400,       
+                'lifetime' => 0,
                 'path'     => '/',
                 'domain'   => '',
                 'secure'   => isHttpsRequest(),

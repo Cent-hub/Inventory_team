@@ -488,9 +488,9 @@ function pulseNotificationBell() {
     }
 }
 
-function formatLowStockMeta(count, rawCount, fgCount) {
+function formatStockBreakdownMeta(count, rawCount, fgCount, emptyLabel) {
     if (count <= 0) {
-        return 'All items at healthy levels';
+        return emptyLabel;
     }
     const parts = [];
     if (rawCount > 0) {
@@ -506,40 +506,56 @@ function formatLowStockMeta(count, rawCount, fgCount) {
     return parts.join(' \u2022 ');
 }
 
-function updateDashboardKpi(kpi) {
-    if (!kpi) return;
-    const valLowStock = document.getElementById('dashboardValLowStock');
-    const cardLowStock = document.getElementById('dashboardCardLowStock');
-    const metaLowStock = document.getElementById('dashboardMetaLowStock');
+function updateStockAlertCard(valEl, cardEl, metaEl, countVal, rawVal, fgVal, emptyLabel) {
+    if (!valEl || typeof countVal === 'undefined') return;
+    const count = parseInt(countVal, 10) || 0;
+    const oldCount = parseInt(valEl.textContent.trim(), 10) || 0;
 
-    if (valLowStock && typeof kpi.low_stock_count !== 'undefined') {
-        const count = parseInt(kpi.low_stock_count, 10);
-        const oldCount = parseInt(valLowStock.textContent.trim(), 10) || 0;
+    if (oldCount !== count) {
+        valEl.textContent = count;
+        valEl.classList.remove('stat-value-pulse');
+        void valEl.offsetWidth;
+        valEl.classList.add('stat-value-pulse');
+        setTimeout(function() {
+            valEl.classList.remove('stat-value-pulse');
+        }, 1200);
 
-        if (oldCount !== count) {
-            valLowStock.textContent = count;
-            valLowStock.classList.remove('stat-value-pulse');
-            void valLowStock.offsetWidth; 
-            valLowStock.classList.add('stat-value-pulse');
-            setTimeout(function() {
-                valLowStock.classList.remove('stat-value-pulse');
-            }, 1200);
-
-            if (cardLowStock) {
-                if (count > 0) {
-                    cardLowStock.classList.add('stat-alert');
-                } else {
-                    cardLowStock.classList.remove('stat-alert');
-                }
+        if (cardEl) {
+            if (count > 0) {
+                cardEl.classList.add('stat-alert');
+            } else {
+                cardEl.classList.remove('stat-alert');
             }
         }
-
-        if (metaLowStock && (oldCount !== count || typeof kpi.low_stock_raw_materials !== 'undefined' || typeof kpi.low_stock_finished_goods !== 'undefined')) {
-            const rawCount = parseInt(kpi.low_stock_raw_materials, 10) || 0;
-            const fgCount = parseInt(kpi.low_stock_finished_goods, 10) || 0;
-            metaLowStock.textContent = formatLowStockMeta(count, rawCount, fgCount);
-        }
     }
+
+    if (metaEl && (oldCount !== count || typeof rawVal !== 'undefined' || typeof fgVal !== 'undefined')) {
+        const rawCount = parseInt(rawVal, 10) || 0;
+        const fgCount = parseInt(fgVal, 10) || 0;
+        metaEl.textContent = formatStockBreakdownMeta(count, rawCount, fgCount, emptyLabel);
+    }
+}
+
+function updateDashboardKpi(kpi) {
+    if (!kpi) return;
+    updateStockAlertCard(
+        document.getElementById('dashboardValLowStock'),
+        document.getElementById('dashboardCardLowStock'),
+        document.getElementById('dashboardMetaLowStock'),
+        kpi.low_stock_count,
+        kpi.low_stock_raw_materials,
+        kpi.low_stock_finished_goods,
+        'All items at healthy levels'
+    );
+    updateStockAlertCard(
+        document.getElementById('dashboardValOutOfStock'),
+        document.getElementById('dashboardCardOutOfStock'),
+        document.getElementById('dashboardMetaOutOfStock'),
+        kpi.out_of_stock_count,
+        kpi.out_of_stock_raw_materials,
+        kpi.out_of_stock_finished_goods,
+        'No out of stock items'
+    );
 }
 
 function dismissNotificationToast(toast) {
@@ -1064,6 +1080,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+});
+
+window.addEventListener('pageshow', function(event) {
+    const navEntries = performance.getEntriesByType ? performance.getEntriesByType('navigation') : [];
+    const isBackForward = navEntries.length > 0 && navEntries[0].type === 'back_forward';
+    if (event.persisted || isBackForward) {
+        window.location.reload();
+    }
 });
 </script>
 

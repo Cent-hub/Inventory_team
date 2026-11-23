@@ -304,7 +304,7 @@ foreach ($notificationList as $notifItem) {
                         </svg>
                     </div>
                     <div class="notif-empty-title">All caught up!</div>
-                    <div class="notif-empty-desc">All inventory items are currently above reorder thresholds.</div>
+                    <div class="notif-empty-desc">All items have enough stock.</div>
                 </div>
             <?php endif; ?>
 

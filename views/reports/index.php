@@ -102,8 +102,8 @@ $sqlBad = "
         i.type AS item_type,
         i.unit,
         CASE 
-            WHEN bp.reason LIKE '%Customer Return%' OR bp.reason LIKE '%RMA%' THEN 'Customer Return (RMA)'
-            ELSE 'Warehouse Defect Write-Off'
+            WHEN bp.reason LIKE '%Customer Return%' OR bp.reason LIKE '%RMA%' THEN 'Customer Return'
+            ELSE 'Warehouse Damage'
         END AS source_origin,
         COALESCE(u.name, 'Warehouse Operator') AS reported_by_name,
         COALESCE(cu.name, '—') AS confirmed_by_name
@@ -131,7 +131,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
     <div>
         <h1 class="page-title" id="pageTitleHeading">Inventory Reports</h1>
         <p class="page-subtitle" id="pageSubtitleText">
-            Formal operational ledgers, stock reconciliations, and compliance reporting
+            View and print stock summaries, low-stock lists, and bad product reports
         </p>
     </div>
     <div class="header-actions">
@@ -149,7 +149,7 @@ $badProductsData = $stmtBad->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div style="text-align: right; font-size: 11px; color: var(--gray);">
             <div>Generated: <?= date('Y-m-d H:i:s') ?></div>
-            <div>Facility: <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?> — <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? '') ?></div>
+            <div>Warehouse: <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?> — <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? '') ?></div>
         </div>
     </div>
 </div>
@@ -274,7 +274,7 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                         <th>Item Code</th>
                         <th>Item Description</th>
                         <th>Category</th>
-                        <th>Classification</th>
+                        <th>Item Type</th>
                         <th class="text-center">Reorder Level</th>
                         <th class="text-center">Current Balance</th>
                         <th class="text-center">Health Status</th>
@@ -326,7 +326,7 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                         <th>Item Code</th>
                         <th>Item Description</th>
                         <th>Category</th>
-                        <th>Classification</th>
+                        <th>Item Type</th>
                         <th class="text-center">Reorder Level</th>
                         <th class="text-center">Current Balance</th>
                         <th class="text-center">Health Status</th>
@@ -378,7 +378,7 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                         <th>Item Code</th>
                         <th>Item Description</th>
                         <th>Category</th>
-                        <th>Classification</th>
+                        <th>Item Type</th>
                         <th class="text-center">Reorder Level</th>
                         <th class="text-center">Current Balance</th>
                         <th class="text-center">Health Status</th>
@@ -437,8 +437,8 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                     <tr>
                         <th>Report Ref #</th>
                         <th>Item Code &amp; Description</th>
-                        <th>Classification</th>
-                        <th>Source / Origin</th>
+                        <th>Item Type</th>
+                        <th>Source</th>
                         <th class="print-only-col">Defect Reason / QA Notes</th>
                         <th>Verified / Reported By</th>
                         <th>Date Logged</th>
@@ -481,9 +481,9 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
                                 </td>
                                 <td>
                                     <?php if ($isRma): ?>
-                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return (RMA)</span>
+                                        <span class="badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">Customer Return</span>
                                     <?php else: ?>
-                                        <span class="badge status-alert">Warehouse Write-Off</span>
+                                        <span class="badge status-alert">Warehouse Damage</span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="print-only-col" style="font-size: 12px; color: var(--gray); max-width: 240px;">
@@ -530,8 +530,8 @@ $activeCardMeta = $reportCardMeta[$activeTab] ?? $reportCardMeta['raw_materials'
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F8FAFC; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
                 <div><span style="color: var(--gray); font-size: 11px; display: block;">Item</span><strong id="bpModalItem"></strong></div>
                 <div><span style="color: var(--gray); font-size: 11px; display: block;">Bad Quantity</span><strong id="bpModalQty" style="color: #B91C1C;"></strong></div>
-                <div><span style="color: var(--gray); font-size: 11px; display: block;">Classification</span><span id="bpModalType"></span></div>
-                <div><span style="color: var(--gray); font-size: 11px; display: block;">Source / Origin</span><span id="bpModalSource"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Item Type</span><span id="bpModalType"></span></div>
+                <div><span style="color: var(--gray); font-size: 11px; display: block;">Source</span><span id="bpModalSource"></span></div>
                 <div><span style="color: var(--gray); font-size: 11px; display: block;">Reported By</span><span id="bpModalReportedBy"></span></div>
                 <div><span style="color: var(--gray); font-size: 11px; display: block;">Date Logged</span><span id="bpModalDate"></span></div>
                 <div><span style="color: var(--gray); font-size: 11px; display: block;">Confirmed By</span><span id="bpModalConfirmedBy"></span></div>

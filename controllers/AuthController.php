@@ -9,7 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 
 class AuthController {
     public const LOGIN_MAX_ATTEMPTS = 5;
-    public const LOGIN_LOCKOUT_SECONDS = 300;
+    public const LOGIN_LOCKOUT_SECONDS = 900;
     public const IDLE_TIMEOUT_SECONDS = 1800; 
     public const ACCOUNT_REVALIDATE_SECONDS = 0; 
 
@@ -209,9 +209,11 @@ class AuthController {
         $_SESSION['user_role']      = $user['role'];
         $_SESSION['user_team']      = $user['team'] ?? 'Inventory';
         $_SESSION['warehouse_id']   = $assignedWhId;
-        $_SESSION['logged_in']      = true;
-        $_SESSION['login_time']     = time();
-        $_SESSION['last_activity']  = time();
+        $_SESSION['logged_in']               = true;
+        $_SESSION['login_time']              = time();
+        $_SESSION['last_activity']           = time();
+        $_SESSION['tab_auth_token']          = bin2hex(random_bytes(16));
+        $_SESSION['tab_session_initialized'] = false;
 
         require_once __DIR__ . '/../helpers/AccountabilityService.php';
         try {
@@ -383,7 +385,7 @@ class AuthController {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$user) {
-
+            unset($_SESSION['otp_reset']);
             return [
                 'success'      => true,
                 'message'      => 'If an active account exists for that email, a verification code has been dispatched.',
@@ -640,13 +642,22 @@ class AuthController {
     }
 
     public function deliverOtpEmail(string $email, string $name, string $code, string $type = 'password_reset'): bool {
+        require_once __DIR__ . '/../helpers/Mailer.php';
+        if (Mailer::isSmtpConfigured()) {
+            $sent = Mailer::sendPasswordResetOtp($email, $name, $code);
+            if (!$sent) {
+                error_log("OTP delivery notice: [{$type}] Gmail SMTP delivery failed for {$email}.");
+            }
+            return $sent;
+        }
+
         $subject = "InventoryTeam - Password Reset Verification Code";
         $body = "Hello {$name},\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in 15 minutes.\nIf you did not request this, please secure your account immediately.";
         $headers = "From: no-reply@inventory.local\r\nReply-To: no-reply@inventory.local\r\nX-Mailer: PHP/" . phpversion();
         $sent = @mail($email, $subject, $body, $headers);
         if (!$sent) {
 
-            error_log("OTP delivery notice: [{$type}] verification email could not be sent to {$email} (system mailer unavailable).");
+            error_log("OTP delivery notice: [{$type}] verification email could not be sent to {$email} (SMTP not configured and system mailer unavailable).");
         }
         return $sent;
     }

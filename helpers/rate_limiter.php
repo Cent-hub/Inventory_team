@@ -73,10 +73,12 @@ function checkRateLimit(
         if (!headers_sent()) {
             header("Retry-After: {$retryAfter}");
         }
+        $limitDetail = "Rate limit exceeded ({$maxRequests} requests per {$windowSeconds}s). Try again in {$retryAfter} seconds.";
         jsonResponse([
             'success'     => false,
             'error'       => 'Too Many Requests',
-            'detail'      => "Rate limit exceeded ({$maxRequests} requests per {$windowSeconds}s). Try again in {$retryAfter} seconds.",
+            'message'     => $limitDetail,
+            'detail'      => $limitDetail,
             'retry_after' => $retryAfter,
             'rate_limit'  => [
                 'limit'       => $maxRequests,

@@ -180,40 +180,62 @@ try {
     }
 
     $cancelledSalesStmt = $pdo->query("
-        SELECT o.order_number, o.created_by, oo.outbound_order_id, oo.status AS oo_status
+        SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes,
+               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name,
+               oo.outbound_order_id, oo.status AS oo_status,
+               io.inbound_order_id AS existing_rma_id
         FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
         LEFT JOIN outbound_orders oo ON oo.order_number = o.order_number
+        LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RMA-', o.order_number)
         WHERE o.fulfillment_status = 'Cancelled'
           AND (o.id > 12 OR o.updated_at >= '2026-11-01 00:00:00')
           AND (
               (oo.outbound_order_id IS NOT NULL AND oo.status IN ('pending', 'partially_dispatched'))
-              OR EXISTS (
-                  SELECT 1 FROM stock_movements sm
-                  WHERE sm.movement_type = 'STOCK_OUT'
-                    AND (sm.reference_no = o.order_number OR sm.reference_number = o.order_number)
-                    AND NOT EXISTS (
-                        SELECT 1 FROM stock_movements rev
-                        WHERE rev.movement_type = 'CANCELLED_OUTBOUND'
-                          AND rev.reference_id = sm.movement_id
-                    )
+              OR (
+                  io.inbound_order_id IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM stock_movements sm
+                      WHERE sm.movement_type = 'STOCK_OUT'
+                        AND (sm.status IS NULL OR sm.status = 'Posted')
+                        AND (sm.reference_no = o.order_number OR sm.reference_number = o.order_number)
+                        AND NOT EXISTS (
+                            SELECT 1 FROM stock_movements rev
+                            WHERE rev.movement_type = 'CANCELLED_OUTBOUND'
+                              AND rev.reference_id = sm.movement_id
+                        )
+                  )
               )
           )
     ");
     if ($cancelledSalesStmt) {
         $cSalesRows = $cancelledSalesStmt->fetchAll(PDO::FETCH_ASSOC);
         if (!empty($cSalesRows)) {
-            if (!class_exists('StockService')) require_once __DIR__ . '/../../helpers/StockService.php';
             if (!class_exists('OrderService')) require_once __DIR__ . '/../../helpers/OrderService.php';
             $hdrOrderSvc = new OrderService($pdo);
-            $hdrStockSvc = new StockService($pdo);
-            $selMovStmt = $pdo->prepare("
-                SELECT sm.movement_id FROM stock_movements sm
+            $selDispatchedFgStmt = $pdo->prepare("
+                SELECT sm.item_id, SUM(sm.quantity) AS disp_qty
+                FROM stock_movements sm
+                JOIN items i ON i.item_id = sm.item_id
                 WHERE sm.movement_type = 'STOCK_OUT'
+                  AND (sm.status IS NULL OR sm.status = 'Posted')
                   AND (sm.reference_no = ? OR sm.reference_number = ?)
+                  AND LOWER(REPLACE(COALESCE(i.item_type, i.type), ' ', '_')) = 'finished_good'
                   AND NOT EXISTS (
                       SELECT 1 FROM stock_movements rev
                       WHERE rev.movement_type = 'CANCELLED_OUTBOUND' AND rev.reference_id = sm.movement_id
                   )
+                GROUP BY sm.item_id
+            ");
+            $insCancelRmaOrd = $pdo->prepare("
+                INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+                VALUES (?, 'CUSTOMER_RETURN', ?, ?, CURDATE(), 'pending', ?, ?)
+            ");
+            $insCancelRmaItem = $pdo->prepare("
+                INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
+                VALUES (?, ?, ?, 0.0000)
+                ON DUPLICATE KEY UPDATE
+                    expected_quantity = GREATEST(expected_quantity, VALUES(expected_quantity))
             ");
             foreach ($cSalesRows as $cs) {
                 $actUid = (int)($cs['created_by'] ?: 1);
@@ -222,15 +244,27 @@ try {
                         $hdrOrderSvc->cancelOutboundOrder((int)$cs['outbound_order_id'], $actUid, "Sales Order {$cs['order_number']} cancelled by Sales");
                     } catch (Throwable $e) {}
                 }
-                $selMovStmt->execute([$cs['order_number'], $cs['order_number']]);
-                foreach ($selMovStmt->fetchAll(PDO::FETCH_COLUMN) as $movId) {
-                    try {
-                        $hdrStockSvc->cancelStockOut((int)$movId, "Sales Order {$cs['order_number']} cancelled by Sales", $actUid, [
-                            'user_id'      => $actUid,
-                            'role'         => 'super_admin',
-                            'warehouse_id' => 0
+                // For already-dispatched goods, queue a Pending Inbound CUSTOMER_RETURN for inspection (Salable vs Bad Products)
+                // instead of auto-restocking straight into salable inventory.
+                if (empty($cs['existing_rma_id'])) {
+                    $selDispatchedFgStmt->execute([$cs['order_number'], $cs['order_number']]);
+                    $dispItems = $selDispatchedFgStmt->fetchAll(PDO::FETCH_ASSOC);
+                    if (!empty($dispItems)) {
+                        $rmaNo = 'RMA-' . $cs['order_number'];
+                        $insCancelRmaOrd->execute([
+                            $rmaNo,
+                            trim($cs['customer_name']) ?: 'Sales Customer',
+                            (int)$cs['warehouse_id'] ?: 1,
+                            "Cancelled Sales Order {$cs['order_number']} — awaiting inspection (Salable / Bad Products)" . ($cs['notes'] ? " ({$cs['notes']})" : ""),
+                            $actUid
                         ]);
-                    } catch (Throwable $e) {}
+                        $newRmaId = (int)$pdo->lastInsertId();
+                        if ($newRmaId > 0) {
+                            foreach ($dispItems as $di) {
+                                $insCancelRmaItem->execute([$newRmaId, (int)$di['item_id'], (float)$di['disp_qty']]);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -238,24 +272,39 @@ try {
 
     $returnedSalesStmt = $pdo->query("
         SELECT o.id AS order_id, o.order_number, o.warehouse_id, o.created_by, o.notes,
-               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name
+               COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Sales Customer') AS customer_name,
+               io.inbound_order_id AS existing_rma_id
         FROM orders o
         LEFT JOIN customers c ON o.customer_id = c.id
         LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RMA-', o.order_number)
-        WHERE io.inbound_order_id IS NULL
-          AND EXISTS (
-              SELECT 1 FROM order_items oi 
-              WHERE oi.order_id = o.id AND oi.quantity_returned > 0
-          )
+        WHERE EXISTS (
+            SELECT 1
+            FROM order_items oi
+            LEFT JOIN inbound_order_items ioi
+                ON ioi.inbound_order_id = io.inbound_order_id
+               AND ioi.item_id = oi.item_id
+            WHERE oi.order_id = o.id
+              AND oi.quantity_returned > COALESCE(ioi.expected_quantity, 0) + 0.0001
+        )
     ");
     if ($returnedSalesStmt) {
         $insInbOrd = $pdo->prepare("
-            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
             VALUES (?, 'CUSTOMER_RETURN', ?, ?, CURDATE(), 'pending', ?, ?)
+            ON DUPLICATE KEY UPDATE
+                status = CASE
+                    WHEN status = 'received' THEN 'partially_received'
+                    WHEN status = 'cancelled' THEN 'pending'
+                    ELSE status
+                END,
+                updated_at = NOW()
         ");
+        $selRmaIdByNo = $pdo->prepare("SELECT inbound_order_id FROM inbound_orders WHERE order_number = ? LIMIT 1");
         $insInbItem = $pdo->prepare("
             INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
             VALUES (?, ?, ?, 0.0000)
+            ON DUPLICATE KEY UPDATE
+                expected_quantity = GREATEST(expected_quantity, VALUES(expected_quantity))
         ");
         $selRetItems = $pdo->prepare("SELECT item_id, SUM(quantity_returned) AS ret_qty FROM order_items WHERE order_id = ? AND quantity_returned > 0 GROUP BY item_id");
         foreach ($returnedSalesStmt->fetchAll(PDO::FETCH_ASSOC) as $ro) {
@@ -267,11 +316,15 @@ try {
                 "Customer return from Sales Order {$ro['order_number']}" . ($ro['notes'] ? " ({$ro['notes']})" : ""),
                 (int)($ro['created_by'] ?: 1)
             ]);
-            $newInbId = (int)$pdo->lastInsertId();
-            if ($newInbId > 0) {
+            $rmaId = (int)($ro['existing_rma_id'] ?: $pdo->lastInsertId());
+            if ($rmaId <= 0) {
+                $selRmaIdByNo->execute([$rmaNo]);
+                $rmaId = (int)$selRmaIdByNo->fetchColumn();
+            }
+            if ($rmaId > 0) {
                 $selRetItems->execute([(int)$ro['order_id']]);
                 foreach ($selRetItems->fetchAll(PDO::FETCH_ASSOC) as $ri) {
-                    $insInbItem->execute([$newInbId, (int)$ri['item_id'], (float)$ri['ret_qty']]);
+                    $insInbItem->execute([$rmaId, (int)$ri['item_id'], (float)$ri['ret_qty']]);
                 }
             }
         }
@@ -417,24 +470,40 @@ try {
     }
 
     $prodRetStmt = $pdo->query("
-        SELECT po.id, po.order_number, po.warehouse_id, po.created_by, po.remarks
+        SELECT po.id, po.order_number, po.warehouse_id, po.created_by, po.remarks,
+               io.inbound_order_id AS existing_inb_id, io.status AS existing_inb_status
         FROM production_orders po
         LEFT JOIN inbound_orders io ON io.order_number = CONCAT('RET-', po.order_number)
-        WHERE io.inbound_order_id IS NULL
-          AND (po.id > 44 OR po.updated_at >= '2026-11-01 00:00:00')
-          AND EXISTS (
-              SELECT 1 FROM production_materials pm
-              WHERE pm.prod_order_id = po.id AND pm.returned_qty > 0
-          )
+        WHERE EXISTS (
+            SELECT 1
+            FROM production_materials pm
+            LEFT JOIN inbound_order_items ioi
+                ON ioi.inbound_order_id = io.inbound_order_id
+               AND ioi.item_id = pm.item_id
+            WHERE pm.prod_order_id = po.id
+              AND pm.returned_qty > COALESCE(ioi.expected_quantity, 0) + 0.0001
+        )
     ");
     if ($prodRetStmt) {
         $insProdRetOrd = $pdo->prepare("
-            INSERT IGNORE INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
+            INSERT INTO inbound_orders (order_number, source_type, entity_name, warehouse_id, expected_date, status, notes, created_by)
             VALUES (?, 'PRODUCTION_RETURN', 'Production Team', ?, CURDATE(), 'pending', ?, ?)
+            ON DUPLICATE KEY UPDATE
+                status = CASE
+                    WHEN status = 'received' THEN 'partially_received'
+                    WHEN status = 'cancelled' THEN 'pending'
+                    ELSE status
+                END,
+                updated_at = NOW()
         ");
-        $insProdRetItem = $pdo->prepare("
+        $selInbIdByNo = $pdo->prepare("
+            SELECT inbound_order_id FROM inbound_orders WHERE order_number = ? LIMIT 1
+        ");
+        $upsertProdRetItem = $pdo->prepare("
             INSERT INTO inbound_order_items (inbound_order_id, item_id, expected_quantity, received_quantity)
             VALUES (?, ?, ?, 0.0000)
+            ON DUPLICATE KEY UPDATE
+                expected_quantity = GREATEST(expected_quantity, VALUES(expected_quantity))
         ");
         $selProdRetMats = $pdo->prepare("
             SELECT item_id, SUM(returned_qty) AS ret_qty
@@ -450,11 +519,15 @@ try {
                 "Raw material return from Production Order {$prOrd['order_number']}" . ($prOrd['remarks'] ? " ({$prOrd['remarks']})" : ""),
                 (int)($prOrd['created_by'] ?: 1)
             ]);
-            $newInbId = (int)$pdo->lastInsertId();
-            if ($newInbId > 0) {
+            $inbId = (int)($prOrd['existing_inb_id'] ?: $pdo->lastInsertId());
+            if ($inbId <= 0) {
+                $selInbIdByNo->execute([$retOrdNo]);
+                $inbId = (int)$selInbIdByNo->fetchColumn();
+            }
+            if ($inbId > 0) {
                 $selProdRetMats->execute([(int)$prOrd['id']]);
                 foreach ($selProdRetMats->fetchAll(PDO::FETCH_ASSOC) as $pmRet) {
-                    $insProdRetItem->execute([$newInbId, (int)$pmRet['item_id'], (float)$pmRet['ret_qty']]);
+                    $upsertProdRetItem->execute([$inbId, (int)$pmRet['item_id'], (float)$pmRet['ret_qty']]);
                 }
             }
         }
@@ -571,6 +644,16 @@ $pageTitle   = $pageTitle ?? 'Admin Portal — InventoryTeam';
 $activePage  = $activePage ?? 'dashboard';
 $activeGroup = $activeGroup ?? '';
 $isSidebarCollapsed = (isset($_COOKIE['inventory_sidebar_collapsed']) && $_COOKIE['inventory_sidebar_collapsed'] === 'true');
+
+if (empty($_SESSION['tab_auth_token']) || !is_string($_SESSION['tab_auth_token'])) {
+    $_SESSION['tab_auth_token'] = bin2hex(random_bytes(16));
+    $_SESSION['tab_session_initialized'] = false;
+}
+$shouldInitTabSession = empty($_SESSION['tab_session_initialized']);
+if ($shouldInitTabSession) {
+    $_SESSION['tab_session_initialized'] = true;
+}
+$tabAuthToken = $_SESSION['tab_auth_token'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -579,6 +662,39 @@ $isSidebarCollapsed = (isset($_COOKIE['inventory_sidebar_collapsed']) && $_COOKI
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
     <meta name="base-url" content="<?= BASE_URL ?>">
+    <script>
+    (function() {
+        var key = 'inventory_tab_session';
+        var expected = <?= json_encode($tabAuthToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        var shouldInit = <?= $shouldInitTabSession ? 'true' : 'false' ?>;
+        try {
+            if (shouldInit) {
+                sessionStorage.setItem(key, expected);
+                return;
+            }
+            if (sessionStorage.getItem(key) !== expected) {
+                document.documentElement.style.display = 'none';
+                var csrf = <?= json_encode(getCsrfToken(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                var logoutUrl = <?= json_encode(BASE_URL . 'auth/logout.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                var loginUrl = <?= json_encode(BASE_URL . 'auth/login.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                var body = new URLSearchParams();
+                body.append('csrf_token', csrf);
+                fetch(logoutUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': csrf
+                    },
+                    body: body.toString(),
+                    credentials: 'same-origin',
+                    keepalive: true
+                }).finally(function() {
+                    window.location.replace(loginUrl);
+                });
+            }
+        } catch (e) {}
+    })();
+    </script>
     <title><?= htmlspecialchars($pageTitle) ?></title>
     <link rel="icon" type="image/png" href="<?= BASE_URL ?>assets/images/logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">

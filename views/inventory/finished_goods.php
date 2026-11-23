@@ -23,7 +23,7 @@ $categoryConfig = [
     'search_placeholder' => 'Filter product name or code...',
     'code_col_header'    => 'Product Code',
     'name_col_header'    => 'Product Name',
-    'source_col_header'  => 'Latest Production / Batch Ref',
+    'source_col_header'  => 'Latest Batch Ref',
     'ref_prefix'         => 'FG #',
     'empty_message'      => 'No finished goods records found in database.'
 ];

@@ -91,9 +91,9 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
 <div class="page-header">
     <div>
         <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
-            <span>Accountability Audit Log</span>
+            <span>Activity Log</span>
         </h1>
-        <p class="page-subtitle">Operational audit trail capturing all user and team activities across inventory touchpoints</p>
+        <p class="page-subtitle">Record of all user actions and stock changes</p>
     </div>
     <div class="header-actions">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -112,7 +112,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
 
     <div class="stat-card">
         <div class="stat-header">
-            <span class="stat-label">Audit Trail Events</span>
+            <span class="stat-label">Total Activities</span>
             <div class="stat-icon-wrap" aria-hidden="true" style="color: var(--panel-ink);">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
@@ -137,7 +137,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </div>
         </div>
         <div class="stat-value" style="color: #15803D;"><?= number_format($kpis['stock_in_out']) ?></div>
-        <div class="stat-meta">Inbound receipts &amp; outbound dispatches</div>
+        <div class="stat-meta">Items received and sent out</div>
     </div>
 
     <div class="stat-card stat-gold">
@@ -153,7 +153,7 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
             </div>
         </div>
         <div class="stat-value" style="color: #92400E;"><?= number_format($kpis['transfers_adjustments']) ?></div>
-        <div class="stat-meta">Facility transfers, counts &amp; bad stock</div>
+        <div class="stat-meta">Warehouse transfers, adjustments &amp; bad products</div>
     </div>
 
     <div class="stat-card">
@@ -176,8 +176,8 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Activity Audit Ledger</h2>
-            <p class="card-desc">Showing timestamped inventory activities with full operational traceability</p>
+            <h2 class="card-title">Activity History</h2>
+            <p class="card-desc">Complete history of all stock and account actions</p>
         </div>
 
         <div class="filter-group">
@@ -248,21 +248,21 @@ $currentBranchLabel = htmlspecialchars($currentWarehouseCode . ' · ' . $current
         <table id="fullLogTable">
             <thead>
                 <tr>
-                    <th style="min-width: 170px;">Date &amp; Time</th>
-                    <th style="min-width: 180px;">User</th>
-                    <th style="min-width: 125px;">Team</th>
-                    <th style="min-width: 210px;">Action</th>
-                    <th style="min-width: 220px;">Raw Material / Item</th>
-                    <th style="min-width: 110px; text-align: right;">Quantity</th>
-                    <th style="min-width: 170px;">Warehouse</th>
-                    <th style="min-width: 140px;">Reference PO / Batch</th>
+                    <th>Date &amp; Time</th>
+                    <th>User</th>
+                    <th>Team</th>
+                    <th>Action</th>
+                    <th>Raw Material / Item</th>
+                    <th style="text-align: right;">Quantity</th>
+                    <th>Warehouse</th>
+                    <th>Reference PO / Batch</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($logs)): ?>
                     <tr>
                         <td colspan="8" style="text-align: center; padding: 40px 20px; color: var(--gray);">
-                            <div style="font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--panel-ink);">No Accountability Records Found</div>
+                            <div style="font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--panel-ink);">No Activity Records Found</div>
                             <div style="font-size: 13px;">No events match your current filter or warehouse criteria.</div>
                         </td>
                     </tr>

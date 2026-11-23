@@ -132,7 +132,7 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
                     }
                     echo json_encode([
                         'success' => true,
-                        'message' => "Your support inquiry ({$refNo}) has been dispatched directly to the Super Admin."
+                        'message' => "Your message ({$refNo}) has been sent to the Super Admin."
                     ]);
                     exit;
 
@@ -269,7 +269,7 @@ if (!empty($rawInput) && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/jso
 
         $result = $auth->login($emailVal, $passwordVal, $remember);
         if (!$result['success']) {
-            $result['message'] = $result['error'] ?? 'Invalid credentials.';
+            $result['message'] = $result['error'] ?? 'Wrong email or password.';
             if (!empty($result['rate_limited'])) {
                 http_response_code(429);
                 if (!empty($result['retry_after'])) {
@@ -1030,7 +1030,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="password_reset">Password Reset Assistance</option>
                             <option value="user_access">New Warehouse User Access Requisition</option>
                             <option value="system_bug">Report a System Bug / Error</option>
-                            <option value="general">Other Operational Inquiries</option>
+                            <option value="general">Other Questions</option>
                         </select>
                     </div>
                 </div>
@@ -1144,7 +1144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (feedback) {
                     const textEl = feedback.querySelector('div div:last-child div:first-child');
                     const subTextEl = feedback.querySelector('div div:last-child div:last-child');
-                    if (textEl) textEl.textContent = 'Message Dispatched Successfully';
+                    if (textEl) textEl.textContent = 'Message Sent';
                     if (subTextEl) subTextEl.textContent = data.message || 'Your inquiry has been logged in the system audit log.';
                     feedback.style.display = 'block';
                     feedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1396,7 +1396,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (data.rate_limited && data.retry_after) {
                         startLockoutCountdown(parseInt(data.retry_after, 10) || 60);
                     } else {
-                        showAlert('danger', data.message || data.error || 'Login failed. Please check your credentials.');
+                        showAlert('danger', data.message || data.error || 'Login failed. Please check your email and password.');
                     }
                 }
             } catch (err) {
@@ -1724,7 +1724,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         currentResetEmail = emailVal;
                         if (targetEmailText) targetEmailText.textContent = data.masked_email || emailVal;
                         setOtpStep(2);
-                        showOtpAlert('success', data.message || 'Verification code dispatched to your inbox.');
+                        showOtpAlert('success', data.message || 'Verification code sent to your email.');
                         startResendTimer();
                     } else {
                         showOtpAlert('danger', data.message || 'Unable to send verification code.');

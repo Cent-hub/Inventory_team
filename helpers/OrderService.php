@@ -120,6 +120,9 @@ class OrderService {
             if ($order['status'] === 'received') {
                 throw new DomainException("Order '{$order['order_number']}' has already been fully received and cannot be cancelled.");
             }
+            if (in_array($order['source_type'], ['PRODUCTION_RECEIPT', 'PRODUCTION_RETURN'], true)) {
+                throw new DomainException("Production deliveries and returns ('{$order['order_number']}') cannot be rejected. Please receive good items into inventory or log damaged items under Bad Products.");
+            }
 
             if ($authUser && ($authUser['role'] ?? '') !== 'super_admin') {
                 $userWhId = (int)($authUser['warehouse_id'] ?? 0);

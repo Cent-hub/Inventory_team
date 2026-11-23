@@ -379,7 +379,7 @@ function getFacilityAssignment($user) {
 <div class="page-header">
     <div>
         <h1 class="page-title"><?= $isSuperAdmin ? 'Users & Account Management' : 'My Account' ?></h1>
-        <p class="page-subtitle"><?= $isSuperAdmin ? 'Directory of authorized distillery administrators, inventory controllers, and cross-team service accounts' : 'Personal account profile, assigned warehouse facility, and security settings' ?></p>
+        <p class="page-subtitle"><?= $isSuperAdmin ? 'Manage warehouse staff, admins, and team accounts' : 'Personal account profile, assigned warehouse, and security settings' ?></p>
     </div>
     <div class="header-actions" style="display: flex; gap: 10px;">
         <?php require __DIR__ . '/../layouts/notification_bell.php'; ?>
@@ -510,7 +510,7 @@ function getFacilityAssignment($user) {
 <div class="card mb-6">
     <div class="card-body" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
         <div>
-            <h3 style="font-size: 16px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">Account &amp; Facility Settings</h3>
+            <h3 style="font-size: 16px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">Account &amp; Warehouse Settings</h3>
             <p style="font-size: 13px; color: var(--gray); margin: 0;">Manage your password, notifications, security preferences, CSV exports, and support inquiries from the unified Settings panel.</p>
         </div>
         <button type="button" class="btn btn-primary" onclick="openSettingsModal('main')">Open Settings</button>
@@ -538,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="kpi-meta">
             <span class="kpi-label">Registered Accounts</span>
             <div class="kpi-value"><?= number_format($totalUsers) ?></div>
-            <span class="kpi-subtext">System operators & administrators</span>
+            <span class="kpi-subtext">Staff and admin accounts</span>
         </div>
     </div>
 
@@ -552,7 +552,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="kpi-meta">
             <span class="kpi-label">Active Status</span>
             <div class="kpi-value" style="color: #1F7A6C;"><?= number_format($activeCount) ?></div>
-            <span class="kpi-subtext">Currently authorized logins</span>
+            <span class="kpi-subtext">Users who can sign in</span>
         </div>
     </div>
 
@@ -565,7 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="kpi-meta">
             <span class="kpi-label">Administrative Roles</span>
             <div class="kpi-value" style="color: #C69255;"><?= number_format($adminCount) ?></div>
-            <span class="kpi-subtext">Admin & Super Admin privileges</span>
+            <span class="kpi-subtext">Admin & Super Admin users</span>
         </div>
     </div>
 
@@ -579,9 +579,9 @@ document.addEventListener('DOMContentLoaded', function() {
             </svg>
         </div>
         <div class="kpi-meta">
-            <span class="kpi-label">Active Facilities</span>
+            <span class="kpi-label">Active Warehouses</span>
             <div class="kpi-value"><?= $totalWarehouses ?></div>
-            <span class="kpi-subtext">Laguna, Manila &amp; Bulacan facilities</span>
+            <span class="kpi-subtext">Laguna, Manila &amp; Bulacan warehouses</span>
         </div>
     </div>
 </div>
@@ -596,7 +596,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
             </span>
-            <input type="text" name="search" class="search-box" aria-label="Search user accounts by name or email" placeholder="Search by name, email, or facility..." value="<?= htmlspecialchars($search) ?>" id="userSearchInput" oninput="filterUsersDirectoryTable()">
+            <input type="text" name="search" class="search-box" aria-label="Search user accounts by name or email" placeholder="Search by name, email, or warehouse..." value="<?= htmlspecialchars($search) ?>" id="userSearchInput" oninput="filterUsersDirectoryTable()">
         </div>
 
         <select name="role" id="userRoleFilter" class="select-filter" aria-label="Filter users by security role" onchange="filterUsersDirectoryTable()">
@@ -616,11 +616,11 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="card">
     <div class="card-header">
         <div class="flex items-center gap-3">
-            <h2 class="card-title">Administrator &amp; Service Account Directory</h2>
+            <h2 class="card-title">User Accounts</h2>
             <span class="badge badge-teal"><?= $totalUsers ?> Accounts</span>
         </div>
         <div class="text-xs text-muted">
-            Synchronized with team_inventory access control
+            All registered warehouse and team users
         </div>
     </div>
     <div class="table-responsive">
@@ -630,7 +630,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <th>User Account</th>
                     <th>Security Role</th>
                     <th>Functional Team</th>
-                    <th>Assigned Facility</th>
+                    <th>Assigned Warehouse</th>
                     <th>Account Status</th>
                     <th>Registration Date</th>
                     <th class="text-right">Actions</th>
@@ -878,7 +878,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="form-grid-2" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <label for="createUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Assigned Facility
+                            Assigned Warehouse
                         </label>
                         <select name="warehouse_id" id="createUserWarehouse" class="select-filter" style="width: 100%;">
                             <option value="">— Global / Unassigned —</option>
@@ -914,7 +914,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="modal-header">
                 <div>
                     <h3 id="editUserModalTitle" class="card-title">Edit User Account</h3>
-                    <p class="card-desc">Modify role, facility assignment, status, or reset password</p>
+                    <p class="card-desc">Update role, assigned warehouse, status, or password</p>
                 </div>
                 <button type="button" class="modal-close" aria-label="Close modal" onclick="closeEditUserModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -972,7 +972,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div>
                         <label for="editUserWarehouse" style="font-size: 13px; font-weight: 600; color: var(--panel-ink); margin-bottom: 6px; display: block;">
-                            Assigned Facility
+                            Assigned Warehouse
                         </label>
                         <select name="warehouse_id" id="editUserWarehouse" class="select-filter" style="width: 100%;">
                             <option value="">— Global / Unassigned —</option>

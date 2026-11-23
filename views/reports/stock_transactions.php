@@ -86,6 +86,7 @@ $sqlM = "
         FROM stock_movements sm
         LEFT JOIN stock_adjustments sa ON sm.movement_type IN ('STOCK_ADJUSTMENT', 'CANCELLED_ADJUSTMENT') AND sm.reference_id = sa.adjustment_id
         WHERE sm.movement_type NOT IN ('IN', 'OUT')
+          AND (sm.status IS NULL OR sm.status = 'Posted')
     ),
     movement_ledger AS (
         SELECT
@@ -165,6 +166,7 @@ $sqlIn = "
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_IN'
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND (sm.remarks IS NULL OR (
           sm.remarks NOT LIKE 'Cancelled Stock OUT %'
           AND sm.remarks NOT LIKE '[INITIAL_BALANCE]%'
@@ -219,6 +221,7 @@ $sqlOut = "
     WHERE DATE(sm.created_at) BETWEEN ? AND ?
       AND sm.warehouse_id = ?
       AND sm.movement_type = 'STOCK_OUT'
+      AND (sm.status IS NULL OR sm.status = 'Posted')
       AND sm.remarks NOT LIKE 'Cancelled Stock IN %'
 ";
 $paramsOut = [$startDate, $endDate, $currentWarehouseId];
@@ -312,7 +315,7 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     <div>
         <h1 class="page-title">Stock Transaction Reports</h1>
         <p class="page-subtitle">
-            Audited ledgers for Stock Movements, Inbounds, Outbounds, Transfers, and Adjustments
+            History of all stock ins, stock outs, transfers, and adjustments
         </p>
     </div>
     <div class="header-actions">
@@ -324,11 +327,11 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
     <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div>
             <h2 style="font-size: 20px; font-weight: 700; color: var(--panel-ink); margin: 0 0 4px 0;">InventoryTeam Inventory Management System</h2>
-            <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">Stock Movement Ledger Report</h3>
+            <h3 id="printDocTitle" style="font-size: 16px; font-weight: 600; color: var(--accent); margin: 0;">Stock Movement Report</h3>
         </div>
         <div style="text-align: right; font-size: 11px; color: var(--gray);">
             <div>Generated: <?= date('Y-m-d H:i:s') ?></div>
-            <div>Facility: <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?> — <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? '') ?></div>
+            <div>Warehouse: <?= htmlspecialchars($assignedWarehouse['warehouse_code'] ?? '') ?> — <?= htmlspecialchars($assignedWarehouse['warehouse_name'] ?? '') ?></div>
             <div>Period: <?= htmlspecialchars($startDate) ?> to <?= htmlspecialchars($endDate) ?></div>
         </div>
     </div>
@@ -392,11 +395,11 @@ $adjustmentData = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
 
 <?php
 $txnCardMeta = [
-    'movements'   => ['title' => 'Stock Movement Ledger Report', 'desc' => 'History of all stock ins, stock outs, and balance changes'],
-    'inbound'     => ['title' => 'Inbound Stock Receipts', 'desc' => 'Items received from suppliers and production'],
-    'outbound'    => ['title' => 'Outbound Stock Dispatches', 'desc' => 'Items shipped for sales orders and sent to production'],
-    'transfers'   => ['title' => 'Inter-Branch Stock Transfers', 'desc' => 'Stock transfers between warehouses'],
-    'adjustments' => ['title' => 'Stock Adjustments & Variances', 'desc' => 'Stock adjustments made to match physical counts'],
+    'movements'   => ['title' => 'Stock Movement Report', 'desc' => 'History of all stock ins, stock outs, and balance changes'],
+    'inbound'     => ['title' => 'Stock In Report', 'desc' => 'Items received from suppliers and production'],
+    'outbound'    => ['title' => 'Stock Out Report', 'desc' => 'Items shipped for sales orders and sent to production'],
+    'transfers'   => ['title' => 'Warehouse Stock Transfers', 'desc' => 'Stock transfers between warehouses'],
+    'adjustments' => ['title' => 'Stock Adjustments Report', 'desc' => 'Stock adjustments made to match physical counts'],
 ];
 $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
 ?>
@@ -463,7 +466,7 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                         <th>Date &amp; Time</th>
                         <th>Reference #</th>
                         <th>Product / Item</th>
-                        <th>Classification</th>
+                        <th>Item Type</th>
                         <th>Movement Type</th>
                         <th class="text-center" style="text-align: center;">In (+)</th>
                         <th class="text-center" style="text-align: center;">Out (-)</th>
@@ -561,7 +564,7 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                         <th>Transaction #</th>
                         <th>Source Order / Ref #</th>
                         <th>Source Type</th>
-                        <th>Date Dispatched</th>
+                        <th>Date Sent</th>
                         <th>Issued By</th>
                         <th class="text-center" style="text-align: center;">Item Lines</th>
                         <th class="text-center" style="text-align: center;">Total Quantity</th>
@@ -600,8 +603,8 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                     <tr>
                         <th>Transfer Reference</th>
                         <th>Transfer Date</th>
-                        <th>Origin Facility</th>
-                        <th>Destination Facility</th>
+                        <th>From Warehouse</th>
+                        <th>To Warehouse</th>
                         <th>Processed By</th>
                         <th class="text-center" style="text-align: center;">Line Items</th>
                         <th class="text-center" style="text-align: center;">Total Quantity</th>
@@ -644,7 +647,7 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
                         <th>Logged By</th>
                         <th class="text-center" style="text-align: center;">Previous Qty</th>
                         <th class="text-center" style="text-align: center;">Adjusted Qty</th>
-                        <th class="text-center" style="text-align: center;">Variance Delta</th>
+                        <th class="text-center" style="text-align: center;">Difference</th>
                         <th>Reason</th>
                         <th>Status</th>
                     </tr>
@@ -690,11 +693,11 @@ $activeTxnMeta = $txnCardMeta[$activeTab] ?? $txnCardMeta['movements'];
 let currentActiveTab = '<?= $activeTab ?>';
 
 const reportTitles = {
-    'movements': 'Stock Movement Ledger Report',
-    'inbound': 'Inbound Stock Receipts',
-    'outbound': 'Outbound Stock Dispatches',
-    'transfers': 'Inter-Branch Stock Transfers',
-    'adjustments': 'Stock Adjustments & Variances'
+    'movements': 'Stock Movement Report',
+    'inbound': 'Stock In Report',
+    'outbound': 'Stock Out Report',
+    'transfers': 'Warehouse Stock Transfers',
+    'adjustments': 'Stock Adjustments Report'
 };
 const reportDescs = {
     'movements': 'History of all stock ins, stock outs, and balance changes',
